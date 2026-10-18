@@ -7,4 +7,4 @@ resources:
 images:
   - name: pea-shooter
     newName: ghcr.io/bubthegreat/pea-shooter
-    newTag: "0.1.2"
+    newTag: "0.1.3"
