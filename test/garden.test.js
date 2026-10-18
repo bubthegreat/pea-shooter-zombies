@@ -163,6 +163,63 @@ test('planting via input is edge-triggered', () => {
   assert.equal(p.sunshine, 300);
 });
 
+test('plantSeq: back-to-back presses of the same key each plant, with no zero in between', () => {
+  const { game, p } = plantGame();
+  p.sunshine = 500;
+  p.x = -14; // between two empty front-row slots (x=-16 and x=-12)
+  p.z = -1;
+  assert.equal(game.gardenCount(), 0);
+  game.handleInput('a', { plant: 1, plantSeq: 1 });
+  game.handleInput('a', { plant: 1, plantSeq: 2 }); // arrives in the same tick, never released
+  game.tick(1 / 30);
+  assert.equal(game.gardenCount(), 2);
+  p.x = -6; // slots at x=-8 and x=-4
+  game.handleInput('a', { plant: 1, plantSeq: 3 });
+  game.tick(1 / 30);
+  game.handleInput('a', { plant: 1, plantSeq: 4 });
+  game.tick(1 / 30);
+  assert.equal(game.gardenCount(), 4);
+  assert.equal(p.sunshine, 300);
+});
+
+test('plantSeq: resending the same sequence number never plants twice; a new number plants again', () => {
+  const { game, p } = plantGame();
+  p.sunshine = 500;
+  p.x = -14;
+  p.z = -1;
+  for (let i = 0; i < 10; i++) {
+    game.handleInput('a', { plant: 1, plantSeq: 5 });
+    game.tick(1 / 30);
+  }
+  assert.equal(game.gardenCount(), 1);
+  game.handleInput('a', { plant: 0, plantSeq: 5 });
+  game.tick(1 / 30);
+  game.handleInput('a', { plant: 1, plantSeq: 6 });
+  game.tick(1 / 30);
+  assert.equal(game.gardenCount(), 2);
+  game.handleInput('a', { plant: 1, plantSeq: 6 });
+  game.handleInput('a', { plant: 1, plantSeq: 4 }); // stale / out-of-order numbers are ignored
+  run(game, 0.3);
+  assert.equal(game.gardenCount(), 2);
+});
+
+test('plantSeq: junk values are ignored', () => {
+  const { game, p } = plantGame();
+  p.sunshine = 500;
+  p.x = -14;
+  p.z = -1;
+  for (const bad of ['1', 1.5, -3, NaN, Infinity, null, {}, [1]]) {
+    game.handleInput('a', { plant: 1, plantSeq: bad });
+    game.tick(1 / 30);
+  }
+  game.handleInput('a', { plant: 0, plantSeq: 0 });
+  game.tick(1 / 30);
+  // legacy edge-triggered clients (no plantSeq) still work
+  game.handleInput('a', { plant: 1 });
+  game.tick(1 / 30);
+  assert.equal(game.gardenCount(), 1);
+});
+
 function fixedPlantTypes(over) {
   return {
     peashooter: { ...DEFAULT_CONFIG.plantTypes.peashooter, ...over.peashooter },

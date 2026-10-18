@@ -16,6 +16,7 @@ const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
 const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver'];
 const MAX_PENDING_EVENTS = 500;
+const MAX_PLANT_QUEUE = 4; // plant presses buffered between ticks
 
 export function neutralInput() {
   return { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, plant: 0 };
@@ -159,6 +160,8 @@ export class Game {
       cooldown: 0,
       weapon: weaponFor(team, 0).id,
       input: neutralInput(),
+      plantQueue: [], // pending planting attempts (1 = peashooter, 2 = cactus)
+      plantSeqSeen: 0, // highest client plantSeq applied
     };
   }
 
@@ -199,7 +202,7 @@ export class Game {
 
   clearInput(e) {
     e.input = neutralInput();
-    e.plantPending = 0;
+    if (e.kind === 'player') e.plantQueue.length = 0;
     e.usePressed = false;
   }
 
@@ -220,7 +223,7 @@ export class Game {
     p.hp = p.maxHp;
     p.state = 'alive';
     p.timer = 0;
-    p.plantPending = 0;
+    p.plantQueue.length = 0;
     p.yaw = p.team === 'plant' ? 0 : Math.PI; // plants face the gate (-z), zombies face the house (+z)
     p.pitch = 0;
   }
@@ -260,8 +263,17 @@ export class Game {
       inp.use = use;
     }
     if (Number.isInteger(raw.plant) && raw.plant >= 0 && raw.plant <= 2) {
-      // Planting is edge-triggered: 0 -> 1/2 queues one planting attempt.
-      if (raw.plant !== 0 && inp.plant === 0) e.plantPending = raw.plant;
+      if (Number.isSafeInteger(raw.plantSeq) && raw.plantSeq >= 0) {
+        // Sequenced planting: every press carries a higher plantSeq, so repeated presses of the same
+        // key are never merged. Resent or out-of-order numbers are ignored.
+        if (raw.plantSeq > e.plantSeqSeen) {
+          e.plantSeqSeen = raw.plantSeq;
+          if (raw.plant !== 0) this._queuePlant(e, raw.plant);
+        }
+      } else if (raw.plantSeq === undefined && raw.plant !== 0 && inp.plant === 0) {
+        // Legacy clients: planting is edge-triggered, 0 -> 1/2 queues one attempt.
+        this._queuePlant(e, raw.plant);
+      }
       inp.plant = raw.plant;
     }
     if (typeof raw.yaw === 'number' && Number.isFinite(raw.yaw)) e.yaw = wrapAngle(raw.yaw);
@@ -295,6 +307,10 @@ export class Game {
     stepRules(this, dt);
   }
 
+  _queuePlant(e, kind) {
+    if (e.plantQueue.length < MAX_PLANT_QUEUE) e.plantQueue.push(kind);
+  }
+
   /** Edge-triggered presses live for exactly one tick. */
   _clearEdges() {
     for (const e of this.entities.values()) if (e.kind === 'player') e.usePressed = false;
@@ -311,9 +327,9 @@ export class Game {
       if (e.state !== 'alive') continue;
       this._moveActor(e, dt);
       this._stepWeapon(e, dt);
-      if (e.plantPending) {
-        if (this.phase === 'playing') tryPlant(this, e, e.plantPending === 1 ? 'peashooter' : 'cactus');
-        e.plantPending = 0;
+      if (e.plantQueue?.length) {
+        for (const kind of e.plantQueue) if (this.phase === 'playing') tryPlant(this, e, kind === 1 ? 'peashooter' : 'cactus');
+        e.plantQueue.length = 0;
       }
     }
   }

@@ -34,7 +34,7 @@ Y up, units meters. Yard: x ∈ [-30, 30], z ∈ [-50, 30]. Zombie gate spawn: z
 
 Client → server JSON:
 - `{t:"join", name:string(≤16), team:"plant"|"zombie", mode:"coop"|"versus", difficulty:"easy"|"normal"}` (mode/difficulty only honored by first joiner)
-- `{t:"input", seq:int, keys:{f,b,l,r,jump:bool}, yaw:number, pitch:number, fire:bool, use:bool, plant:0|1|2}` sent at 30 Hz (`plant` 1=Peashooter, 2=Cactus, 0=none; `use` = E key, mower)
+- `{t:"input", seq:int, keys:{f,b,l,r,jump:bool}, yaw:number, pitch:number, fire:bool, use:bool, plant:0|1|2, plantSeq:int}` sent at 30 Hz (`plant` 1=Peashooter, 2=Cactus, 0=none; `plantSeq:int` counts presses — the server plants when it increases; `use` = E key, mower)
 
 Server → client JSON:
 - `{t:"welcome", id:string, config:{...publicConfig}}`

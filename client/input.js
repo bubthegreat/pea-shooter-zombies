@@ -25,6 +25,40 @@ export function applyLook(yaw, pitch, dx, dy, look) {
   return { yaw, pitch };
 }
 
+/**
+ * Planting presses, sent with a running counter. Every press gets the next plantSeq and its own
+ * outgoing message (plant = kind, plantSeq = n), so rapid repeated presses of the same key are never
+ * merged; between presses we send plant 0 with the last number. A press is only dequeued once a
+ * message carrying it was actually handed to the socket.
+ */
+export class PlantSender {
+  constructor(maxQueued = 6) {
+    this.maxQueued = maxQueued;
+    this.queue = []; // { seq, kind }
+    this.seq = 0; // presses so far
+    this.sent = 0; // highest seq handed to the socket
+  }
+
+  press(kind) {
+    this.queue.push({ seq: ++this.seq, kind });
+    if (this.queue.length > this.maxQueued) this.queue.shift();
+  }
+
+  /** Fields for the next input message. */
+  fields() {
+    const next = this.queue[0];
+    return next ? { plant: next.kind, plantSeq: next.seq } : { plant: 0, plantSeq: this.sent };
+  }
+
+  /** Call after the message built from fields() was really sent. */
+  commit(fields) {
+    if (fields.plant && this.queue[0] && this.queue[0].seq === fields.plantSeq) {
+      this.sent = fields.plantSeq;
+      this.queue.shift();
+    }
+  }
+}
+
 export class Input {
   constructor(canvas) {
     this.canvas = canvas;
@@ -36,7 +70,7 @@ export class Input {
     this.keys = { f: false, b: false, l: false, r: false, jump: false };
     this.fire = false;
     this.use = false;
-    this.plantQueue = [];
+    this.planter = new PlantSender();
     this.seq = 0;
     this.onToggleMute = null;
     this.onToggleHelp = null;
@@ -131,14 +165,8 @@ export class Input {
   }
 
   _plant(n) {
-    this.plantQueue.push(n);
-    if (this.plantQueue.length > 3) this.plantQueue.shift();
+    this.planter.press(n);
     if (this.onPlantKey) this.onPlantKey(n);
-  }
-
-  /** Make the next outgoing input message carry a fresh plant request. */
-  consumePlant() {
-    return this.plantQueue.length ? this.plantQueue.shift() : 0;
   }
 
   /** Build the protocol input message. */
@@ -152,14 +180,17 @@ export class Input {
       pitch: this.pitch,
       fire: this.fire,
       use: this.use,
-      plant: this.consumePlant(),
+      ...this.planter.fields(),
     };
   }
 
-  /** Start sending at 30 Hz via send(msg). */
+  /** Start sending at 30 Hz via send(msg). send returns false when the message could not go out. */
   startSending(send) {
     this.stopSending();
-    this._sendTimer = setInterval(() => send(this.message()), 1000 / 30);
+    this._sendTimer = setInterval(() => {
+      const m = this.message();
+      if (send(m) !== false) this.planter.commit(m);
+    }, 1000 / 30);
   }
 
   stopSending() {

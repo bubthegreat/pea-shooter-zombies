@@ -258,7 +258,7 @@ lobby.onPlay = (choice) => {
   input.enabled = true;
   input.requestLock();
   // wait for the first snapshot (it carries our spawn facing) before sending look angles
-  input.startSending((m) => { if (S.joined && !S.needYawSync) net.send(m); });
+  input.startSending((m) => (S.joined && !S.needYawSync ? net.send(m) : false));
 };
 
 function changeTeam() {
