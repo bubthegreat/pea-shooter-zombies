@@ -1,7 +1,19 @@
 // Wording for the lobby screens. Pure: no DOM.
 
 export const modeLabel = (m) => (m === 'versus' ? 'Versus' : 'Co-op');
-export const diffLabel = (d) => (d === 'easy' ? 'Easy' : 'Normal');
+/** The seven difficulty levels, easiest first (the same ids and order as server/sim/config.js `difficulties`). */
+export const LEVELS = [
+  { id: 'easy', name: 'Easy' },
+  { id: 'normal', name: 'Normal' },
+  { id: 'hard', name: 'Hard' },
+  { id: 'veryhard', name: 'Very Hard' },
+  { id: 'expert', name: 'Expert' },
+  { id: 'nightmare', name: 'Nightmare' },
+  { id: 'insane', name: 'Insane' },
+];
+export const levelIndex = (d) => Math.max(0, LEVELS.findIndex((l) => l.id === d));
+export const isLevel = (d) => LEVELS.some((l) => l.id === d);
+export const diffLabel = (d) => (isLevel(d) ? LEVELS[levelIndex(d)].name : 'Normal');
 export const teamLabel = (t) => (t === 'zombie' ? 'Zombies' : 'Plants');
 
 export function playersText(n) {

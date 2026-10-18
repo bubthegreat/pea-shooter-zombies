@@ -2,7 +2,7 @@
 // Everything players type (names, lobby names) goes onto the page with textContent only, never as HTML.
 import { profile } from './profile.js';
 import { cleanLobbyName } from './text.js';
-import { modeLabel, diffLabel, teamLabel, playersText, statusText, detailText, waitText, ruleText } from './lobbyview.js';
+import { modeLabel, diffLabel, teamLabel, playersText, statusText, detailText, waitText, ruleText, LEVELS, isLevel } from './lobbyview.js';
 
 const $ = (id) => document.getElementById(id);
 const ICON = { plant: String.fromCodePoint(0x1f33b), zombie: String.fromCodePoint(0x1f9df), crown: String.fromCodePoint(0x1f451) };
@@ -38,7 +38,7 @@ export class Lobby {
     this.choice = {
       team: store(true, 'bb-team') === 'zombie' ? 'zombie' : 'plant',
       mode: store(true, 'bb-mode') === 'versus' ? 'versus' : 'coop',
-      diff: store(true, 'bb-diff') === 'normal' ? 'normal' : 'easy',
+      diff: isLevel(store(true, 'bb-diff')) ? store(true, 'bb-diff') : 'easy',
     };
     // callbacks wired by main.js
     this.onCreate = null; // ({ lobbyName, mode, difficulty })
@@ -75,6 +75,16 @@ export class Lobby {
       if (b && !b.disabled && b.dataset.id && this.onJoin) this.onJoin(b.dataset.id);
     });
 
+    for (const rowId of ['creatediffrow', 'roomdiffrow']) {
+      const row = $(rowId);
+      LEVELS.forEach((l, i) => {
+        const b = el('button', `choice diff lv${i}`);
+        b.type = 'button';
+        b.dataset.diff = l.id;
+        b.append(el('span', 'nm', l.name));
+        row.appendChild(b);
+      });
+    }
     this._group('teamrow', 'team', () => this.choice.team, (v) => { this.choice.team = v; store(false, 'bb-team', v); });
     this._group('createmoderow', 'mode', () => this.choice.mode, (v) => { this.choice.mode = v; store(false, 'bb-mode', v); });
     this._group('creatediffrow', 'diff', () => this.choice.diff, (v) => { this.choice.diff = v; store(false, 'bb-diff', v); });

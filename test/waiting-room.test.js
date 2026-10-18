@@ -32,7 +32,7 @@ test('startMatch seats everyone on their team and begins the round', () => {
 
 test('startMatch sanitizes mode, difficulty, names and teams', () => {
   const game = makeGame();
-  game.startMatch({ mode: 'chaos', difficulty: 'nightmare', players: [{ id: 'a', name: 42, team: 'banana' }] });
+  game.startMatch({ mode: 'chaos', difficulty: 'impossible', players: [{ id: 'a', name: 42, team: 'banana' }] });
   assert.equal(game.mode, DEFAULT_CONFIG.defaultMode);
   assert.equal(game.difficulty, DEFAULT_CONFIG.defaultDifficulty);
   assert.equal(game.entities.get('a').name, DEFAULT_CONFIG.defaultName);

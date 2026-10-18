@@ -14,7 +14,7 @@
 // broadcast; waiting rooms nobody touches for 15 min are closed; one address can own at most 3 lobbies; a lobby
 // emptied by a dropped socket (not a clean Leave) is held for the rejoin window so the host can come back to it.
 import { DEFAULT_CONFIG, publicConfig } from './sim/config.js';
-import { Game, TEAMS, MODES, DIFFICULTIES, neutralInput } from './sim/game.js';
+import { Game, TEAMS, MODES, normalizeDifficulty, neutralInput } from './sim/game.js';
 import { sanitizeName, sanitizeLobbyName } from './sim/names.js';
 
 export const MAX_PLAYERS_PER_LOBBY = 50; // hidden safety caps, not shown to kids
@@ -229,7 +229,7 @@ export class LobbyManager {
       sanitizeLobbyName(o.lobbyName, `${member.name}'s Backyard`),
       game,
       MODES.has(o.mode) ? o.mode : c.defaultMode,
-      DIFFICULTIES.has(o.difficulty) ? o.difficulty : c.defaultDifficulty,
+      normalizeDifficulty(o.difficulty) ?? c.defaultDifficulty,
       publicConfig(c),
       member.ip ?? null,
       this.now(),
@@ -349,7 +349,8 @@ export class LobbyManager {
     if (l.hostId !== member.id) return fail('not_host');
     if (l.status !== 'waiting') return fail('busy');
     if (MODES.has(mode)) l.mode = mode;
-    if (DIFFICULTIES.has(difficulty)) l.difficulty = difficulty;
+    const level = normalizeDifficulty(difficulty);
+    if (level) l.difficulty = level;
     this._touch(l);
     this._broadcastState(l);
     return { lobby: l };

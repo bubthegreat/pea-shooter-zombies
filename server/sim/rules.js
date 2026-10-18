@@ -34,8 +34,9 @@ function anyZombieAlive(game) {
 function spawnWave(game, number, final) {
   const c = game.config;
   const gate = WORLD.gate;
-  const wanted = game.difficultyConfig().waveBase + number;
-  const size = Math.max(0, Math.min(wanted, c.maxZombieBots - zombieBotCount(game)));
+  const diff = game.difficultyConfig();
+  const wanted = Math.round(diff.waveBase + number * (diff.waveStep ?? 1));
+  const size = Math.max(0, Math.min(wanted, Math.min(c.maxZombieBots, diff.maxBots ?? c.maxZombieBots) - zombieBotCount(game)));
   for (let i = 0; i < size; i++) {
     game.spawnBot('zombie', gate.minX + game.rng() * (gate.maxX - gate.minX), gate.z);
   }

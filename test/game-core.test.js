@@ -45,7 +45,7 @@ test('the sim has no human cap (lobbies enforce their own safety cap)', () => {
 
 test('addPlayer sanitizes name, team, mode and ignores duplicate ids', () => {
   const game = makeGame();
-  const p = game.addPlayer('a', { name: '  ' + 'x'.repeat(40), team: 'banana', mode: 'chaos', difficulty: 'nightmare' });
+  const p = game.addPlayer('a', { name: '  ' + 'x'.repeat(40), team: 'banana', mode: 'chaos', difficulty: 'impossible' });
   assert.equal(p.name.length, DEFAULT_CONFIG.nameMaxLength);
   assert.equal(p.team, 'plant');
   assert.equal(game.mode, DEFAULT_CONFIG.defaultMode);

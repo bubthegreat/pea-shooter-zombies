@@ -19,7 +19,14 @@ import { sanitizeName } from './names.js';
 
 export const TEAMS = new Set(['plant', 'zombie']);
 export const MODES = new Set(['coop', 'versus']);
-export const DIFFICULTIES = new Set(['easy', 'normal']);
+export const DIFFICULTIES = new Set(Object.keys(DEFAULT_CONFIG.difficulties)); // easy .. insane (config.difficulties key order)
+
+/** A difficulty id from whatever a client sent ('Very Hard', 'veryhard', 'INSANE'), or null when it is not one of the levels. */
+export function normalizeDifficulty(v) {
+  if (typeof v !== 'string' || v.length > 24) return null;
+  const id = v.toLowerCase().replace(/[^a-z]/g, '');
+  return DIFFICULTIES.has(id) ? id : null;
+}
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
 const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains', 'carry', 'partKind', 'powered'];
@@ -75,6 +82,11 @@ export class Game {
     return d[this.difficulty] ?? d[this.config.defaultDifficulty];
   }
 
+  /** The Gardener tunables for this round's level: config.gardener with the level's overrides on top. */
+  gardenerConfig() {
+    return { ...this.config.gardener, ...(this.difficultyConfig().gardener ?? {}) };
+  }
+
   humans() {
     const list = [];
     for (const e of this.entities.values()) if (e.kind === 'player') list.push(e);
@@ -126,7 +138,7 @@ export class Game {
   startMatch({ mode, difficulty, players = [] } = {}) {
     this._resetToLobby();
     this.mode = MODES.has(mode) ? mode : this.config.defaultMode;
-    this.difficulty = DIFFICULTIES.has(difficulty) ? difficulty : this.config.defaultDifficulty;
+    this.difficulty = normalizeDifficulty(difficulty) ?? this.config.defaultDifficulty;
     for (const p of players) {
       if (!p || typeof p.id !== 'string' || p.id === '' || this.entities.has(p.id)) continue;
       const name = sanitizeName(p.name, this.config.defaultName, this.config.nameMaxLength);
@@ -149,7 +161,7 @@ export class Game {
     const first = this.phase === 'lobby' || this.humans().length === 0;
     if (first) {
       this.mode = MODES.has(o.mode) ? o.mode : this.config.defaultMode;
-      this.difficulty = DIFFICULTIES.has(o.difficulty) ? o.difficulty : this.config.defaultDifficulty;
+      this.difficulty = normalizeDifficulty(o.difficulty) ?? this.config.defaultDifficulty;
     }
     const name = sanitizeName(o.name, this.config.defaultName, this.config.nameMaxLength);
     const p = this._makePlayer(id, name, team);

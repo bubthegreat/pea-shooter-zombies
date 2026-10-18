@@ -70,7 +70,7 @@ test('create sanitizes lobby name, mode, difficulty, team and name', () => {
   const { mgr } = setup();
   const a = member('p1', 'x');
   const ctl = String.fromCharCode(0, 7);
-  mgr.create(a, { name: `  Zed${ctl}  `, lobbyName: `${ctl}${'L'.repeat(80)}`, mode: 'chaos', difficulty: 'hard', team: 'banana' });
+  mgr.create(a, { name: `  Zed${ctl}  `, lobbyName: `${ctl}${'L'.repeat(80)}`, mode: 'chaos', difficulty: 'impossible', team: 'banana' });
   const st = a.last('lobbyState').lobby;
   assert.equal(st.name, 'L'.repeat(32));
   assert.equal(st.mode, DEFAULT_CONFIG.defaultMode);
