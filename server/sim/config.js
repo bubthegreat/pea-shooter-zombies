@@ -179,6 +179,22 @@ export const DEFAULT_CONFIG = {
     pool: { hp: 50 },
     shedwall: { hp: 130 },
   },
+  // Forts (both teams). Footprint w x d in metres (rotatable), h = height, hp; cost in sunshine (plants) / brains (zombie kids).
+  builds: {
+    maxPerPlayer: 12,
+    reach: 14, // how far from the builder a build may go up
+    plant: [
+      { id: 'hedgewall', name: 'Hedge Wall', cost: 25, w: 3, d: 1, h: 1.8, hp: 60 },
+      { id: 'fence', name: 'Wooden Fence', cost: 45, w: 3, d: 1, h: 1.6, hp: 150 },
+    ],
+    zombie: [
+      { id: 'tombwall', name: 'Tombstone Wall', cost: 25, w: 3, d: 1, h: 1.5, hp: 140 },
+      { id: 'junk', name: 'Junk Barricade', cost: 10, w: 2, d: 1, h: 1.3, hp: 60 },
+      { id: 'cantower', name: 'Trash-can Tower', cost: 15, w: 1, d: 1, h: 2.6, hp: 90 },
+    ],
+  },
+  // Brains (zombie kids): +perHit for hitting a plant, door or plant structure (at most once per `gap` s per target), +perTurret for destroying a turret.
+  brains: { start: 10, perHit: 5, perTurret: 10, gap: 0.5, max: 150 },
   // Bots: how far from a door they stand and shoot at it, how long they must be stuck before they act.
   botStuckTime: 0.5,
 
@@ -238,6 +254,8 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     ),
     plantLevels: c.plantLevels,
     plantRange: c.plantRange,
+    builds: c.builds,
+    brains: c.brains,
     startSunshine: c.startSunshine,
     headStart: c.headStart,
     fridge: c.fridge,

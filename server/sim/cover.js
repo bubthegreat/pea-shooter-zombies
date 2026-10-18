@@ -4,6 +4,7 @@
 // (coverHit at 75 / 50 / 25 %, coverBreak, build) plus game.cover.mapState() for late joiners.
 import { MAP } from './map.js';
 import { WORLD } from './world.js';
+import { footprint } from './build.js';
 
 const HIT_STEPS = [0.75, 0.5, 0.25]; // HP shares at which a coverHit event is sent
 
@@ -13,6 +14,7 @@ export class Cover {
     this.pieces = new Map(); // id -> piece
     this.gone = new Set(); // ids of broken pieces (natural + doors)
     this.round = 0;
+    this.buildSeq = 0;
   }
 
   /** Round start: remove everything dynamic, rebuild doors and cover from the static map at full health. */
@@ -21,6 +23,7 @@ export class Cover {
     for (const p of this.pieces.values()) if (p.collider) g.field.remove(p.collider);
     this.pieces.clear();
     this.gone.clear();
+    this.buildSeq = 0;
     this.round++;
     for (const d of MAP.doors) this._make(d, g.config.doorHp[d.door] ?? g.config.doorHp.default, 'plant');
     if (g.config.features.cover) for (const c of MAP.cover) this._make(c, g.config.cover[c.kind]?.hp ?? 50, null);
@@ -51,6 +54,32 @@ export class Cover {
 
   get(id) {
     return this.pieces.get(id) ?? null;
+  }
+
+  /** Standing builds of one player. */
+  buildsOf(playerId) {
+    let n = 0;
+    for (const p of this.pieces.values()) if (p.build && p.build.by === playerId && p.state === 'alive') n++;
+    return n;
+  }
+
+  /** A player's build goes up (placement was validated by build.js). `chk` carries the ground range under it. */
+  addBuild(def, owner, gx, gz, rot, chk) {
+    const g = this.game;
+    const f = footprint(def, rot);
+    const id = `b${++this.buildSeq}`;
+    const collider = { id, kind: def.id, s: 'box', minX: gx, maxX: gx + f.w, minZ: gz, maxZ: gz + f.d, y0: Math.round((chk.lo - 0.3) * 100) / 100, y1: Math.round((chk.hi + def.h) * 100) / 100, style: def.id, _piece: null };
+    const piece = {
+      id, kind: def.id, def: collider, team: owner.team, hp: def.hp, maxHp: def.hp, state: 'alive', collider,
+      x: gx + f.w / 2, z: gz + f.d / 2, y0: collider.y0, y1: collider.y1, step: 0,
+      build: { kind: def.id, x: gx, z: gz, rot, by: owner.id },
+    };
+    collider._piece = piece;
+    g.field.add(collider);
+    this.pieces.set(id, piece);
+    g.emit('build', { id, kind: def.id, x: gx, z: gz, rot, by: owner.id, hp: def.hp, maxHp: def.hp });
+    // anybody standing right where it appears is nudged out (placement already refuses fighters, this catches projectiles' owners etc.)
+    return piece;
   }
 
   alive(id) {

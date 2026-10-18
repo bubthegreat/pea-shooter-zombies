@@ -5,6 +5,7 @@ import { terrainHeight } from './terrain.js';
 import { createField, STEP, MAX_SLOPE } from './collide.js';
 import { Cover } from './cover.js';
 import { createFridge, stepFridge } from './fridge.js';
+import { tryBuild, buildList } from './build.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
@@ -20,9 +21,10 @@ export const MODES = new Set(['coop', 'versus']);
 export const DIFFICULTIES = new Set(['easy', 'normal']);
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
-const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy'];
+const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains'];
 const MAX_PENDING_EVENTS = 500;
 const MAX_PLANT_QUEUE = 4; // plant presses buffered between ticks
+const MAX_BUILD_QUEUE = 4; // build presses buffered between ticks
 
 export function neutralInput() {
   return { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, drop: false, upgrade: false, plant: 0 };
@@ -201,6 +203,9 @@ export class Game {
       item: null, // garage equipment currently held (see equipment.js)
       plantQueue: [], // pending planting attempts (plantOrder index + 1)
       plantSeqSeen: 0, // highest client plantSeq applied
+      buildQueue: [], // pending build attempts { kind, gx, gz, rot }
+      buildSeqSeen: 0, // highest client buildSeq applied
+      brains: team === 'zombie' ? c.brains.start : undefined, // zombie kids' currency for forts
     };
   }
 
@@ -242,7 +247,10 @@ export class Game {
 
   clearInput(e) {
     e.input = neutralInput();
-    if (e.kind === 'player') e.plantQueue.length = 0;
+    if (e.kind === 'player') {
+      e.plantQueue.length = 0;
+      e.buildQueue.length = 0;
+    }
     e.usePressed = false;
     e.dropPressed = false;
     e.upgradePressed = false;
@@ -284,6 +292,7 @@ export class Game {
     p.weapon = weaponFor(p.team, 0).id;
     p.cooldown = 0;
     p.sunshine = p.team === 'plant' ? this.config.startSunshine : undefined;
+    p.brains = p.team === 'zombie' ? this.config.brains.start : undefined;
     this.clearInput(p);
     this.respawn(p);
   }
@@ -333,6 +342,16 @@ export class Game {
         this._queuePlant(e, raw.plant);
       }
       inp.plant = raw.plant;
+    }
+    // Building: build = 1-based index into the team's list (0 = none), bx / bz = grid cell of the footprint's min corner, br = rotated.
+    // Every press carries a higher buildSeq, like planting.
+    if (Number.isInteger(raw.build) && raw.build >= 0 && raw.build <= 8 && Number.isSafeInteger(raw.buildSeq) && raw.buildSeq >= 0) {
+      if (raw.buildSeq > e.buildSeqSeen) {
+        e.buildSeqSeen = raw.buildSeq;
+        if (raw.build !== 0 && Number.isInteger(raw.bx) && Number.isInteger(raw.bz) && e.buildQueue.length < MAX_BUILD_QUEUE) {
+          e.buildQueue.push({ kind: raw.build, gx: raw.bx, gz: raw.bz, rot: raw.br ? 1 : 0 });
+        }
+      }
     }
     if (typeof raw.yaw === 'number' && Number.isFinite(raw.yaw)) e.yaw = wrapAngle(raw.yaw);
     if (typeof raw.pitch === 'number' && Number.isFinite(raw.pitch)) {
@@ -411,7 +430,34 @@ export class Game {
         e.plantQueue.length = 0;
       }
       if (e.upgradePressed && this.phase === 'playing') tryUpgrade(this, e);
+      if (e.buildQueue?.length) {
+        for (const q of e.buildQueue) if (this.phase === 'playing') tryBuild(this, e, q.kind, q.gx, q.gz, q.rot);
+        e.buildQueue.length = 0;
+      }
     }
+  }
+
+  /** Zombie kids earn brains for hitting plant-side things (at most once per `gap` s per target). */
+  awardBrains(attacker, targetId, amount = this.config.brains.perHit, throttle = true) {
+    if (!attacker || attacker.kind !== 'player' || attacker.team !== 'zombie' || attacker.brains === undefined) return;
+    const b = this.config.brains;
+    if (throttle) {
+      const seen = (attacker.brainAt ??= new Map());
+      if ((seen.get(targetId) ?? -Infinity) > this.time - b.gap) return;
+      seen.set(targetId, this.time);
+      if (seen.size > 200) seen.clear();
+    }
+    attacker.brains = Math.min(b.max, attacker.brains + amount);
+  }
+
+  /** A door or build took a hit (cover.js): zombie kids earn brains from plant-owned pieces. */
+  onPieceHit(piece, amount, attacker) {
+    if (piece.team === 'plant') this.awardBrains(attacker, piece.id);
+  }
+
+  /** The build list a player picks from. */
+  buildListFor(p) {
+    return buildList(this.config, p.team);
   }
 
   _stepWeapon(e, dt) {

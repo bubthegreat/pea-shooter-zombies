@@ -205,6 +205,7 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
     return false; // the mower shields its driver completely
   }
   target.hp -= amount;
+  if (attacker && target.team === 'plant' && target.kind !== 'mower') game.awardBrains(attacker, target.id);
   const hit = {
     id: target.id,
     by: attacker?.id ?? null,
@@ -283,6 +284,7 @@ function wiltPlantFighter(game, target, attacker, head = false) {
 }
 
 function destroyGardenPlant(game, target, attacker) {
+  game.awardBrains(attacker, target.id, game.config.brains.perTurret, false);
   game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, plantKind: target.plantKind, ...feedInfo(attacker, target) });
   game.removeEntity(target);
   creditKill(game, attacker);
