@@ -41,10 +41,15 @@ export const DEFAULT_CONFIG = {
   projectileLife: 2, // seconds
   projectileStep: 0.4, // max meters moved per collision substep (prevents tunneling)
   muzzleForward: 0.6, // projectiles spawn this far in front of the eye
-  projectileRadius: { pea: 0.12, spike: 0.12, housepea: 0.3, bullet: 0.15 },
+  projectileRadius: {
+    pea: 0.12, snow: 0.14, spike: 0.12, melon: 0.3, housepea: 0.3, // plant shots: small and quick
+    bullet: 0.28, slime: 0.28, bone: 0.25, sludge: 0.25, brain: 0.45, // zombie shots: big and slow
+  },
+  headshotMultiplier: 3, // damage multiplier for hits on the head zone of players and bots
+  headHeight: 0.4, // top slice (m) of the body that counts as the head
 
   // Upgrades
-  tierThresholds: [0, 3, 7, 12], // cumulative kills needed for tier 0..3
+  tierThresholds: [0, 2, 4, 7, 10, 14, 18, 23], // cumulative kills needed for tier 0..7
   streakBonus: 10, // kills in a row without being hurt => jump one extra tier
 
   // Garden plants (stationary turrets) and sunshine
@@ -92,8 +97,8 @@ export const DEFAULT_CONFIG = {
   // Bots. aimError = random cone half-angle (rad); fireScale scales the weapon fire rate;
   // reaction = seconds before a freshly spotted target is shot at; waveBase + wave number = wave size.
   difficulties: {
-    easy: { aimError: 0.15, fireScale: 0.5, reaction: 0.8, waveBase: 2 },
-    normal: { aimError: 0.07, fireScale: 0.8, reaction: 0.4, waveBase: 3 },
+    easy: { aimError: 0.15, fireScale: 0.28, reaction: 0.8, waveBase: 2 },
+    normal: { aimError: 0.07, fireScale: 0.45, reaction: 0.4, waveBase: 3 },
   },
   zombieBotSpeed: 3,
   botThinkInterval: 0.25,
@@ -168,8 +173,10 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     mowerUseRange: c.mowerUseRange,
     mowerSpeed: c.mowerSpeed,
     mowerKillRadius: c.mowerKillRadius,
-    // Projectile visuals/collision
+    // Projectile visuals/collision, headshots
     projectileRadius: c.projectileRadius,
+    headshotMultiplier: c.headshotMultiplier,
+    headHeight: c.headHeight,
     // World layout (bounds, gate, house, garage, mowerHome, plantSpawn, solids) and garden slots
     world: WORLD,
     gardenSlots: gardenSlots(),

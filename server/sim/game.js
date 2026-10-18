@@ -221,6 +221,8 @@ export class Game {
     p.hp = p.maxHp;
     p.state = 'alive';
     p.timer = 0;
+    p.slowTimer = 0;
+    p.slowFactor = 1;
     p.plantQueue.length = 0;
     p.yaw = p.team === 'plant' ? 0 : Math.PI; // plants face the gate (-z), zombies face the house (+z)
     p.pitch = 0;
@@ -317,6 +319,13 @@ export class Game {
   _stepActors(dt) {
     for (const e of [...this.entities.values()]) {
       if (e.kind !== 'player' && e.kind !== 'bot') continue;
+      if (e.slowTimer > 0) {
+        e.slowTimer -= dt;
+        if (e.slowTimer <= 0) {
+          e.slowTimer = 0;
+          e.slowFactor = 1;
+        }
+      }
       if (e.state === 'wilted' || e.state === 'sprout') {
         e.timer -= dt;
         if (e.timer <= 0 && e.kind === 'player') this.respawn(e);
@@ -352,9 +361,12 @@ export class Game {
 
   moveSpeedFor(e) {
     const c = this.config;
-    if (this.isDriving(e)) return c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
-    if (e.kind === 'bot') return e.team === 'zombie' ? c.zombieBotSpeed : c.gardener.speed;
-    return c.moveSpeed;
+    let speed;
+    if (this.isDriving(e)) speed = c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
+    else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed : c.gardener.speed;
+    else speed = c.moveSpeed;
+    if (e.slowTimer > 0) speed *= e.slowFactor ?? 0.5;
+    return speed;
   }
 
   _moveActor(e, dt) {
@@ -418,6 +430,7 @@ export class Game {
     if (e.pitch !== undefined) o.pitch = round(e.pitch, 3);
     for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = f === 'progress' ? round(e[f], 3) : e[f];
     if (e.state === 'wilted' || e.state === 'sprout') o.respawnIn = round(Math.max(0, e.timer), 1);
+    if (e.slowTimer > 0) o.slowed = true;
     return o;
   }
 

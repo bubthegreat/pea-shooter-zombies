@@ -166,7 +166,7 @@ test('a mower pass can clear a whole row', () => {
   run(game, 6);
   assert.equal(game.gardenCount(), 0);
   assert.equal(z.progress, 9);
-  assert.equal(z.tier, 2, "mowing earns upgrades (9 kills)");
+  assert.equal(z.tier, 3, "mowing earns upgrades (9 kills)");
 });
 
 test('plants are only mowed while driving', () => {
