@@ -4,6 +4,7 @@ import { WORLD, insideSolid } from './world.js';
 import { getWeapon } from './weapons.js';
 import { recordHurt, recordKill } from './upgrades.js';
 import { spawnSun } from './garden.js';
+import { destroyMower } from './mower.js';
 
 /**
  * Create a projectile entity. `dir` is a unit vector. Optional: gravity (m/s^2), splash (blast radius m),
@@ -73,8 +74,10 @@ export function fireWeapon(game, shooter) {
   return w.pellets;
 }
 
-function isTargetable(e) {
-  return e.state === 'alive' && (e.kind === 'player' || e.kind === 'bot' || e.kind === 'garden');
+/** Living things shots can hit. A mower with a driver in it is the target instead of the driver. */
+function isTargetable(game, e) {
+  if (e.kind === 'mower') return e.state === 'driving' || e.state === 'starting';
+  return e.state === 'alive' && (e.kind === 'player' || e.kind === 'bot' || e.kind === 'garden') && !game.isDriving(e);
 }
 
 function projectileHits(p, t) {
@@ -94,7 +97,7 @@ export function stepProjectiles(game, dt) {
   const targets = [];
   for (const e of game.entities.values()) {
     if (e.kind === 'projectile') projectiles.push(e);
-    else if (isTargetable(e)) targets.push(e);
+    else if (isTargetable(game, e)) targets.push(e);
   }
   for (const p of projectiles) {
     const steps = Math.max(1, Math.ceil((p.speed * dt) / c.projectileStep));
@@ -117,7 +120,7 @@ export function stepProjectiles(game, dt) {
         break;
       }
       for (const t of targets) {
-        if (t.team === p.team || t.state !== 'alive' || !projectileHits(p, t)) continue;
+        if (t.team === p.team || !isTargetable(game, t) || !projectileHits(p, t)) continue;
         const owner = game.entities.get(p.owner) ?? null;
         if (p.splash) {
           explode(game, p);
@@ -150,7 +153,7 @@ function explode(game, p) {
   const owner = game.entities.get(p.owner) ?? null;
   game.emit('explode', { x: p.x, y: p.y, z: p.z, radius: p.splash, projKind: p.projKind, team: p.team });
   for (const t of [...game.entities.values()]) {
-    if (!isTargetable(t) || t.team === p.team || t.state !== 'alive') continue;
+    if (!isTargetable(game, t) || t.team === p.team || (t.kind !== 'mower' && t.state !== 'alive')) continue;
     const y0 = t.y + t.radius;
     const y1 = Math.max(y0, t.y + t.height - t.radius);
     const d = Math.max(0, distPointSegment(p.x, p.y, p.z, t.x, y0, t.z, t.x, y1, t.z) - t.radius);
@@ -162,8 +165,12 @@ function explode(game, p) {
 
 /** Damage a living target. Handles conversion / wilting when hp reaches 0. Returns true if damage landed. */
 export function applyDamage(game, target, amount, attacker, { head = false } = {}) {
-  if (!target || target.state !== 'alive' || !(amount > 0)) return false;
-  if (game.isDriving(target)) amount *= game.config.mowerDamageScale; // the mower shields its driver
+  if (!target || !(amount > 0)) return false;
+  if (target.kind === 'mower') {
+    if (target.state !== 'driving' && target.state !== 'starting') return false;
+  } else if (target.state !== 'alive' || game.isDriving(target)) {
+    return false; // the mower shields its driver completely
+  }
   target.hp -= amount;
   const hit = {
     id: target.id,
@@ -179,7 +186,8 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
   recordHurt(target);
   if (target.hp > 0) return true;
   target.hp = 0;
-  if (target.kind === 'garden') destroyGardenPlant(game, target, attacker);
+  if (target.kind === 'mower') destroyMower(game, attacker);
+  else if (target.kind === 'garden') destroyGardenPlant(game, target, attacker);
   else if (target.team === 'zombie') convertZombie(game, target, attacker);
   else wiltPlantFighter(game, target, attacker);
   return true;

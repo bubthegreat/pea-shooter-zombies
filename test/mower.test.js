@@ -180,15 +180,16 @@ test('plants are only mowed while driving', () => {
   assert.equal(game.entities.has(plant.id), true, 'idle mower does nothing');
 });
 
-test('driver converted -> mower idle at current spot, free for another zombie', () => {
+test('driver out of action -> mower idle at current spot, free for another zombie', () => {
   const { game, z, mower } = setup();
   startDriving(game, z, mower);
   game.handleInput('z', { keys: keys({ f: true }), yaw: 0 });
   run(game, 1);
   game.handleInput('z', { keys: keys() });
   const spot = { x: z.x, z: z.z };
-  applyDamage(game, z, 99, null);
-  assert.equal(z.state, 'sprout');
+  assert.equal(applyDamage(game, z, 99, null), false, 'a driver cannot be converted...');
+  z.state = 'sprout'; // ...but if the driver is out for any other reason the mower is freed
+  z.timer = 5;
   game.tick(1 / 30);
   assert.equal(mower.state, 'idle');
   assert.equal(mower.driver, null);
@@ -295,7 +296,124 @@ test('the mower snapshot names its driver (or null)', () => {
   run(game, 3.3);
   assert.equal(mower.state, 'driving');
   assert.equal(snapMower().driver, 'z');
-  applyDamage(game, z, 99, null);
+  z.state = 'sprout';
+  z.timer = 5;
   game.tick(1 / 30);
   assert.equal(snapMower().driver, null);
+});
+
+// ---- mower HP (the driver is protected; the mower takes the hits) ----------------
+
+function drivingSetup() {
+  const { game, z, mower } = setup();
+  startDriving(game, z, mower);
+  return { game, z, mower };
+}
+
+test('the mower has its own HP in the snapshot', () => {
+  const { game, mower } = setup();
+  assert.equal(DEFAULT_CONFIG.mowerHp, 40);
+  assert.equal(mower.hp, 40);
+  const snap = game.snapshot().entities.find((e) => e.kind === 'mower');
+  assert.equal(snap.hp, 40);
+  assert.equal(snap.maxHp, 40);
+  assert.equal(DEFAULT_CONFIG.mowerDamageScale, undefined, 'the old driver damage scaling is gone');
+});
+
+test('the driver takes no damage at all while driving', () => {
+  const { game, z } = drivingSetup();
+  assert.equal(applyDamage(game, z, 50, null), false);
+  assert.equal(z.hp, z.maxHp);
+  assert.equal(z.state, 'alive');
+  assert.equal(game.drainEvents().filter((e) => e.type === 'hit' && e.id === 'z').length, 0);
+});
+
+test('plant shots hit the mower, not the driver', () => {
+  const { game, z, mower } = drivingSetup();
+  const p = game.addPlayer('p', { team: 'plant' });
+  p.x = z.x;
+  p.z = z.z - 8;
+  p.yaw = Math.PI; // facing +z, toward the mower
+  p.pitch = -0.05;
+  game.handleInput('p', { fire: true, yaw: Math.PI, pitch: -0.05 });
+  run(game, 1);
+  game.handleInput('p', { fire: false });
+  assert.ok(mower.hp < mower.maxHp, `mower hp ${mower.hp}`);
+  assert.equal(z.hp, z.maxHp, 'driver untouched');
+  const hits = game.drainEvents().filter((e) => e.type === 'hit');
+  assert.ok(hits.length > 0 && hits.every((e) => e.id === 'mower'));
+});
+
+test('an idle mower is not a target', () => {
+  const { game, mower } = setup();
+  assert.equal(mower.state, 'idle');
+  const p = game.addPlayer('p', { team: 'plant' });
+  p.x = mower.x;
+  p.z = mower.z - 6;
+  game.handleInput('p', { fire: true, yaw: Math.PI, pitch: -0.1 });
+  run(game, 1);
+  assert.equal(mower.hp, mower.maxHp);
+});
+
+test('at 0 HP the mower sputters out: driver ejected unhurt, wreck respawns at the garage after 20 s', () => {
+  const { game, z, mower } = drivingSetup();
+  game.handleInput('z', { keys: keys({ f: true }), yaw: 0 });
+  run(game, 1);
+  game.handleInput('z', { keys: keys() });
+  const spot = { x: z.x, z: z.z };
+  const p = game.addPlayer('p', { team: 'plant' });
+  game.drainEvents();
+  applyDamage(game, mower, 39, p);
+  assert.equal(mower.state, 'driving');
+  assert.equal(mower.hp, 1);
+  applyDamage(game, mower, 5, p);
+  assert.equal(mower.state, 'destroyed');
+  assert.equal(mower.driver, null);
+  assert.equal(game.isDriving(z), false);
+  assert.equal(z.state, 'alive');
+  assert.equal(z.hp, z.maxHp);
+  assert.ok(Math.hypot(z.x - spot.x, z.z - spot.z) < 0.01, 'driver stays where the mower died');
+  const ev = game.drainEvents().find((e) => e.type === 'mower_destroyed');
+  assert.ok(ev && Math.hypot(ev.x - spot.x, ev.z - spot.z) < 1 && ev.by === 'p');
+  assert.equal(p.progress, 1, 'wrecking it counts as a kill');
+  const snap = game.snapshot().entities.find((e) => e.kind === 'mower');
+  assert.equal(snap.state, 'destroyed');
+  assert.ok(snap.respawnIn > 19 && snap.respawnIn <= 20);
+  assert.equal(snap.driver, null);
+  // while wrecked: cannot be started, shot, or mow
+  z.x = HOME.x;
+  z.z = HOME.z - 1.5;
+  game.handleInput('z', { use: true });
+  run(game, 4);
+  assert.equal(mower.state, 'destroyed');
+  game.handleInput('z', { use: false });
+  run(game, 14);
+  assert.equal(mower.state, 'destroyed', 'still broken at ~19 s');
+  run(game, 2);
+  assert.equal(mower.state, 'idle');
+  assert.equal(mower.hp, mower.maxHp);
+  assert.equal(mower.x, HOME.x);
+  assert.equal(mower.z, HOME.z);
+  assert.ok(game.drainEvents().some((e) => e.type === 'mower_respawn'));
+  // and it can be started again
+  game.handleInput('z', { use: true });
+  game.tick(1 / 30);
+  assert.equal(mower.state, 'starting');
+});
+
+test('a wrecked mower does not shield anyone and the old driver can be hurt again', () => {
+  const { game, z, mower } = drivingSetup();
+  applyDamage(game, mower, 999, null);
+  assert.equal(mower.state, 'destroyed');
+  assert.equal(applyDamage(game, z, 1, null), true);
+  assert.ok(z.hp < z.maxHp);
+});
+
+test('the mower resets to full HP on a new round', () => {
+  const { game, mower } = drivingSetup();
+  applyDamage(game, mower, 10, null);
+  assert.equal(mower.hp, 30);
+  game.startRound();
+  assert.equal(game.mower.hp, 40);
+  assert.equal(game.mower.state, 'idle');
 });

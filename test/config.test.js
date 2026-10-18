@@ -25,20 +25,6 @@ test('publicConfig is plain JSON with everything the client needs', () => {
   assert.ok(!('features' in cfg) && !('difficulties' in cfg), 'server tuning stays private');
 });
 
-test('the mower shields its driver', () => {
-  const game = makeGame();
-  const z = game.addPlayer('z', { team: 'zombie', mode: 'coop' });
-  game.mower.state = 'driving';
-  game.mower.driver = 'z';
-  applyDamage(game, z, 1, null);
-  assert.ok(Math.abs(z.hp - (DEFAULT_CONFIG.zombieHp - DEFAULT_CONFIG.mowerDamageScale)) < 1e-9);
-  assert.equal(z.state, 'alive');
-  game.mower.state = 'idle';
-  game.mower.driver = null;
-  applyDamage(game, z, 1, null);
-  assert.ok(z.hp < DEFAULT_CONFIG.zombieHp - 1);
-});
-
 test('converted bots never pile up: each one poofs into a sun pickup and nothing walks away', () => {
   const game = makeGame();
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });

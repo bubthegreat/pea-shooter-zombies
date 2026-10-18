@@ -84,7 +84,10 @@ export const DEFAULT_CONFIG = {
   mowerSpeed: 7, // m/s for the zombie riding it
   mowerKillRadius: 1.5, // garden plants this close to a driving mower are mowed
   botMowerSpeedScale: 0.6, // bots drive slower than kids
-  mowerDamageScale: 0.25, // the driver takes this share of incoming damage
+  mowerHp: 40, // the mower's own HP; the driver inside takes no damage at all
+  mowerRespawn: 20, // seconds a wrecked mower stays broken before reappearing at the garage
+  mowerRadius: 0.9, // hit volume of a started mower (covers the driver)
+  mowerHeight: 1.9,
 
   // Rounds, waves and win rules
   roundLength: 480,

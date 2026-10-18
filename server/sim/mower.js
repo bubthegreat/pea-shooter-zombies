@@ -5,6 +5,7 @@ import { creditKill } from './combat.js';
 
 export function createMower(game) {
   const h = WORLD.mowerHome;
+  const c = game.config;
   const m = {
     id: 'mower',
     kind: 'mower',
@@ -13,11 +14,14 @@ export function createMower(game) {
     y: h.y,
     z: h.z,
     yaw: 0, // garage door faces -z
-    hp: 1,
-    maxHp: 1,
-    state: 'idle',
+    hp: c.mowerHp,
+    maxHp: c.mowerHp,
+    radius: c.mowerRadius,
+    height: c.mowerHeight,
+    state: 'idle', // idle | starting | driving | destroyed
     progress: 0, // 0..1 while starting
     driver: null,
+    timer: 0, // seconds until a wrecked mower respawns
   };
   game.entities.set(m.id, m);
   game.mower = m;
@@ -34,11 +38,45 @@ function release(m) {
   m.progress = 0;
 }
 
-/** idle -> starting (3 s) -> driving. Losing the driver (or a fresh press of use) leaves the mower idle where it is. */
+/**
+ * The mower ran out of HP: it sputters out where it stands (the driver, unhurt, is simply on foot again) and
+ * a fresh one appears in the garage after mowerRespawn seconds.
+ */
+export function destroyMower(game, attacker) {
+  const m = game.mower;
+  const c = game.config;
+  game.emit('mower_destroyed', { x: m.x, y: m.y, z: m.z, by: attacker?.id ?? null });
+  creditKill(game, attacker);
+  m.state = 'destroyed';
+  m.driver = null;
+  m.progress = 0;
+  m.hp = 0;
+  m.timer = c.mowerRespawn;
+  const h = WORLD.mowerHome; // the wreck is hidden: park it at home until it respawns
+  m.x = h.x;
+  m.y = h.y;
+  m.z = h.z;
+}
+
+/**
+ * idle -> starting (3 s) -> driving. Losing the driver (or a fresh press of use) leaves the mower idle where it is.
+ * At 0 HP it is destroyed and comes back after a while.
+ */
 export function stepMower(game, dt) {
   const m = game.mower;
   if (!m) return;
   const c = game.config;
+
+  if (m.state === 'destroyed') {
+    m.timer -= dt;
+    if (m.timer <= 0) {
+      m.state = 'idle';
+      m.hp = m.maxHp;
+      m.timer = 0;
+      game.emit('mower_respawn', { x: m.x, y: m.y, z: m.z });
+    }
+    return;
+  }
 
   if (m.state === 'idle') {
     let best = null;

@@ -429,7 +429,7 @@ export class Game {
     };
     if (e.pitch !== undefined) o.pitch = round(e.pitch, 3);
     for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = f === 'progress' ? round(e[f], 3) : e[f];
-    if (e.state === 'wilted' || e.state === 'sprout') o.respawnIn = round(Math.max(0, e.timer), 1);
+    if (e.state === 'wilted' || e.state === 'sprout' || e.state === 'destroyed') o.respawnIn = round(Math.max(0, e.timer), 1);
     if (e.slowTimer > 0) o.slowed = true;
     return o;
   }
