@@ -80,7 +80,7 @@ export const DEFAULT_CONFIG = {
   startSunshine: 200,
   sunPerConversion: 25,
   sunValue: 25,
-  sunDropInterval: 3.5,
+  sunDropInterval: 3,
   sunLifetime: 30,
   sunPickupRadius: 1.5,
   sunFallSpeed: 4,
