@@ -446,7 +446,7 @@ function gardenerBrain(game, b, ai, ctx, dt) {
     ai.slotIdx = -1;
     let best = Infinity;
     game.slots.forEach((s, i) => {
-      if (s.plantId || !(b.sunshine >= c.plantTypes[s.kind].cost)) return;
+      if (s.plantId || s.disabled || s.pot || !(b.sunshine >= c.plantTypes[s.kind].cost)) return; // (pots are for the smart Gardener)
       const d = dist2D(gc.rest.x, gc.rest.z, s.x, s.z);
       if (d < best) {
         best = d;

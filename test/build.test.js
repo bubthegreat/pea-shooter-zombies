@@ -34,7 +34,7 @@ const pieces = (game) => [...game.cover.pieces.values()].filter((x) => x.build);
 const fails = (game) => game.drainEvents().filter((e) => e.type === 'buildFail').map((e) => e.reason);
 
 test('config: plant builds cost sunshine, zombie builds cost brains, 12 per player', () => {
-  assert.deepEqual(B.plant.map((b) => b.id), ['hedgewall', 'fence']);
+  assert.deepEqual(B.plant.map((b) => b.id), ['hedgewall', 'fence', 'pot']);
   assert.deepEqual(B.zombie.map((b) => b.id), ['tombwall', 'junk', 'cantower']);
   assert.equal(B.maxPerPlayer, 12);
   assert.ok(B.plant[0].cost < B.plant[1].cost && B.plant[0].hp < B.plant[1].hp, 'hedge: cheap and weak');

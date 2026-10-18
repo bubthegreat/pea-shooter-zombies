@@ -286,7 +286,7 @@ function wiltPlantFighter(game, target, attacker, head = false) {
   creditKill(game, attacker);
 }
 
-function destroyGardenPlant(game, target, attacker) {
+export function destroyGardenPlant(game, target, attacker) {
   game.awardBrains(attacker, target.id, game.config.brains.perTurret, false);
   game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, plantKind: target.plantKind, ...feedInfo(attacker, target) });
   game.removeEntity(target);

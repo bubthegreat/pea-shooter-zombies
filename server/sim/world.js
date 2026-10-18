@@ -65,6 +65,13 @@ export const WORLD = {
     { id: 'front', half: 1.7, pts: [[0, -49], [3, -34], [5, -18], [5, 3]] },
   ],
   plotRect: 1.8, // plots reach this far past the outermost slots
+  // Door repair piles, INSIDE next to each door: plants hold E here to mend that door (server/sim/repair.js).
+  repair: [
+    { door: 'front', x: 3.0, z: 7.3 },
+    { door: 'side', x: -12.9, z: 12.9 },
+    { door: 'back', x: 3.0, z: 22.7 },
+    { door: 'garage', x: 18.9, z: 18.3 },
+  ],
 };
 
 function tangent(d) {

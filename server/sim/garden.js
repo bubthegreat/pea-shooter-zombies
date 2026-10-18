@@ -1,7 +1,7 @@
 // The garden: slots, planting, auto-firing turrets, and falling sunshine.
 import { WORLD, gardenSlots, inRect } from './world.js';
 import { terrainHeight } from './terrain.js';
-import { spawnProjectile } from './combat.js';
+import { spawnProjectile, destroyGardenPlant } from './combat.js';
 import { dist2D, forwardVec } from './vec.js';
 
 /** Fresh, empty slot list: [{x, z, kind, plantId}]. */
@@ -37,7 +37,7 @@ export function upgradeCost(c, kind, level = 1) {
 export function plantAt(game, idx, kind) {
   const c = game.config;
   const slot = game.slots[idx];
-  if (!slot || slot.plantId) return null;
+  if (!slot || slot.plantId || slot.disabled) return null;
   kind = kind ?? slot.kind;
   const type = c.plantTypes[kind];
   if (!type) return null;
@@ -50,7 +50,7 @@ export function plantAt(game, idx, kind) {
     label: type.name ?? kind, // kill-feed name (not sent in snapshots)
     level: 1,
     x: slot.x,
-    y: terrainHeight(slot.x, slot.z),
+    y: slot.y ?? terrainHeight(slot.x, slot.z), // a potted plant stands up on the pot's soil
     z: slot.z,
     yaw: 0,
     pitch: 0,
@@ -62,10 +62,34 @@ export function plantAt(game, idx, kind) {
     slot: idx,
     cooldown: type.rate ? (game.rng() / type.rate) * 2 : 0, // desynchronize turrets
   };
-  if (type.blocks) e.blocks = true;
+  if (type.blocks && !slot.pot) e.blocks = true; // (a pot is solid already)
   slot.plantId = e.id;
   game.entities.set(e.id, e);
   return e;
+}
+
+/**
+ * A pot (build piece) went up: it becomes a garden slot at the end of game.slots (a slot freed by a broken pot is reused, so
+ * the list stays as long as the most pots ever standing at once). Returns the slot index.
+ */
+export function addPotSlot(game, piece, floor) {
+  const slot = { x: piece.x, z: piece.z, y: Math.round((floor + game.config.pots.sit) * 100) / 100, kind: 'peashooter', plot: -1, door: null, row: -1, col: -1, pot: piece.id, plantId: null };
+  let i = game.slots.findIndex((s) => s.disabled);
+  if (i < 0) i = game.slots.length;
+  game.slots[i] = slot;
+  return i;
+}
+
+/** The pot broke: whatever grows in it is destroyed with it, and its slot goes out of use (until a new pot takes it over). */
+export function potGone(game, piece, attacker = null) {
+  const i = game.slots.findIndex((s) => s.pot === piece.id);
+  if (i < 0) return;
+  const slot = game.slots[i];
+  const plant = slot.plantId ? game.entities.get(slot.plantId) : null;
+  slot.disabled = true;
+  slot.pot = null;
+  if (plant && plant.state === 'alive') destroyGardenPlant(game, plant, attacker);
+  slot.plantId = null;
 }
 
 /** Pre-plant every other column (0 and 2) of every row of every plot. Skips occupied slots. */
@@ -91,7 +115,7 @@ export function tryPlant(game, player, kind, only = -1) {
   let best = -1;
   let bestDist = Infinity;
   game.slots.forEach((s, i) => {
-    if (s.plantId || (only >= 0 && i !== only)) return;
+    if (s.plantId || s.disabled || (only >= 0 && i !== only)) return;
     const d = dist2D(player.x, player.z, s.x, s.z);
     if (d <= c.plantRange && d < bestDist) {
       best = i;

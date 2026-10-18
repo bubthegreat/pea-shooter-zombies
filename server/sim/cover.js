@@ -56,10 +56,14 @@ export class Cover {
     return this.pieces.get(id) ?? null;
   }
 
-  /** Standing builds of one player. */
-  buildsOf(playerId) {
+  /** Standing builds of one player: all of them, or only the 'pot's / only the 'fort's (everything else). */
+  buildsOf(playerId, which = null) {
     let n = 0;
-    for (const p of this.pieces.values()) if (p.build && p.build.by === playerId && p.state === 'alive') n++;
+    for (const p of this.pieces.values()) {
+      if (!p.build || p.build.by !== playerId || p.state !== 'alive') continue;
+      if (which === 'pot' ? p.build.kind !== 'pot' : which === 'fort' && p.build.kind === 'pot') continue;
+      n++;
+    }
     return n;
   }
 
@@ -124,7 +128,7 @@ export class Cover {
     g.field.remove(piece.collider);
     if (piece.build) {
       this.pieces.delete(piece.id);
-      g.onBuildGone?.(piece);
+      g.onBuildGone?.(piece, attacker);
     } else this.gone.add(piece.id);
     g.emit('coverBreak', { id: piece.id, kind: piece.kind, x: Math.round(piece.x * 100) / 100, y: piece.y0, z: Math.round(piece.z * 100) / 100, by: attacker?.id ?? null });
     g.onPieceBroken?.(piece, attacker);

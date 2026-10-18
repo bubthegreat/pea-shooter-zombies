@@ -4,6 +4,7 @@ import { PLANT_LADDER, ZOMBIE_LADDER } from './weapons.js';
 import { planWaves } from './rules.js';
 import { MAP } from './map.js';
 import { terrainConfig } from './terrain.js';
+import { potRules } from './pots.js';
 
 export const DEFAULT_CONFIG = {
   tickRate: 30,
@@ -214,6 +215,8 @@ export const DEFAULT_CONFIG = {
     plant: [
       { id: 'hedgewall', name: 'Hedge Wall', cost: 25, w: 3, d: 1, h: 1.8, hp: 60 },
       { id: 'fence', name: 'Wooden Fence', cost: 45, w: 3, d: 1, h: 1.6, hp: 150 },
+      // A flower pot: a garden slot on the house's interior floor (rules: pots.js; cap: config.pots.max, apart from the fort cap).
+      { id: 'pot', name: 'Flower Pot', cost: 25, w: 1, d: 1, h: 0.7, hp: 90, pot: true },
     ],
     zombie: [
       { id: 'tombwall', name: 'Tombstone Wall', cost: 25, w: 3, d: 1, h: 1.5, hp: 140 },
@@ -221,6 +224,10 @@ export const DEFAULT_CONFIG = {
       { id: 'cantower', name: 'Trash-can Tower', cost: 15, w: 1, d: 1, h: 2.6, hp: 90 },
     ],
   },
+  // Flower pots (plant kids and the Gardener; a build kind, see builds.plant). max = pots standing per player; spacing = least
+  // distance between two pot centres; laneClear / fridgeClear / pileClear = clear radius round the bots' walkways, the fridge
+  // spot and the repair piles; inset = how far inside a room's walls a pot stands; sit = how high a potted plant stands above the floor.
+  pots: { max: 10, spacing: 2.2, laneClear: 1.5, fridgeClear: 1.7, pileClear: 1.3, inset: 0.6, sit: 0.55 },
   // Brains (zombie kids): +perHit for hitting a plant, door or plant structure (at most once per `gap` s per target), +perTurret for destroying a turret.
   brains: { start: 10, perHit: 5, perTurret: 10, gap: 0.5, max: 150 },
   // Bots: how far from a door they stand and shoot at it, how long they must be stuck before they act.
@@ -296,6 +303,8 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     plantLevels: c.plantLevels,
     plantRange: c.plantRange,
     builds: c.builds,
+    pots: c.pots,
+    potRules: potRules(c), // where a pot may stand (shapes + numbers), for the ghost preview
     brains: c.brains,
     startSunshine: c.startSunshine,
     headStart: c.headStart,

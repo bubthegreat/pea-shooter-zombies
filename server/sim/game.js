@@ -10,7 +10,7 @@ import { spawnParts, stepParts, partsMask, dropCarried } from './parts.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
-import { emptySlots, initGarden, stepGarden, stepSun, tryPlant, tryUpgrade } from './garden.js';
+import { emptySlots, initGarden, stepGarden, stepSun, tryPlant, tryUpgrade, potGone } from './garden.js';
 import { createMower, stepMower } from './mower.js';
 import { createRack, stepEquipment } from './equipment.js';
 import { planWaves, stepRules } from './rules.js';
@@ -471,6 +471,11 @@ export class Game {
   /** A door or build took a hit (cover.js): zombie kids earn brains from plant-owned pieces. */
   onPieceHit(piece, amount, attacker) {
     if (piece.team === 'plant') this.awardBrains(attacker, piece.id);
+  }
+
+  /** A build piece was destroyed (cover.js): a pot takes its plant with it. */
+  onBuildGone(piece, attacker) {
+    if (piece.build?.kind === 'pot') potGone(this, piece, attacker);
   }
 
   /** The build list a player picks from. */
