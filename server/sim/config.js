@@ -28,10 +28,23 @@ export const DEFAULT_CONFIG = {
   pitchLimit: 1.5,
   zombieHp: 5,
   plantHp: 100, // plant players and plant bots
+  wiltRespawn: 4, // plant fighter respawn delay (s)
+  sproutTime: 5, // converted zombie player digs back up after this (s)
   nameMaxLength: 16,
   defaultName: 'Player',
   defaultMode: 'coop',
   defaultDifficulty: 'normal',
+
+  // Projectiles
+  projectileLife: 2, // seconds
+  projectileStep: 0.4, // max meters moved per collision substep (prevents tunneling)
+  muzzleForward: 0.6, // projectiles spawn this far in front of the eye
+  projectileRadius: { pea: 0.12, spike: 0.12, housepea: 0.3, bullet: 0.15 },
+
+  // Garden plants (stationary turrets)
+  gardenPlantHp: 60,
+  gardenPlantRadius: 0.6,
+  gardenPlantHeight: 1.2,
 };
 
 /** Config subset sent to clients in the welcome message. */

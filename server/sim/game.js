@@ -2,6 +2,8 @@
 import { DEFAULT_CONFIG } from './config.js';
 import { WORLD, clampToWorld } from './world.js';
 import { clamp, round, wrapAngle } from './vec.js';
+import { getWeapon, weaponFor } from './weapons.js';
+import { fireWeapon, stepProjectiles } from './combat.js';
 
 const TEAMS = new Set(['plant', 'zombie']);
 const MODES = new Set(['coop', 'versus']);
@@ -125,8 +127,49 @@ export class Game {
       radius: c.playerRadius,
       height: c.playerHeight,
       timer: 0,
+      cooldown: 0,
+      weapon: weaponFor(team, 0).id,
       input: neutralInput(),
     };
+  }
+
+  /** A walking bot. Bots are driven by writing e.input (see bots.js). */
+  spawnBot(team, x, z) {
+    const c = this.config;
+    const hp = team === 'plant' ? c.plantHp : c.zombieHp;
+    const e = {
+      id: this.newId('b'),
+      kind: 'bot',
+      team,
+      x,
+      y: 0,
+      z,
+      yaw: team === 'plant' ? 0 : Math.PI,
+      pitch: 0,
+      vy: 0,
+      hp,
+      maxHp: hp,
+      state: 'alive',
+      weapon: weaponFor(team, 0).id,
+      radius: c.playerRadius,
+      height: c.playerHeight,
+      timer: 0,
+      cooldown: 0,
+      input: neutralInput(),
+      ai: null,
+    };
+    this.entities.set(e.id, e);
+    return e;
+  }
+
+  removeEntity(e) {
+    e.state = 'dead';
+    this.entities.delete(e.id);
+  }
+
+  clearInput(e) {
+    e.input = neutralInput();
+    e.plantPending = 0;
   }
 
   /** Spawn point for a team; zombies appear along the gate. */
@@ -155,7 +198,9 @@ export class Game {
     p.tier = 0;
     p.progress = 0;
     p.streak = 0;
-    p.input = neutralInput();
+    p.weapon = weaponFor(p.team, 0).id;
+    p.cooldown = 0;
+    this.clearInput(p);
     this.respawn(p);
   }
 
@@ -199,12 +244,33 @@ export class Game {
     if (this.phase === 'lobby') return;
     if (this.phase === 'playing') this.roundTime += dt;
     this._stepActors(dt);
+    if (this.phase === 'playing') stepProjectiles(this, dt);
   }
 
   _stepActors(dt) {
     for (const e of [...this.entities.values()]) {
       if (e.kind !== 'player' && e.kind !== 'bot') continue;
-      if (e.state === 'alive') this._moveActor(e, dt);
+      if (e.state === 'wilted' || e.state === 'sprout') {
+        e.timer -= dt;
+        if (e.timer <= 0 && e.kind === 'player') this.respawn(e);
+        continue;
+      }
+      if (e.state !== 'alive') continue;
+      this._moveActor(e, dt);
+      this._stepWeapon(e, dt);
+    }
+  }
+
+  _stepWeapon(e, dt) {
+    const w = getWeapon(e.weapon);
+    e.cooldown -= dt;
+    if (!w || !e.input.fire || this.phase !== 'playing') {
+      if (e.cooldown < 0) e.cooldown = 0;
+      return;
+    }
+    if (e.cooldown <= 0) {
+      fireWeapon(this, e);
+      e.cooldown += 1 / (w.rate * (e.fireScale ?? 1));
     }
   }
 
