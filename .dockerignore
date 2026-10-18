@@ -1,0 +1,7 @@
+.git
+.github
+k8s
+docs
+test
+node_modules
+scripts

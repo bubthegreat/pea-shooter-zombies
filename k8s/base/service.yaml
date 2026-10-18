@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pea-shooter
+  labels: {app: pea-shooter}
+spec:
+  type: ClusterIP
+  selector: {app: pea-shooter}
+  ports:
+    - {name: http, port: 80, targetPort: 8080}
