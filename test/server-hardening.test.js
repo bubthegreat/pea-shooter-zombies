@@ -126,7 +126,7 @@ test('at most 8 concurrent sockets per address (X-Forwarded-For); other addresse
   await withServer({}, async (srv, open) => {
     const mine = [];
     for (let i = 0; i < MAX_SOCKETS_PER_IP; i++) mine.push(await open(xff('203.0.113.1')));
-    const extra = await open(xff('203.0.113.1, 10.0.0.9'));
+    const extra = await open(xff('6.6.6.6, 203.0.113.1'));
     await until(() => extra.closed, 1500);
     assert.ok(mine.every((w) => !w.closed));
     const other = await open(xff('203.0.113.2'));
