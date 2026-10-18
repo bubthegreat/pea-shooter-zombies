@@ -124,7 +124,7 @@ test('converting zombies through combat counts as kills', () => {
   for (let i = 0; i < 3; i++) {
     const z = game.spawnBot('zombie', WORLD.plantSpawn.x, WORLD.plantSpawn.z - 10);
     applyDamage(game, z, 5, a);
-    assert.equal(z.team, 'plant');
+    assert.equal(game.entities.has(z.id), false);
   }
   assert.equal(a.progress, 3);
   assert.equal(a.tier, 1);

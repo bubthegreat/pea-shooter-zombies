@@ -2,21 +2,16 @@
 // (keys, fire, use) and the normal movement/weapon code does the rest. Steering is simple:
 // walk straight at a goal, detouring through the garage door when the mower is involved.
 import { WORLD } from './world.js';
+import { tryPlant } from './garden.js';
 import { dist2D, rightVec, forwardVec, yawTo } from './vec.js';
 
 const isFighter = (e) => e.kind === 'player' || e.kind === 'bot';
 
-function pickPost(game) {
-  const c = game.config;
-  return { x: (game.rng() * 2 - 1) * c.guardLineHalfWidth, z: c.guardLineZ };
-}
-
-/** Create the brain for a bot that has none (new spawns and freshly converted zombies). */
+/** Create the brain for a bot that has none (new spawns). Plant-team bots other than the Gardener are inert. */
 export function ensureAI(game, bot) {
   if (bot.ai) return bot.ai;
   const c = game.config;
   const base = {
-    defender: false,
     think: game.rng() * c.botThinkInterval,
     targetId: null,
     react: 0,
@@ -28,44 +23,43 @@ export function ensureAI(game, bot) {
     bot.fireScale = game.difficultyConfig().fireScale;
     bot.ai = { ...base, role: 'zombie', goalId: null, seeksMower: game.rng() < c.mowerBotChance, strafe: 0, strafeTimer: 0 };
   } else {
-    bot.fireScale = c.plantBotFireScale;
-    bot.ai = { ...base, role: 'plant', post: pickPost(game) };
+    bot.fireScale = c.gardener.fireScale;
+    bot.ai = { ...base, role: bot.isGardener ? 'gardener' : 'inert', slotIdx: -1 };
   }
   return bot.ai;
 }
 
-export function spawnDefender(game) {
+function findGardener(game) {
+  for (const e of game.entities.values()) if (e.kind === 'bot' && e.isGardener) return e;
+  return null;
+}
+
+export function spawnGardener(game) {
+  const c = game.config;
   const spawn = WORLD.plantSpawn;
   const bot = game.spawnBot('plant', spawn.x + (game.rng() * 2 - 1) * 3, spawn.z);
-  ensureAI(game, bot).defender = true;
+  bot.isGardener = true;
+  bot.name = c.gardener.name;
+  bot.sunshine = c.gardener.startSunshine;
+  ensureAI(game, bot);
   return bot;
 }
 
-function livingDefenders(game) {
-  let n = 0;
-  for (const e of game.entities.values()) if (e.kind === 'bot' && e.team === 'plant' && e.ai?.defender) n++;
-  return n;
-}
-
-/** Keep the plant team's computer defenders topped up (when no human plays plants, and a few in versus). */
-function stepDefenders(game, dt) {
-  const c = game.config;
-  const plantHumans = game.humans().filter((h) => h.team === 'plant').length;
-  const desired = plantHumans === 0 ? c.defenderCount : game.mode === 'versus' ? c.versusDefenderCount : 0;
-  if (!game.defendersSpawned) {
-    game.defendersSpawned = true;
-    for (let i = 0; i < desired; i++) spawnDefender(game);
+/** Exactly one Gardener while no human plays plants; none otherwise. It comes back a while after it wilts. */
+function stepGardenerSpawn(game, dt) {
+  const gardener = findGardener(game);
+  const plantHumans = game.humans().some((h) => h.team === 'plant');
+  if (plantHumans) {
+    if (gardener) game.removeEntity(gardener);
+    game.gardenerTimer = 0;
+    return;
   }
-  if (game.defenderTimers.length === 0) return;
-  let due = 0;
-  game.defenderTimers = game.defenderTimers
-    .map((t) => t - dt)
-    .filter((t) => {
-      if (t > 0) return true;
-      due++;
-      return false;
-    });
-  for (let i = 0; i < due && livingDefenders(game) < desired; i++) spawnDefender(game);
+  if (gardener) return;
+  if (game.gardenerTimer > 0) {
+    game.gardenerTimer -= dt;
+    if (game.gardenerTimer > 0) return;
+  }
+  spawnGardener(game);
 }
 
 function nearest(list, x, z, maxDist) {
@@ -82,12 +76,17 @@ function nearest(list, x, z, maxDist) {
   return best;
 }
 
-/** First waypoint toward (gx, gz): the garage is only reachable through its door. */
-function route(b, gx, gz) {
+/** First waypoint toward (gx, gz): the garage is only reachable through its door, via the right-hand flank. */
+function route(game, b, gx, gz) {
   const edge = WORLD.bounds.maxZ;
   const doorX = (WORLD.garage.doorMinX + WORLD.garage.doorMaxX) / 2;
   const inGarage = b.z > edge - 0.3;
   const goalInGarage = gz > edge;
+  const flank = game.config.mowerFlank;
+  if (goalInGarage && !inGarage && flank && b.z < flank.endZ) {
+    if (b.x < flank.x - 2) return { x: flank.x, z: Math.max(b.z, flank.startZ) };
+    return { x: flank.x, z: flank.endZ };
+  }
   if (goalInGarage && !inGarage && Math.abs(b.x - doorX) > 3) return { x: doorX, z: edge - 3 };
   if (!goalInGarage && inGarage) return { x: doorX, z: edge - 3 };
   return { x: gx, z: gz };
@@ -182,7 +181,7 @@ function zombieBrain(game, b, ai, ctx, dt) {
   let dir = { x: 0, z: 0 };
   let moving = false;
   if (goal && !hold && dist2D(b.x, b.z, goal.x, goal.z) > stop) {
-    const wp = route(b, goal.x, goal.z);
+    const wp = route(game, b, goal.x, goal.z);
     dir = walkToward(b, wp.x, wp.z);
     moving = true;
   } else if (!hold && target) {
@@ -209,22 +208,35 @@ function zombieBrain(game, b, ai, ctx, dt) {
   setMoveKeys(b, dir.x, dir.z);
 }
 
-function plantBrain(game, b, ai, ctx, dt) {
+function gardenerBrain(game, b, ai, ctx, dt) {
   const c = game.config;
+  const gc = c.gardener;
   const inp = b.input;
   inp.fire = false;
   inp.use = false;
   inp.keys.jump = false;
+  b.sunshine = Math.min(gc.maxSunshine, (b.sunshine ?? 0) + gc.income * dt);
 
   ai.think -= dt;
   if (ai.think <= 0) {
     ai.think += c.botThinkInterval;
-    const t = nearest(ctx.zombieSide, b.x, b.z, c.plantBotShootRange);
+    const t = nearest(ctx.zombieSide, b.x, b.z, gc.shootRange);
     const id = t ? t.id : null;
     if (id !== ai.targetId) {
       ai.targetId = id;
-      ai.react = c.plantBotReaction;
+      ai.react = gc.reaction;
     }
+    // Nearest empty slot it can afford.
+    ai.slotIdx = -1;
+    let best = Infinity;
+    game.slots.forEach((s, i) => {
+      if (s.plantId || !(b.sunshine >= c.plantTypes[s.kind].cost)) return;
+      const d = dist2D(b.x, b.z, s.x, s.z);
+      if (d < best) {
+        best = d;
+        ai.slotIdx = i;
+      }
+    });
   }
   let target = ai.targetId ? game.entities.get(ai.targetId) : null;
   if (!target || target.state !== 'alive' || target.team !== 'zombie') {
@@ -232,21 +244,29 @@ function plantBrain(game, b, ai, ctx, dt) {
     ai.targetId = null;
   }
 
+  // Walk to the slot it wants to fill (or rest behind the garden) and plant when close enough.
+  let dest = { x: 0, z: gc.restZ };
+  const slot = ai.slotIdx >= 0 ? game.slots[ai.slotIdx] : null;
+  if (slot && !slot.plantId) {
+    dest = slot;
+    if (dist2D(b.x, b.z, slot.x, slot.z) <= gc.plantReach) {
+      tryPlant(game, b, slot.kind);
+      ai.slotIdx = -1;
+    }
+  }
   let dir = { x: 0, z: 0 };
   let moving = false;
-  if (dist2D(b.x, b.z, ai.post.x, ai.post.z) > c.mowerBotStopDistance) {
-    dir = walkToward(b, ai.post.x, ai.post.z);
+  const reach = slot ? gc.plantReach * 0.6 : 1.5;
+  if (dist2D(b.x, b.z, dest.x, dest.z) > reach) {
+    dir = walkToward(b, dest.x, dest.z);
     moving = true;
   }
   if (target) {
-    aimAt(game, b, ai, target, c.plantBotAimError, dt);
+    aimAt(game, b, ai, target, gc.aimError, dt);
     ai.react -= dt;
     inp.fire = ai.react <= 0;
   } else if (moving) {
     b.yaw = yawTo(dir.x, dir.z);
-    b.pitch = 0;
-  } else {
-    b.yaw = 0; // face the gate
     b.pitch = 0;
   }
   setMoveKeys(b, dir.x, dir.z);
@@ -254,7 +274,7 @@ function plantBrain(game, b, ai, ctx, dt) {
 
 export function stepBots(game, dt) {
   const c = game.config;
-  if (c.features.defenders) stepDefenders(game, dt);
+  if (c.features.gardener) stepGardenerSpawn(game, dt);
   if (!c.features.botAI) return;
 
   const ctx = { diff: game.difficultyConfig(), plantSide: [], zombieSide: [], gardenPlants: [] };
@@ -271,6 +291,6 @@ export function stepBots(game, dt) {
   for (const b of bots) {
     const ai = ensureAI(game, b);
     if (ai.role === 'zombie') zombieBrain(game, b, ai, ctx, dt);
-    else plantBrain(game, b, ai, ctx, dt);
+    else if (ai.role === 'gardener') gardenerBrain(game, b, ai, ctx, dt);
   }
 }

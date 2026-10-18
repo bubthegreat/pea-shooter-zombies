@@ -16,7 +16,7 @@ export const DEFAULT_CONFIG = {
     waves: true,
     botAI: true,
     sunDrops: true,
-    defenders: true,
+    gardener: true,
     winRules: true,
   },
 
@@ -96,23 +96,31 @@ export const DEFAULT_CONFIG = {
     normal: { aimError: 0.07, fireScale: 0.8, reaction: 0.4, waveBase: 3 },
   },
   zombieBotSpeed: 3,
-  plantBotSpeed: 4,
   botThinkInterval: 0.25,
   botAimRerollInterval: 0.3,
   zombieBotShootRange: 20,
   zombieBotStopDistance: 8, // zombies stop this far from the plant they are attacking
   mowerBotChance: 0.25, // share of zombie bots that go for the mower
   mowerBotStopDistance: 1.2,
-  plantBotShootRange: 30,
-  plantBotAimError: 0.15,
-  plantBotFireScale: 0.4,
-  maxConvertedBots: 8, // beyond this the longest-serving converted bots retire in a leaf poof
-  plantBotReaction: 0.3,
-  guardLineZ: -4, // plant bots hold the line here, just in front of the garden
-  guardLineHalfWidth: 18,
-  defenderCount: 4, // plant bots when no human plays plants
-  versusDefenderCount: 2, // plant bots alongside a human plant in versus
-  defenderRespawn: 8,
+  // Mower-seeking bots sneak up the right-hand flank (clear of the garden) before turning into the garage.
+  mowerFlank: { x: 28, startZ: -20, endZ: 22 },
+
+  // The Gardener: the plant team's only computer player, present only while no human plays plants.
+  // It walks the garden replanting empty slots from its own sunshine income and shoots weakly.
+  gardener: {
+    name: 'Gardener',
+    speed: 4,
+    startSunshine: 100,
+    income: 10, // sunshine per second
+    maxSunshine: 300,
+    respawn: 10, // seconds after it wilts
+    shootRange: 25,
+    aimError: 0.2,
+    fireScale: 0.25,
+    reaction: 0.6,
+    plantReach: 2.5, // walks to within this distance of a slot before planting
+    restZ: 16, // idles behind the garden
+  },
 };
 
 /** Config subset sent to clients in the welcome message (plain JSON). */

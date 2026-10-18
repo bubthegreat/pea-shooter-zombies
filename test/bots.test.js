@@ -95,35 +95,6 @@ test('easy is gentler than normal', () => {
   assert.ok(d.easy.reaction >= d.normal.reaction);
 });
 
-test('plant bots (converted zombies) walk to the guard line and shoot zombies in range', () => {
-  const game = botGame({});
-  const z = game.addPlayer('z', { team: 'zombie', mode: 'coop', difficulty: 'normal' });
-  z.x = 10;
-  z.z = -20;
-  const bot = game.spawnBot('plant', -5, 20);
-  z.hp = z.maxHp = 1e6; // keep the target standing so every hit is visible
-  run(game, 12);
-  assert.ok(Math.abs(bot.z - DEFAULT_CONFIG.guardLineZ) < 2.5, `bot parked at z=${bot.z}`);
-  run(game, 60);
-  const hits = game.events.filter((e) => e.type === 'hit' && e.id === 'z' && e.by === bot.id).length;
-  assert.ok(hits >= 1, 'plant bot hit the zombie player');
-});
-
-test('a bot converted mid-round switches to plant behavior', () => {
-  const game = botGame({});
-  const a = game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
-  const bot = game.spawnBot('zombie', 0, -30);
-  run(game, 0.5);
-  assert.equal(bot.ai.role, 'zombie');
-  combat.applyDamage(game, bot, 99, a);
-  assert.equal(bot.team, 'plant');
-  assert.equal(bot.ai, null, 'brain reset on conversion');
-  run(game, 0.5);
-  assert.equal(bot.ai.role, 'plant');
-  run(game, 20);
-  assert.ok(Math.abs(bot.z - DEFAULT_CONFIG.guardLineZ) < 2.5, `parked at z=${bot.z}`);
-});
-
 test('about 1 in 4 zombie bots go for the mower', () => {
   const game = botGame({});
   game.addPlayer('a', { team: 'plant', mode: 'coop' });
@@ -141,21 +112,36 @@ test('about 1 in 4 zombie bots go for the mower', () => {
 test('a mower-seeking bot fetches the mower and drives it into the garden', () => {
   const game = botGame({ initialGarden: true });
   game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
-  const bot = game.spawnBot('zombie', 10, 20);
+  const bot = game.spawnBot('zombie', 24, 24);
   bot.hp = bot.maxHp = 1e6;
   ensureAI(game, bot);
   bot.ai.seeksMower = true;
   const states = new Set();
-  const startPlants = game.gardenCount();
-  for (let i = 0; i < 30 * 90 && game.gardenCount() === startPlants; i++) {
+  let mowed = null;
+  for (let i = 0; i < 30 * 120 && !mowed; i++) {
     game.tick(1 / 30);
     states.add(game.mower.state);
+    mowed = game.events.find((e) => e.type === 'mow');
   }
   assert.ok(states.has('starting'), 'bot started the mower');
   assert.ok(states.has('driving'), 'bot drove the mower');
-  assert.ok(game.gardenCount() < startPlants, 'mower mowed a plant');
-  const mow = game.events.find((e) => e.type === 'mow');
-  assert.ok(mow);
+  assert.ok(mowed, 'mower mowed a plant');
+});
+
+test('mower-seeking bots take the right-hand flank, staying clear of the garden columns', () => {
+  const game = botGame({});
+  game.addPlayer('a', { team: 'plant', mode: 'coop' });
+  const bot = game.spawnBot('zombie', -10, WORLD.gate.z);
+  bot.hp = bot.maxHp = 1e6;
+  ensureAI(game, bot);
+  bot.ai.seeksMower = true;
+  let minXInYard = Infinity;
+  for (let i = 0; i < 30 * 60 && game.mower.state === 'idle'; i++) {
+    game.tick(1 / 30);
+    if (bot.z > -8 && bot.z < 28) minXInYard = Math.min(minXInYard, bot.x);
+  }
+  assert.ok(minXInYard > 22, `walked up the flank, x >= ${minXInYard}`);
+  assert.notEqual(game.mower.state, 'idle', 'it reached the mower');
 });
 
 test('a bot that loses the race for the mower gives up on it', () => {
@@ -171,47 +157,8 @@ test('a bot that loses the race for the mower gives up on it', () => {
   assert.equal(bot.ai.seeksMower, false);
 });
 
-test('defenders: 4 plant bots appear when no human plays plants, and respawn after 8 s', () => {
-  const game = botGame({ defenders: true });
-  game.addPlayer('z', { team: 'zombie', mode: 'coop' });
-  run(game, 0.2);
-  let defenders = entitiesOfKind(game, 'bot').filter((b) => b.team === 'plant');
-  assert.equal(defenders.length, 4);
-  for (const d of defenders) {
-    assert.equal(d.hp, DEFAULT_CONFIG.plantHp);
-    assert.ok(d.ai.defender);
-  }
-  run(game, 12);
-  for (const d of defenders) assert.ok(Math.abs(d.z - DEFAULT_CONFIG.guardLineZ) < 3, `defender z=${d.z}`);
-  combat.applyDamage(game, defenders[0], 1000, game.entities.get('z'));
-  assert.equal(entitiesOfKind(game, 'bot').filter((b) => b.team === 'plant').length, 3);
-  run(game, 7.5);
-  assert.equal(entitiesOfKind(game, 'bot').filter((b) => b.team === 'plant').length, 3);
-  run(game, 1);
-  defenders = entitiesOfKind(game, 'bot').filter((b) => b.team === 'plant');
-  assert.equal(defenders.length, 4);
-});
-
-test('defender count follows mode and whether a human plays plants', () => {
-  const coopPlant = botGame({ defenders: true });
-  coopPlant.addPlayer('a', { team: 'plant', mode: 'coop' });
-  run(coopPlant, 0.2);
-  assert.equal(entitiesOfKind(coopPlant, 'bot').length, 0);
-
-  const versus = botGame({ defenders: true });
-  versus.addPlayer('a', { team: 'plant', mode: 'versus' });
-  versus.addPlayer('z', { team: 'zombie' });
-  run(versus, 0.2);
-  assert.equal(entitiesOfKind(versus, 'bot').filter((b) => b.team === 'plant').length, DEFAULT_CONFIG.versusDefenderCount);
-
-  const off = botGame({ defenders: false });
-  off.addPlayer('z', { team: 'zombie', mode: 'coop' });
-  run(off, 0.2);
-  assert.equal(entitiesOfKind(off, 'bot').length, 0);
-});
-
 test('bots survive degenerate situations (no garden, no targets, everything dead)', () => {
-  const game = botGame({ defenders: true });
+  const game = botGame({ gardener: true });
   game.addPlayer('a', { team: 'plant', mode: 'coop' });
   game.spawnBot('zombie', 0, -40);
   game.spawnBot('plant', 0, 0);

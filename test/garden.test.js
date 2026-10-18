@@ -351,12 +351,19 @@ test('sun drops every 8 s in the yard and expires after 30 s; none without a pla
   assert.equal(entitiesOfKind(zgame, 'sun').length, 0);
 });
 
-test('converting a zombie gives the plant attacker +25 sunshine', () => {
+test('converting a zombie human gives the plant attacker +25 sunshine; a bot drops a 25 sun pickup instead', () => {
   const game = makeGame();
   const a = game.addPlayer('a', { team: 'plant', mode: 'versus' });
   const z = game.addPlayer('z', { team: 'zombie' });
+  a.x = 20; // out of pickup reach of the bot's spot
+  a.z = 20;
   const bot = game.spawnBot('zombie', 0, 0);
   applyDamage(game, bot, 99, a);
+  assert.equal(a.sunshine, DEFAULT_CONFIG.startSunshine, 'not paid directly');
+  assert.equal(entitiesOfKind(game, 'sun').length, 1);
+  a.x = 0;
+  a.z = 0;
+  game.tick(1 / 30);
   assert.equal(a.sunshine, DEFAULT_CONFIG.startSunshine + 25);
   applyDamage(game, z, 99, a);
   assert.equal(z.state, 'sprout');

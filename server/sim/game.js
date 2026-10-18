@@ -52,8 +52,7 @@ export class Game {
     this.waveIndex = 0;
     this.finalWaveSpawned = false;
     this.endTimer = 0;
-    this.defenderTimers = [];
-    this.defendersSpawned = false;
+    this.gardenerTimer = 0;
   }
 
   difficultyConfig() {
@@ -97,8 +96,7 @@ export class Game {
     this.waveIndex = 0;
     this.finalWaveSpawned = false;
     this.endTimer = 0;
-    this.defenderTimers = [];
-    this.defendersSpawned = false;
+    this.gardenerTimer = 0;
     createMower(this);
     if (this.config.features.initialGarden) initGarden(this);
     for (const p of this.humans()) this._resetPlayer(p);
@@ -355,7 +353,7 @@ export class Game {
   moveSpeedFor(e) {
     const c = this.config;
     if (this.isDriving(e)) return c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
-    if (e.kind === 'bot') return e.team === 'zombie' ? c.zombieBotSpeed : c.plantBotSpeed;
+    if (e.kind === 'bot') return e.team === 'zombie' ? c.zombieBotSpeed : c.gardener.speed;
     return c.moveSpeed;
   }
 

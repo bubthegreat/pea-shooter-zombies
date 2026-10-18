@@ -52,7 +52,8 @@ export function initGarden(game) {
 export function tryPlant(game, player, kind) {
   const c = game.config;
   const type = c.plantTypes[kind];
-  if (!type || !player || player.kind !== 'player' || player.team !== 'plant') return null;
+  if (!type || !player || player.team !== 'plant') return null;
+  if (player.kind !== 'player' && !player.isGardener) return null;
   if (player.state !== 'alive' || game.phase !== 'playing') return null;
   if (!(player.sunshine >= type.cost)) return null;
   let best = -1;

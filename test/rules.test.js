@@ -201,7 +201,7 @@ test('ended restarts after 10 s with tiers reset', () => {
 });
 
 test('win rules are inert in the lobby and the game survives an empty tick loop', () => {
-  const game = makeGame({ features: { winRules: true, waves: true, botAI: true, defenders: true } });
+  const game = makeGame({ features: { winRules: true, waves: true, botAI: true, gardener: true } });
   assert.doesNotThrow(() => run(game, 5));
   assert.equal(game.phase, 'lobby');
 });

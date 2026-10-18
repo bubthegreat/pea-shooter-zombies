@@ -18,7 +18,7 @@ export const NO_FEATURES = {
   waves: false,
   botAI: false,
   sunDrops: false,
-  defenders: false,
+  gardener: false,
   winRules: false,
 };
 

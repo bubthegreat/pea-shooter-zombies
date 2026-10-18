@@ -42,7 +42,7 @@ test('zombie bot converts after 5 pea hits', () => {
   const { game, zombie } = setup();
   game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
   assert.equal(zombie.hp, DEFAULT_CONFIG.zombieHp);
-  const converted = ticksUntil(game, () => zombie.team === 'plant');
+  const converted = ticksUntil(game, () => !game.entities.has(zombie.id));
   assert.ok(converted, 'zombie converted');
   const events = game.drainEvents();
   assert.equal(hitsOn(events, zombie.id), 5);
@@ -50,10 +50,9 @@ test('zombie bot converts after 5 pea hits', () => {
   assert.ok(ev, 'convert event emitted');
   assert.equal(ev.id, zombie.id);
   assert.equal(ev.by, 'a');
-  assert.equal(zombie.kind, 'bot');
-  assert.equal(zombie.state, 'alive');
-  assert.equal(zombie.hp, DEFAULT_CONFIG.plantHp);
-  assert.equal(game.entities.get(zombie.id), zombie, 'same entity id continues as a plant bot');
+  assert.equal(ev.human, false);
+  assert.equal(entitiesOfKind(game, 'bot').length, 0, 'no plant soldier takes its place');
+  assert.equal(entitiesOfKind(game, 'sun').length, 1, 'it leaves a sunshine pickup');
 });
 
 test('house gun converts in one hit', () => {
@@ -62,7 +61,7 @@ test('house gun converts in one hit', () => {
   game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
   game.tick(1 / 30);
   game.handleInput('a', { fire: false });
-  assert.ok(ticksUntil(game, () => zombie.team === 'plant', 2));
+  assert.ok(ticksUntil(game, () => !game.entities.has(zombie.id), 2));
   const events = game.drainEvents();
   assert.equal(hitsOn(events, zombie.id), 1);
   assert.equal(events.filter((e) => e.type === 'convert').length, 1);

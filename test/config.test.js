@@ -39,22 +39,17 @@ test('the mower shields its driver', () => {
   assert.ok(z.hp < DEFAULT_CONFIG.zombieHp - 1);
 });
 
-test('only maxConvertedBots converted bots stay; the longest-serving retire with a leaf poof', () => {
-  const game = makeGame({ maxConvertedBots: 3 });
+test('converted bots never pile up: each one poofs into a sun pickup and nothing walks away', () => {
+  const game = makeGame();
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  const bots = [];
-  for (let i = 0; i < 5; i++) {
-    const b = game.spawnBot('zombie', i, 0);
-    game.tick(1 / 30);
+  for (let i = 0; i < 8; i++) {
+    const b = game.spawnBot('zombie', i - 4, 0);
     applyDamage(game, b, 99, a);
-    bots.push(b);
   }
-  const alive = bots.filter((b) => game.entities.has(b.id));
-  assert.equal(alive.length, 3);
-  assert.deepEqual(alive.map((b) => b.id), bots.slice(2).map((b) => b.id));
-  const retired = game.drainEvents().filter((e) => e.type === 'wilt' && e.retired);
-  assert.deepEqual(retired.map((e) => e.id), bots.slice(0, 2).map((b) => b.id));
-  assert.equal(a.progress, 5, 'retiring does not undo kills');
+  assert.equal([...game.entities.values()].filter((e) => e.kind === 'bot').length, 0);
+  assert.equal([...game.entities.values()].filter((e) => e.kind === 'sun').length, 8);
+  assert.equal(game.drainEvents().filter((e) => e.type === 'wilt' && e.retired).length, 0);
+  assert.equal(a.progress, 8);
 });
 
 test('turrets aim where a moving target was a moment ago', () => {

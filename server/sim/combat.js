@@ -1,8 +1,9 @@
 // Projectiles, damage, conversion (zombies -> plants) and wilting (plants).
 import { distPointSegment, forwardVec } from './vec.js';
 import { WORLD, insideSolid } from './world.js';
-import { getWeapon, weaponFor } from './weapons.js';
+import { getWeapon } from './weapons.js';
 import { recordHurt, recordKill } from './upgrades.js';
+import { spawnSun } from './garden.js';
 
 /** Create a projectile entity. `dir` is a unit vector. */
 export function spawnProjectile(game, { team, owner, projKind, damage, speed, x, y, z, dir }) {
@@ -142,30 +143,12 @@ function convertZombie(game, target, attacker) {
     target.state = 'sprout';
     target.timer = c.sproutTime;
     game.clearInput(target);
+    creditKill(game, attacker, c.sunPerConversion);
   } else {
-    // A converted bot joins the plant team for good as a walking plant bot.
-    target.team = 'plant';
-    target.maxHp = c.plantHp;
-    target.hp = c.plantHp;
-    target.weapon = weaponFor('plant', 0).id;
-    target.cooldown = 0;
-    target.ai = null;
-    target.convertedAt = game.time;
-    game.clearInput(target);
-    retireOldConvertedBots(game);
-  }
-  creditKill(game, attacker, c.sunPerConversion);
-}
-
-/** Too many walking plants clutter the yard: the longest-serving converted bots retire in a leaf poof. */
-function retireOldConvertedBots(game) {
-  const converted = [];
-  for (const e of game.entities.values()) if (e.kind === 'bot' && e.team === 'plant' && e.convertedAt !== undefined) converted.push(e);
-  converted.sort((a, b) => a.convertedAt - b.convertedAt);
-  while (converted.length > game.config.maxConvertedBots) {
-    const old = converted.shift();
-    game.emit('wilt', { id: old.id, x: old.x, y: old.y, z: old.z, by: null, retired: true });
-    game.removeEntity(old);
+    // A converted bot bursts into a flower poof and leaves a sunshine pickup behind.
+    game.removeEntity(target);
+    spawnSun(game, target.x, target.z, { landed: true });
+    creditKill(game, attacker);
   }
 }
 
@@ -179,7 +162,7 @@ function wiltPlantFighter(game, target, attacker) {
   } else {
     target.state = 'dead';
     game.entities.delete(target.id);
-    if (target.ai?.defender) game.defenderTimers.push(c.defenderRespawn);
+    if (target.isGardener) game.gardenerTimer = c.gardener.respawn;
   }
   creditKill(game, attacker);
 }
