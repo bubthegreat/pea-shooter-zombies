@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import {
   toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo,
 } from './models.js';
+import { tagAlpha } from './tags.js';
 
 const PI = Math.PI;
 const lerp = (a, b, k) => a + (b - a) * k;
@@ -947,30 +948,53 @@ const barFillMats = {
   plant: new THREE.MeshBasicMaterial({ color: 0x6be04f, depthWrite: false }),
   zombie: new THREE.MeshBasicMaterial({ color: 0xb36bff, depthWrite: false }),
 };
-const nameCache = new Map();
-function nameSprite(name, team) {
-  const key = name + '|' + team;
-  let mat = nameCache.get(key);
-  if (!mat) {
-    const cv = document.createElement('canvas');
-    cv.width = 256; cv.height = 64;
-    const g = cv.getContext('2d');
-    g.fillStyle = 'rgba(20,20,40,0.55)';
-    g.beginPath(); g.roundRect(4, 6, 248, 52, 26); g.fill();
-    g.lineWidth = 4;
-    g.strokeStyle = team === 'plant' ? '#7ee040' : '#b57bff';
-    g.stroke();
-    g.fillStyle = '#fff';
-    g.font = 'bold 30px "Comic Sans MS","Chalkboard SE","Trebuchet MS",sans-serif';
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(name.slice(0, 16), 128, 34);
-    const tex = new THREE.CanvasTexture(cv);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false });
-    nameCache.set(key, mat);
+// Name-tag textures, drawn once per (team, name) and shared. Bounded: names can change mid-game, so old ones are dropped.
+const nameTex = new Map(); // insertion order = least recently used first
+const NAME_TEX_MAX = 120;
+const TAG_COLORS = {
+  plant: { fill: 'rgba(14,58,22,0.82)', stroke: '#7ee040' },
+  zombie: { fill: 'rgba(52,22,86,0.82)', stroke: '#c08bff' },
+};
+function nameTexture(name, team) {
+  const t = team === 'zombie' ? 'zombie' : 'plant';
+  const key = t + '|' + name;
+  let tex = nameTex.get(key);
+  if (tex) {
+    nameTex.delete(key);
+    nameTex.set(key, tex);
+    return tex;
   }
-  return mat;
+  const col = TAG_COLORS[t];
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 64;
+  const g = cv.getContext('2d');
+  g.fillStyle = col.fill;
+  g.beginPath(); g.roundRect(4, 6, 248, 52, 26); g.fill();
+  g.lineWidth = 5;
+  g.strokeStyle = col.stroke;
+  g.stroke();
+  const text = [...name].slice(0, 16).join('');
+  let size = 32;
+  const font = (px) => `bold ${px}px "Comic Sans MS","Chalkboard SE","Trebuchet MS",sans-serif`;
+  g.font = font(size);
+  while (size > 14 && g.measureText(text).width > 216) g.font = font((size -= 2)); // long names shrink to fit the pill
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.lineJoin = 'round';
+  g.lineWidth = 6;
+  g.strokeStyle = 'rgba(0,0,0,0.6)';
+  g.strokeText(text, 128, 35);
+  g.fillStyle = '#fff';
+  g.fillText(text, 128, 35);
+  tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  nameTex.set(key, tex);
+  if (nameTex.size > NAME_TEX_MAX) {
+    const [oldKey, old] = nameTex.entries().next().value;
+    nameTex.delete(oldKey);
+    old.dispose();
+  }
+  return tex;
 }
 
 function easeOutBack(t) {
@@ -1049,6 +1073,7 @@ export class EntityLayer {
     this.scene.remove(rec.root);
     rec.root.traverse((o) => { if (o.isMesh && o.geometry.userData.baked) o.geometry.dispose(); });
     if (rec.tag) this.scene.remove(rec.tag);
+    if (rec.tagMat) rec.tagMat.dispose();
     this.recs.delete(id);
     if (!silent) this.removed.push(rec);
   }
@@ -1163,8 +1188,10 @@ export class EntityLayer {
       fill.scale.set(1.0 * f, 0.09, 1);
       fill.position.x = -0.5 * (1 - f);
     }
+    const alpha = tagAlpha(dist);
     if (hasName && !rec.tagName) {
-      const sp = new THREE.Sprite(nameSprite(label, e.team));
+      rec.tagMat = new THREE.SpriteMaterial({ map: nameTexture(label, e.team), transparent: true, depthWrite: false });
+      const sp = new THREE.Sprite(rec.tagMat);
       sp.scale.set(2.2, 0.55, 1);
       sp.position.y = 0.45;
       sp.renderOrder = 12;
@@ -1172,11 +1199,13 @@ export class EntityLayer {
       rec.tagName = sp;
       rec.tagLabel = label;
     } else if (hasName && rec.tagLabel !== label) {
-      rec.tagName.material = nameSprite(label, e.team);
+      rec.tagMat.map = nameTexture(label, e.team);
+      rec.tagMat.needsUpdate = true;
       rec.tagLabel = label;
     }
     if (rec.tagName) {
-      rec.tagName.visible = hasName;
+      rec.tagMat.opacity = alpha;
+      rec.tagName.visible = hasName && alpha > 0.03;
       rec.tagName.position.y = hurt ? 0.5 : 0.1;
     }
   }

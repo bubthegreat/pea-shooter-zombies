@@ -61,6 +61,7 @@
 
   <div id="banner"><div id="bannertitle"></div><div id="bannersub"></div></div>
   <div id="toast"></div>
+  <div id="killfeed" aria-live="off"></div>
 
   <div id="downoverlay" class="hidden">
     <div id="downtitle"></div>
@@ -136,7 +137,12 @@
 <!-- ============ look settings (lobby + in-game) ============ -->
 <div id="settings" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingstitle">
   <div class="card settings-card">
-    <h2 id="settingstitle">&#9881;&#65039; Look settings</h2>
+    <h2 id="settingstitle">&#9881;&#65039; Settings</h2>
+
+    <div class="setrow namerow">
+      <div class="setname">Your name<span class="setds">Floats over your head and shows in the kill list</span></div>
+      <input type="text" id="set-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Type your name" aria-label="Your name">
+    </div>
 
     <div class="setrow">
       <div class="setname">Invert look up/down<span class="setds">Move the mouse up to look down</span></div>

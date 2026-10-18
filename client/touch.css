@@ -91,10 +91,19 @@ html.touch #weaponname { font-size: 16px; }
 html.touch #pips, html.touch #upgtext { display: none; }
 html.touch #upgtrack { height: 11px; border-width: 2px; margin-top: 2px; }
 html.touch #itemhp { height: 16px; margin: 2px 0; border-width: 2px; }
+html.touch #itemhptext { font-size: 12px; line-height: 12px; }
+html.touch #mowerfill { transition: width 0.2s; }
 html.touch #streak { font-size: 13px; margin-top: 1px; }
 html.touch #toast { bottom: 30%; left: 16%; right: 16%; font-size: 20px; }
 html.touch #banner { top: 12%; }
 html.touch #headshot { top: calc(50% - 90px); }
+html.touch #killfeed { top: 60px; right: 160px; width: min(280px, 32vw); gap: 3px; }
+html.touch .kf { padding: 1px 9px 2px; font-size: 13px; border-width: 2px; border-radius: 11px; }
+@media (max-height: 360px) {
+  html.touch #killfeed { right: 150px; width: min(280px, 36vw); }
+  html.touch .kf { font-size: 12px; }
+  html.touch .kf:nth-last-child(n+3) { display: none; } /* tiny screens: only the two newest lines */
+}
 
 /* the seed cards are the plant buttons */
 html.touch #seedcards { bottom: 8px; gap: 10px; pointer-events: auto; z-index: 4; }
@@ -120,6 +129,7 @@ html.touch #lobby {
 }
 html.touch #settings { touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) 8px max(8px, env(safe-area-inset-left)); }
 html.touch .field input { font-size: 22px; padding: 10px 14px; }
+html.touch .namerow input { flex-basis: 100%; font-size: 22px; padding: 8px 12px; }
 html.touch .choice { min-height: 44px; }
 html.touch #lobbyopt kbd { display: none; }
 html.touch #lobbyopt { padding: 8px 18px 9px; font-size: 16px; }

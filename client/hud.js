@@ -1,6 +1,9 @@
 // DOM heads-up display. Everything is driven from the latest snapshot's own entity.
 import { weaponInfo, itemInfo } from './models.js';
 
+const FEED_MAX = 5;
+const FEED_LIFE_MS = 6000;
+const HEAD_ICON = String.fromCodePoint(0x1f3af);
 const DEFAULT_TIERS = [0, 2, 4, 7, 10, 14, 18, 23];
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +28,7 @@ export class HUD {
       headshot: $('headshot'), frost: $('frost'),
       streakBox: $('streak'), streak: $('streaknum'),
       banner: $('banner'), bannerTitle: $('bannertitle'), bannerSub: $('bannersub'),
-      toast: $('toast'), down: $('downoverlay'), downTitle: $('downtitle'), downCount: $('downcount'), downSub: $('downsub'),
+      feed: $('killfeed'), toast: $('toast'), down: $('downoverlay'), downTitle: $('downtitle'), downCount: $('downcount'), downSub: $('downsub'),
       help: $('help'), pause: $('pausehint'), mute: $('mutebtn'),
       end: $('endscreen'), endTitle: $('endtitle'), endSub: $('endsub'), endCount: $('endcount'), endChange: $('endchange'),
       vignette: $('vignette'), hitmark: $('hitmark'),
@@ -62,7 +65,35 @@ export class HUD {
     this.el.end.classList.add('hidden');
     this.el.down.classList.add('hidden');
     this.el.help.classList.remove('hide', 'fade');
+    this.clearFeed();
   }
+
+  /** One kill-feed line ({ parts: [{ text, team? }], head }), newest at the bottom. Text goes in via textContent only. */
+  feed(line) {
+    if (!line || !Array.isArray(line.parts)) return;
+    const box = this.el.feed;
+    const row = document.createElement('div');
+    row.className = line.head ? 'kf head' : 'kf';
+    for (const p of line.parts) {
+      const s = document.createElement(p.team ? 'b' : 'span');
+      if (p.team) s.className = p.team;
+      s.textContent = p.text;
+      row.appendChild(s);
+    }
+    if (line.head) {
+      const h = document.createElement('i');
+      h.className = 'kf-head';
+      h.textContent = HEAD_ICON;
+      h.title = 'Headshot';
+      row.appendChild(h);
+    }
+    box.appendChild(row);
+    while (box.children.length > FEED_MAX) box.removeChild(box.firstChild);
+    setTimeout(() => row.classList.add('out'), FEED_LIFE_MS);
+    setTimeout(() => row.remove(), FEED_LIFE_MS + 600);
+  }
+
+  clearFeed() { this.el.feed.textContent = ''; }
 
   toggleHelp() {
     this.helpHidden = !this.helpHidden;

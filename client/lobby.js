@@ -1,7 +1,7 @@
 // Landing screen: name, team, mode, difficulty and a big Play! button.
 const $ = (id) => document.getElementById(id);
 
-const NAMES = ['Sunny', 'Sprout', 'Zippy', 'Pickle', 'Bean', 'Daisy', 'Waffles', 'Turbo', 'Mango', 'Pip'];
+import { profile } from './profile.js';
 
 function store(get, key, val) {
   try {
@@ -23,8 +23,9 @@ export class Lobby {
       mode: store(true, 'bb-mode') === 'versus' ? 'versus' : 'coop',
       diff: store(true, 'bb-diff') === 'normal' ? 'normal' : 'easy',
     };
-    const savedName = store(true, 'bb-name');
-    this.nameEl.value = savedName || NAMES[(Math.random() * NAMES.length) | 0];
+    this.nameEl.value = profile.name;
+    this.nameEl.addEventListener('change', () => { this.nameEl.value = profile.set(this.nameEl.value); });
+    profile.subscribe((n) => { if (document.activeElement !== this.nameEl) this.nameEl.value = n; });
 
     const bind = (rowId, attr, key) => {
       const row = $(rowId);
@@ -53,8 +54,8 @@ export class Lobby {
   }
 
   _play() {
-    const name = (this.nameEl.value || '').trim().slice(0, 16) || 'Player';
-    store(false, 'bb-name', name);
+    const name = profile.set(this.nameEl.value);
+    this.nameEl.value = name;
     store(false, 'bb-team', this.choice.team);
     store(false, 'bb-mode', this.choice.mode);
     store(false, 'bb-diff', this.choice.diff);

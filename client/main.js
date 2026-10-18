@@ -9,6 +9,8 @@ import { Sound } from './audio.js';
 import { HUD } from './hud.js';
 import { Lobby } from './lobby.js';
 import { Options } from './options.js';
+import { profile } from './profile.js';
+import { feedLine } from './feed.js';
 import { TouchControls, isTouch } from './touch.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -352,6 +354,7 @@ input.onToggleMute = toggleMute;
 input.onToggleHelp = () => hud.toggleHelp();
 input.onPlantKey = (n) => onPlantKey(n);
 
+profile.subscribe((name) => { if (S.joined) net.send({ t: 'setName', name }); }); // renamed from the settings panel mid-game
 const options = new Options();
 options.onOpen = () => input.setMenuOpen(true);
 options.onClose = (relock) => {
@@ -416,6 +419,8 @@ function recPos(id) {
 }
 
 function runEvent(ev) {
+  const line = feedLine(ev);
+  if (line) hud.feed(line);
   const x = num(ev.x, NaN), z = num(ev.z, NaN);
   const have = Number.isFinite(x) && Number.isFinite(z);
   const y = num(ev.y, 0);

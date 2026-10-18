@@ -1,6 +1,7 @@
-// Look-settings panel. Opens from the lobby, from the gear button in the HUD, or with the O key
+// Settings panel (your name + look settings). Opens from the lobby, from the gear button in the HUD, or with the O key
 // (also while the mouse is free in a round). Every change applies and saves immediately.
 import { settings, SENS_MIN, SENS_MAX, SENS_STEP } from './settings.js';
+import { profile } from './profile.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -11,6 +12,7 @@ export class Options {
     this.invX = $('set-invx');
     this.sens = $('set-sens');
     this.sensVal = $('set-sensval');
+    this.nameEl = $('set-name');
     this.onOpen = null; // () => void
     this.onClose = null; // (relock: boolean) => void
 
@@ -21,6 +23,11 @@ export class Options {
     this.invY.addEventListener('click', () => settings.set({ invertY: !settings.values.invertY }));
     this.invX.addEventListener('click', () => settings.set({ invertX: !settings.values.invertX }));
     this.sens.addEventListener('input', () => settings.set({ sens: parseFloat(this.sens.value) }));
+    this.nameEl.addEventListener('change', () => this._commitName());
+    this.nameEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { this._commitName(); this.nameEl.blur(); }
+    });
+    profile.subscribe(() => this._renderName());
     $('set-reset').addEventListener('click', () => settings.reset());
     $('set-done').addEventListener('click', () => this.close());
     this.root.addEventListener('click', (e) => { if (e.target === this.root) this.close(); });
@@ -52,15 +59,27 @@ export class Options {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     this.root.classList.remove('hidden');
     this._render();
+    this._renderName(true);
     if (this.onOpen) this.onOpen();
     $('set-done').focus();
   }
 
   close(relock = true) {
     if (!this.isOpen) return;
+    this._commitName();
     this.root.classList.add('hidden');
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     if (this.onClose) this.onClose(relock);
+  }
+
+  _commitName() {
+    const v = this.nameEl.value;
+    if (v.trim() === '') this.nameEl.value = profile.name; // empty box: keep the old name
+    else this.nameEl.value = profile.set(v);
+  }
+
+  _renderName(force = false) {
+    if (force || document.activeElement !== this.nameEl) this.nameEl.value = profile.name;
   }
 
   _render() {
