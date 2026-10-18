@@ -5,6 +5,9 @@ import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
 import { emptySlots, initGarden, stepGarden, stepSun, tryPlant } from './garden.js';
+import { createMower, stepMower } from './mower.js';
+import { planWaves, stepRules } from './rules.js';
+import { stepBots } from './bots.js';
 
 const TEAMS = new Set(['plant', 'zombie']);
 const MODES = new Set(['coop', 'versus']);
@@ -43,6 +46,18 @@ export class Game {
     this.roundTime = 0;
     this.wave = 0;
     this.slots = emptySlots();
+    this.mower = null;
+    this.waveTimes = [];
+    this.waveIndex = 0;
+    this.finalWaveSpawned = false;
+    this.endTimer = 0;
+    this.defenderTimers = [];
+    this.defendersSpawned = false;
+  }
+
+  difficultyConfig() {
+    const d = this.config.difficulties;
+    return d[this.difficulty] ?? d[this.config.defaultDifficulty];
   }
 
   humans() {
@@ -77,6 +92,13 @@ export class Game {
     this.wave = 0;
     this.slots = emptySlots();
     this.sunTimer = this.config.sunDropInterval;
+    this.waveTimes = planWaves(this.config);
+    this.waveIndex = 0;
+    this.finalWaveSpawned = false;
+    this.endTimer = 0;
+    this.defenderTimers = [];
+    this.defendersSpawned = false;
+    createMower(this);
     if (this.config.features.initialGarden) initGarden(this);
     for (const p of this.humans()) this._resetPlayer(p);
   }
@@ -197,6 +219,7 @@ export class Game {
     p.hp = p.maxHp;
     p.state = 'alive';
     p.timer = 0;
+    p.plantPending = 0;
     p.yaw = p.team === 'plant' ? 0 : Math.PI; // plants face the gate (-z), zombies face the house (+z)
     p.pitch = 0;
   }
@@ -251,13 +274,18 @@ export class Game {
     dt = Math.min(dt, this.config.maxDt);
     this.time += dt;
     if (this.phase === 'lobby') return;
-    if (this.phase === 'playing') this.roundTime += dt;
-    this._stepActors(dt);
     if (this.phase === 'playing') {
+      this.roundTime += dt;
+      stepBots(this, dt);
+      this._stepActors(dt);
+      stepMower(this, dt);
       stepGarden(this, dt);
       stepProjectiles(this, dt);
       stepSun(this, dt);
+    } else {
+      this._stepActors(dt); // result screen: everyone can still walk around, nobody can shoot
     }
+    stepRules(this, dt);
   }
 
   _stepActors(dt) {
@@ -281,7 +309,7 @@ export class Game {
   _stepWeapon(e, dt) {
     const w = getWeapon(e.weapon);
     e.cooldown -= dt;
-    if (!w || !e.input.fire || this.phase !== 'playing') {
+    if (!w || !e.input.fire || this.phase !== 'playing' || this.isDriving(e)) {
       if (e.cooldown < 0) e.cooldown = 0;
       return;
     }
@@ -291,12 +319,22 @@ export class Game {
     }
   }
 
+  isDriving(e) {
+    const m = this.mower;
+    return Boolean(m && m.state === 'driving' && m.driver === e.id);
+  }
+
   moveSpeedFor(e) {
-    return this.config.moveSpeed;
+    const c = this.config;
+    if (this.isDriving(e)) return c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
+    if (e.kind === 'bot') return e.team === 'zombie' ? c.zombieBotSpeed : c.plantBotSpeed;
+    return c.moveSpeed;
   }
 
   _moveActor(e, dt) {
     const c = this.config;
+    const ox = e.x;
+    const oz = e.z;
     const { keys } = e.input;
     const ix = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
     const iz = (keys.f ? 1 : 0) - (keys.b ? 1 : 0);
@@ -325,6 +363,8 @@ export class Game {
       }
     }
     clampToWorld(e, e.radius);
+    e.vx = (e.x - ox) / dt; // actual ground velocity (turrets use it to aim)
+    e.vz = (e.z - oz) / dt;
   }
 
   // ---- queries ---------------------------------------------------------------
@@ -350,7 +390,7 @@ export class Game {
       maxHp: e.maxHp,
     };
     if (e.pitch !== undefined) o.pitch = round(e.pitch, 3);
-    for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = e[f];
+    for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = f === 'progress' ? round(e[f], 3) : e[f];
     if (e.state === 'wilted' || e.state === 'sprout') o.respawnIn = round(Math.max(0, e.timer), 1);
     return o;
   }

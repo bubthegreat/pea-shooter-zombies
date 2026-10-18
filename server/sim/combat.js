@@ -113,6 +113,7 @@ export function stepProjectiles(game, dt) {
 /** Damage a living target. Handles conversion / wilting when hp reaches 0. Returns true if damage landed. */
 export function applyDamage(game, target, amount, attacker) {
   if (!target || target.state !== 'alive' || !(amount > 0)) return false;
+  if (game.isDriving(target)) amount *= game.config.mowerDamageScale; // the mower shields its driver
   target.hp -= amount;
   game.emit('hit', {
     id: target.id,
@@ -149,9 +150,23 @@ function convertZombie(game, target, attacker) {
     target.weapon = weaponFor('plant', 0).id;
     target.cooldown = 0;
     target.ai = null;
+    target.convertedAt = game.time;
     game.clearInput(target);
+    retireOldConvertedBots(game);
   }
   creditKill(game, attacker, c.sunPerConversion);
+}
+
+/** Too many walking plants clutter the yard: the longest-serving converted bots retire in a leaf poof. */
+function retireOldConvertedBots(game) {
+  const converted = [];
+  for (const e of game.entities.values()) if (e.kind === 'bot' && e.team === 'plant' && e.convertedAt !== undefined) converted.push(e);
+  converted.sort((a, b) => a.convertedAt - b.convertedAt);
+  while (converted.length > game.config.maxConvertedBots) {
+    const old = converted.shift();
+    game.emit('wilt', { id: old.id, x: old.x, y: old.y, z: old.z, by: null, retired: true });
+    game.removeEntity(old);
+  }
 }
 
 function wiltPlantFighter(game, target, attacker) {
@@ -164,6 +179,7 @@ function wiltPlantFighter(game, target, attacker) {
   } else {
     target.state = 'dead';
     game.entities.delete(target.id);
+    if (target.ai?.defender) game.defenderTimers.push(c.defenderRespawn);
   }
   creditKill(game, attacker);
 }

@@ -100,9 +100,10 @@ export function stepGarden(game, dt) {
     const ox = g.x;
     const oy = g.y + c.turretMuzzleHeight;
     const oz = g.z;
-    let dx = target.x - ox;
+    // Turrets are a bit slow on the draw: they aim where the target was a moment ago.
+    let dx = target.x - (target.vx ?? 0) * c.turretLag - ox;
     let dy = target.y + target.height * c.turretAimHeight - oy;
-    let dz = target.z - oz;
+    let dz = target.z - (target.vz ?? 0) * c.turretLag - oz;
     const len = Math.hypot(dx, dy, dz) || 1;
     dx /= len;
     dy /= len;

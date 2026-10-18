@@ -189,16 +189,23 @@ test('cactus turret hits zombie 40 m away', () => {
   assert.equal(hits[0].by, cactus.id);
 });
 
-test('turrets with default aim error still wear down a distant stationary zombie', () => {
+test('turrets are inaccurate at range but still land hits on a distant stationary zombie', () => {
   const { game } = plantGame();
   const idx = gardenSlots().findIndex((s) => s.kind === 'cactus' && s.x === 0 && s.z === 4);
   plantAt(game, idx);
   const zombie = game.spawnBot('zombie', 0, 4 - 40);
-  for (let i = 0; i < 30 * 40 && zombie.team === 'zombie'; i++) {
+  zombie.hp = zombie.maxHp = 1e6;
+  let shots = 0;
+  const seen = new Set();
+  let hits = 0;
+  for (let i = 0; i < 30 * 300; i++) {
     stepGarden(game, 1 / 30);
+    for (const p of entitiesOfKind(game, 'projectile')) if (!seen.has(p.id)) { seen.add(p.id); shots++; }
     stepProjectiles(game, 1 / 30);
+    hits += game.drainEvents().filter((e) => e.type === 'hit' && e.id === zombie.id).length;
   }
-  assert.equal(zombie.team, 'plant');
+  assert.ok(hits >= 1, 'lands at least some hits');
+  assert.ok(hits < shots * 0.25, `inaccurate at 40 m: ${hits}/${shots}`);
 });
 
 test('turret ranges: peashooter 25 m, cactus 50 m; turrets ignore plants and never shoot out of range', () => {
