@@ -5,6 +5,8 @@
 // true: stops walking when its top is above feet + STEP), shots (default true: stops projectiles), passTeam (that team
 // walks and shoots through it), style (how the client draws it).
 import { WORLD, PLOTS, doorBox, doorZone, inRect } from './world.js';
+import { terrainHeight } from './terrain.js';
+import { makeCover } from './cover-layout.js';
 
 const H = WORLD.house;
 const GA = WORLD.garage;
@@ -213,7 +215,7 @@ const PART_SPOTS = [
 export const MAP = {
   statics,
   doors,
-  cover: [],
+  cover: makeCover({ noBuild, nodes: NODES, edges: EDGES, terrainHeight }),
   noBuild,
   nodes: NODES,
   edges: EDGES,

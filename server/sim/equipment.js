@@ -133,8 +133,43 @@ function* coneTargets(game, holder, def) {
   }
 }
 
+/** Doors, cover and builds in the cone: [{ piece, d }] (d = distance to the nearest point of the piece). */
+function* pieceTargets(game, holder, def) {
+  const f = forwardVec(holder.yaw, 0);
+  const reach = def.range;
+  const found = [];
+  game.field.each(holder.x - reach, holder.x + reach, holder.z - reach, holder.z + reach, (c) => {
+    const p = c._piece;
+    if (!p || !game.cover.canHurt(p, holder.team)) return;
+    if (p.y1 < holder.y || p.y0 > holder.y + 2) return;
+    let px;
+    let pz;
+    if (c.s === 'box') {
+      px = Math.max(c.minX, Math.min(holder.x, c.maxX));
+      pz = Math.max(c.minZ, Math.min(holder.z, c.maxZ));
+    } else {
+      const dx = c.x - holder.x;
+      const dz = c.z - holder.z;
+      const d = Math.hypot(dx, dz) || 1;
+      px = c.x - (dx / d) * c.r;
+      pz = c.z - (dz / d) * c.r;
+    }
+    const dx = px - holder.x;
+    const dz = pz - holder.z;
+    const d = Math.hypot(dx, dz);
+    if (d > reach) return;
+    if (d > 0.9) {
+      const ang = Math.acos(Math.max(-1, Math.min(1, (dx * f.x + dz * f.z) / d)));
+      if (ang > def.halfAngle + 0.35) return;
+    }
+    found.push({ piece: p, d });
+  });
+  yield* found;
+}
+
 function swing(game, holder, def, tick) {
   const f = forwardVec(holder.yaw, 0);
+  if (def.dpsStruct > 0) for (const { piece } of pieceTargets(game, holder, def)) game.cover.damage(piece, def.dpsStruct * tick, holder, holder.team);
   for (const { t } of [...coneTargets(game, holder, def)]) {
     const dps = t.kind === 'garden' ? def.dpsGarden : def.dpsFighter;
     if (dps > 0) applyDamage(game, t, dps * tick, holder);

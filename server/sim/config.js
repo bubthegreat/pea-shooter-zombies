@@ -108,7 +108,7 @@ export const DEFAULT_CONFIG = {
 
   // Garage equipment rack: zombies swap their gun for a lawn tool (E at the rack; Q or E elsewhere to drop it).
   // range/halfAngle: melee cone (m, rad); tick: seconds between swings; dps*: damage per second against garden
-  // plants / plant players; knock: m/s push on plant players; deflect: chance to swat a light shot (damage <= deflectMaxDamage); blowSun: m/s push on suns.
+  // plants / plant players (dpsStruct: against doors, cover and builds); knock: m/s push on plant players; deflect: chance to swat a light shot (damage <= deflectMaxDamage); blowSun: m/s push on suns.
   rackUseRange: 2,
   rackRespawn: 20, // an item is back on its hook this many seconds after a drop / wreck / conversion
   rack: [
@@ -120,7 +120,7 @@ export const DEFAULT_CONFIG = {
   equipment: {
     weed_eater: {
       name: 'Weed Eater', blurb: 'Shreds garden plants in seconds, hurts plant kids - but the range is tiny',
-      range: 3, halfAngle: 0.7, tick: 0.1, dpsGarden: 40, dpsFighter: 30, speedScale: 1,
+      range: 3, halfAngle: 0.7, tick: 0.1, dpsGarden: 40, dpsFighter: 30, dpsStruct: 22, speedScale: 1,
     },
     leaf_blower: {
       name: 'Leaf Blower', blurb: 'Pushes plant kids back, swats peas, blows suns away - but barely hurts',
@@ -128,7 +128,7 @@ export const DEFAULT_CONFIG = {
     },
     hedge_trimmer: {
       name: 'Hedge Trimmer', blurb: 'Wilts plant kids fast and chews turrets - but you walk slower',
-      range: 2, halfAngle: 0.8, tick: 0.1, dpsGarden: 30, dpsFighter: 150, speedScale: 0.75,
+      range: 2, halfAngle: 0.8, tick: 0.1, dpsGarden: 30, dpsFighter: 150, dpsStruct: 40, speedScale: 0.75,
     },
     wheelbarrow: {
       name: 'Wheelbarrow', blurb: 'A rolling shield that soaks up shots - but you cannot attack',
@@ -168,8 +168,17 @@ export const DEFAULT_CONFIG = {
 
   // Doors: HP of each (a zombie shot does 8). Plants walk and shoot through their own doors; zombies must break them.
   doorHp: { front: 150, side: 150, back: 150, garage: 260, default: 150 },
-  // Destructible cover by kind: hp. (Filled in with the cover layout.)
-  cover: {},
+  // Destructible cover by kind: hp (a pea does 1, a goo shot 8; rocks are tough, stones and fences medium).
+  cover: {
+    gravestone: { hp: 60 },
+    rock: { hp: 420 },
+    tree: { hp: 240 },
+    hedge: { hp: 70 },
+    trashcan: { hp: 45 },
+    picnic: { hp: 110 },
+    pool: { hp: 50 },
+    shedwall: { hp: 130 },
+  },
   // Bots: how far from a door they stand and shoot at it, how long they must be stuck before they act.
   botStuckTime: 0.5,
 

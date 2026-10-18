@@ -23,7 +23,7 @@ export class Cover {
     this.gone.clear();
     this.round++;
     for (const d of MAP.doors) this._make(d, g.config.doorHp[d.door] ?? g.config.doorHp.default, 'plant');
-    for (const c of MAP.cover) this._make(c, g.config.cover[c.kind]?.hp ?? 50, null);
+    if (g.config.features.cover) for (const c of MAP.cover) this._make(c, g.config.cover[c.kind]?.hp ?? 50, null);
   }
 
   _make(def, hp, team) {
