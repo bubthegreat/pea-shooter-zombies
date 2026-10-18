@@ -205,10 +205,10 @@ const ROUTES = {
 
 // ---- parts: candidate spots (a few are picked at random every round) --------------------------------------------------------
 const PART_SPOTS = [
-  { id: 'g1', where: 'garage', x: 9.6, z: 10.0 }, { id: 'g2', where: 'garage', x: 18.6, z: 20.4 }, { id: 'g3', where: 'garage', x: 12.2, z: 20.4 },
+  { id: 'g1', where: 'garage', x: 9.6, z: 10.4 }, { id: 'g2', where: 'garage', x: 18.8, z: 10.6 }, { id: 'g3', where: 'garage', x: 9.4, z: 18.4 },
   { id: 'c1', where: 'cellar', x: -11.8, z: 19.9 }, { id: 'c2', where: 'cellar', x: -8.2, z: 22.2 }, { id: 'c3', where: 'cellar', x: -8.0, z: 19.9 },
   { id: 's1', where: 'shed', x: 29.2, z: -11.0 }, { id: 's2', where: 'shed', x: 31.6, z: -8.0 },
-  { id: 'y1', where: 'yard', x: -24, z: 4 }, { id: 'y2', where: 'yard', x: 17, z: -6 }, { id: 'y3', where: 'yard', x: -20, z: 33 },
+  { id: 'y1', where: 'yard', x: -24, z: 4 }, { id: 'y2', where: 'yard', x: 17, z: -6 }, { id: 'y3', where: 'yard', x: -13, z: 33 },
   { id: 'y4', where: 'yard', x: 30, z: 26 }, { id: 'y5', where: 'yard', x: 3, z: 40 }, { id: 'y6', where: 'yard', x: -30, z: -20 },
 ];
 

@@ -92,11 +92,11 @@ test('the Gardener replants empty slots with its own sunshine income', () => {
   const game = gardenerGame();
   run(game, 0.2);
   const g = gardeners(game)[0];
-  assert.equal(game.gardenCount(), 0);
+  const first = game.gardenCount();
   const income = DEFAULT_CONFIG.gardener.income;
   run(game, 30);
   const planted = game.gardenCount();
-  assert.ok(planted >= 3, `replanted ${planted}`);
+  assert.ok(planted >= 3 && planted > first, `replanted ${planted}`);
   // it cannot out-spend its income: start sunshine + 30 s of trickle covers at most this many peashooters
   const maxAffordable = Math.floor((g.sunshine + DEFAULT_CONFIG.gardener.startSunshine + income * 30) / DEFAULT_CONFIG.plantTypes.peashooter.cost) + 1;
   assert.ok(planted <= maxAffordable, `planted ${planted} <= ${maxAffordable}`);

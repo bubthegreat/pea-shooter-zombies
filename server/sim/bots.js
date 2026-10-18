@@ -38,7 +38,8 @@ export function ensureAI(game, bot) {
   if (bot.team === 'zombie') {
     bot.fireScale = game.difficultyConfig().fireScale;
     const itin = chooseItinerary(game.rng);
-    bot.ai = { ...base, role: 'zombie', itin, mode: 'route', strafe: 0, strafeTimer: 0 };
+    const errand = game.rng() < c.parts.botChance ? {} : null; // fetch a part, install it, use what it powers
+    bot.ai = { ...base, role: 'zombie', itin, mode: 'route', errand, coin: game.rng(), goal: null, goalKey: null };
     bot.ai.path = itin.nodes.slice();
   } else {
     bot.fireScale = c.gardener.fireScale;
@@ -200,7 +201,7 @@ function blockerPiece(game, ai) {
 }
 
 /** Walk-and-shoot step shared by every roaming bot. `target` is the thing to shoot (entity or piece pseudo-target) or null. */
-function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true }) {
+function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true, noFire = false }) {
   const inp = b.input;
   const wp = canMove ? nextPoint(b, ai, stop) : null;
   let dir = { x: 0, z: 0 };
@@ -235,6 +236,109 @@ function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true 
   setMoveKeys(b, dir.x, dir.z);
 }
 
+/** Where a bot carrying a part should install it: the mower or a rack hook that needs it. */
+function installSpot(game, b) {
+  const c = game.config;
+  const kind = b.carry;
+  const m = game.mower;
+  const rackNeed = [...game.racks.values()].filter((r) => c.equipment[r.itemId].needs === kind && !r.powered && r.available);
+  const mowerNeed = m && m.state !== 'destroyed' && !m.parts[kind];
+  // spark plugs only fit the mower; gas goes to the weed eater first; batteries split between the mower and the tools
+  let useMower = mowerNeed && (kind === 'plug' || !rackNeed.length || (kind === 'battery' && (b.ai.coin ?? 0) < 0.5));
+  if (!mowerNeed) useMower = false;
+  if (useMower) return { type: 'mower', x: m.x, z: m.z, range: c.mowerUseRange - 0.4 };
+  let best = null;
+  for (const r of rackNeed) if (!best || dist2D(b.x, b.z, r.x, r.z) < dist2D(b.x, b.z, best.x, best.z)) best = r;
+  return best ? { type: 'rack', rack: best, x: best.x, z: best.z, range: c.rackUseRange - 0.5 } : null;
+}
+
+/** Part errands: fetch the nearest part, install it, take the tool it powered. Returns the walking goal (or null when done). */
+function errandGoal(game, b, ai) {
+  const c = game.config;
+  const er = ai.errand;
+  if (b.carry) {
+    const tgt = installSpot(game, b);
+    if (!tgt) {
+      ai.errand = null;
+      return null;
+    }
+    if (dist2D(b.x, b.z, tgt.x, tgt.z) <= tgt.range) {
+      b.usePressed = true; // installs (parts.js); the press is spent there
+      if (tgt.type === 'rack') er.take = tgt.rack.itemId;
+    }
+    return { x: tgt.x, z: tgt.z, stop: tgt.range * 0.7 };
+  }
+  if (er.take) {
+    const rack = game.racks.get(er.take);
+    if (!rack || !rack.available || !rack.powered) {
+      ai.errand = null;
+      return null;
+    }
+    if (dist2D(b.x, b.z, rack.x, rack.z) <= c.rackUseRange - 0.4) b.usePressed = true; // takes the tool
+    else return { x: rack.x, z: rack.z, stop: c.rackUseRange - 0.8 };
+    return { x: rack.x, z: rack.z, stop: 1 };
+  }
+  let part = null;
+  for (const e of game.entities.values()) {
+    if (e.kind !== 'part' || e.state !== 'alive') continue;
+    if (!part || dist2D(b.x, b.z, e.x, e.z) < dist2D(b.x, b.z, part.x, part.z)) part = e;
+  }
+  if (!part) {
+    ai.errand = null;
+    return null;
+  }
+  if (dist2D(b.x, b.z, part.x, part.z) <= c.parts.pickRange - 0.4 && Math.abs(part.y - b.y) < 1.5) b.usePressed = true;
+  return { x: part.x, z: part.z, stop: 0.6 };
+}
+
+function nearestAlive(list, x, z) {
+  let best = null;
+  let bd = Infinity;
+  for (const e of list) {
+    if (e.state !== 'alive') continue;
+    const d = dist2D(x, z, e.x, e.z);
+    if (d < bd) {
+      best = e;
+      bd = d;
+    }
+  }
+  return best;
+}
+
+/** The intent for this think tick: { x, z, stop } to walk to (planned with the nav graph), or null for the route / fridge default. */
+function zombieGoal(game, b, ai, ctx) {
+  const c = game.config;
+  const m = game.mower;
+  if (game.isDriving(b)) {
+    const plant = nearestAlive(ctx.gardenPlants, b.x, b.z);
+    return plant ? { x: plant.x, z: plant.z, stop: 0 } : null;
+  }
+  if (b.item) {
+    // a garage tool in hand: go for plant kids (trimmer, blower) or the turrets
+    const kidsFirst = b.item === 'hedge_trimmer' || b.item === 'leaf_blower';
+    const kids = ctx.plantSide.filter((e) => e.kind !== 'garden');
+    const prey = (kidsFirst ? nearestAlive(kids, b.x, b.z) : null) ?? nearestAlive(ctx.gardenPlants, b.x, b.z) ?? nearestAlive(kids, b.x, b.z);
+    ai.preyId = prey ? prey.id : null;
+    const def = c.equipment[b.item];
+    return prey ? { x: prey.x, z: prey.z, stop: Math.max(0.8, def.range * 0.6) } : null;
+  }
+  ai.preyId = null;
+  if (ai.errand) {
+    const g = errandGoal(game, b, ai);
+    if (g) return g;
+  }
+  if (m && m.parts && m.parts.battery && m.parts.gas && m.parts.plug) {
+    if (ai.seeksMower === undefined) ai.seeksMower = game.rng() < c.mowerBotChance;
+    if (ai.seeksMower && m.state === 'idle') {
+      if (dist2D(b.x, b.z, m.x, m.z) <= c.mowerUseRange - 0.3) b.input.use = true; // hold E: starts the engine
+      return { x: m.x, z: m.z, stop: c.mowerBotStopDistance };
+    }
+    if (ai.seeksMower && m.state === 'starting' && m.driver === b.id) return { x: b.x, z: b.z, stop: 99 }; // stand by while it warms up
+    if (ai.seeksMower && m.state !== 'idle' && m.driver !== b.id) ai.seeksMower = false; // lost the race
+  }
+  return null;
+}
+
 function zombieBrain(game, b, ai, ctx, dt) {
   const c = game.config;
   const diff = ctx.diff;
@@ -248,25 +352,44 @@ function zombieBrain(game, b, ai, ctx, dt) {
   }
 
   ai.think -= dt;
+  let goal = ai.goal ?? null;
   if (ai.think <= 0) {
     ai.think += c.botThinkInterval;
-    // who to shoot: the closest plant-side thing in sight
-    const t = nearestVisible(game, b, ctx.plantSide, c.zombieBotShootRange);
+    // who to shoot: the closest plant-side thing in sight (a tool in hand just swings at what it walks up to)
+    const t = b.item ? null : nearestVisible(game, b, ctx.plantSide, c.zombieBotShootRange);
     const id = t ? t.id : null;
     if (id !== ai.targetId) {
       ai.targetId = id;
       ai.react = diff.reaction;
     }
-    // where to go: the route's waypoints, then the fridge
-    if (ai.mode === 'route' && ai.pi >= ai.path.length) ai.mode = 'inside';
-    if (ai.mode === 'inside') {
+    // where to go: an errand / tool prey / the mower, else the route's waypoints and then the fridge
+    goal = zombieGoal(game, b, ai, ctx);
+    if (goal) {
+      const key = `${Math.round(goal.x)},${Math.round(goal.z)}`;
       ai.replan -= c.botThinkInterval;
-      if (ai.replan <= 0) {
-        const f = WORLD.fridge.stand;
-        setPath(ai, planRoute(game.field, b.x, b.z, f.x, f.z, b.team));
+      if (ai.goalKey !== key || ai.replan <= 0) {
+        ai.goalKey = key;
+        setPath(ai, planRoute(game.field, b.x, b.z, goal.x, goal.z, b.team));
         ai.replan = 1.6;
       }
+      ai.mode = 'goal';
+    } else {
+      if (ai.mode === 'goal') {
+        ai.mode = 'inside'; // errand over: on to the fridge
+        ai.replan = 0;
+        ai.goalKey = null;
+      }
+      if (ai.mode === 'route' && ai.pi >= ai.path.length) ai.mode = 'inside';
+      if (ai.mode === 'inside') {
+        ai.replan -= c.botThinkInterval;
+        if (ai.replan <= 0) {
+          const f = WORLD.fridge.stand;
+          setPath(ai, planRoute(game.field, b.x, b.z, f.x, f.z, b.team));
+          ai.replan = 1.6;
+        }
+      }
     }
+    ai.goal = goal;
     const hadBlocker = ai.blocker;
     checkStuck(game, b, ai, ai.dir, game.moveSpeedFor(b));
     if (ai.blocker && ai.blocker !== hadBlocker) ai.react = Math.min(ai.react, 0.3);
@@ -274,8 +397,16 @@ function zombieBrain(game, b, ai, ctx, dt) {
 
   const blocker = blockerPiece(game, ai);
   let target = null;
+  let fire = null; // set for tool holders: swing when something is in reach
   if (blocker) target = pieceTarget(blocker); // a closed door / fort wall in the way beats everything else
-  else {
+  else if (b.item) {
+    const prey = ai.preyId ? game.entities.get(ai.preyId) : null;
+    if (prey && prey.state === 'alive') {
+      const def = c.equipment[b.item];
+      target = { x: prey.x, z: prey.z, y: b.y, height: 0 }; // aim level
+      fire = b.item !== 'wheelbarrow' && dist2D(b.x, b.z, prey.x, prey.z) <= def.range + (prey.radius ?? 0.5);
+    }
+  } else {
     target = ai.targetId ? game.entities.get(ai.targetId) : null;
     if (!target || target.state !== 'alive' || target.team !== 'plant') {
       target = null;
@@ -283,8 +414,14 @@ function zombieBrain(game, b, ai, ctx, dt) {
     }
   }
   const f = WORLD.fridge.stand;
-  const atFridge = ai.mode === 'inside' && dist2D(b.x, b.z, f.x, f.z) < 1.0;
-  moveAndShoot(game, b, ai, dt, { target, aimError: diff.aimError, stop: ai.mode === 'route' ? 1.2 : 0.8, canMove: !atFridge && !blocker });
+  const atFridge = ai.mode === 'inside' && !goal && dist2D(b.x, b.z, f.x, f.z) < 1.0;
+  const stop = goal ? goal.stop : ai.mode === 'route' ? 1.2 : 0.8;
+  const standBy = Boolean(goal && goal.stop >= 99);
+  moveAndShoot(game, b, ai, dt, { target, aimError: b.item ? 0 : diff.aimError, stop, canMove: !atFridge && !blocker && !standBy, noFire: fire === false });
+  if (b.item && target && !blocker) {
+    b.pitch = 0;
+    inp.fire = fire === true;
+  }
 }
 
 function gardenerBrain(game, b, ai, ctx, dt) {

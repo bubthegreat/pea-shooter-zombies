@@ -7,6 +7,7 @@ import { recordHurt, recordKill } from './upgrades.js';
 import { spawnSun } from './garden.js';
 import { destroyMower } from './mower.js';
 import { barrowBlocks, barrowTakesHit, dropOnConvert } from './equipment.js';
+import { dropCarried } from './parts.js';
 
 /**
  * Create a projectile entity. `dir` is a unit vector. Optional: gravity (m/s^2), splash (blast radius m),
@@ -218,6 +219,7 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
   if (head) hit.head = true;
   game.emit('hit', hit);
   recordHurt(target);
+  if (target.carry && attacker?.team === 'plant' && target.hp > 0) dropCarried(game, target, 'shot'); // a hit knocks the part out of his hands
   if (target.hp > 0) return true;
   target.hp = 0;
   if (target.kind === 'mower') destroyMower(game, attacker);
@@ -253,6 +255,7 @@ function convertZombie(game, target, attacker, head = false) {
   const c = game.config;
   const human = target.kind === 'player';
   dropOnConvert(game, target);
+  dropCarried(game, target, 'converted');
   game.emit('convert', { id: target.id, x: target.x, y: target.y, z: target.z, human, ...feedInfo(attacker, target, head) });
   if (human) {
     // A converted kid becomes a little sprout, then digs back up as a zombie at the gate.

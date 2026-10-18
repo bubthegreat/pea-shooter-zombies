@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG } from '../server/sim/config.js';
 import { WORLD } from '../server/sim/world.js';
 import { plantAt } from '../server/sim/garden.js';
 import { applyDamage } from '../server/sim/combat.js';
-import { makeGame, run, keys, entitiesOfKind, S, slotIdx } from './helpers.js';
+import { makeGame, run, keys, entitiesOfKind, S, slotIdx, powerAll } from './helpers.js';
 
 const HOME = WORLD.mowerHome;
 
@@ -12,6 +12,7 @@ const HOME = WORLD.mowerHome;
 function setup(overrides = {}) {
   const game = makeGame(overrides);
   const z = game.addPlayer('z', { name: 'Zed', team: 'zombie', mode: 'coop' });
+  powerAll(game);
   z.x = HOME.x;
   z.z = HOME.z - 1.5;
   z.yaw = 0;

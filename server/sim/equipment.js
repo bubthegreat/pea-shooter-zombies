@@ -28,6 +28,7 @@ export function createRack(game) {
       available: true,
       heldBy: null,
       timer: 0,
+      powered: !c.equipment[slot.item].needs, // battery / gas tools need their part first
     };
     game.entities.set(e.id, e);
     game.racks.set(slot.item, e);
@@ -254,7 +255,7 @@ export function stepEquipment(game, dt) {
       let best = null;
       let bestD = c.rackUseRange;
       for (const rack of game.racks.values()) {
-        if (!rack.available) continue;
+        if (!rack.available || !rack.powered) continue;
         const d = dist2D(e.x, e.z, rack.x, rack.z);
         if (d <= bestD) {
           best = rack;

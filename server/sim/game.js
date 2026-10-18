@@ -6,6 +6,7 @@ import { createField, STEP, MAX_SLOPE } from './collide.js';
 import { Cover } from './cover.js';
 import { createFridge, stepFridge } from './fridge.js';
 import { tryBuild, buildList } from './build.js';
+import { spawnParts, stepParts, partsMask, dropCarried } from './parts.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
@@ -21,7 +22,7 @@ export const MODES = new Set(['coop', 'versus']);
 export const DIFFICULTIES = new Set(['easy', 'normal']);
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
-const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains'];
+const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains', 'carry', 'partKind', 'powered'];
 const MAX_PENDING_EVENTS = 500;
 const MAX_PLANT_QUEUE = 4; // plant presses buffered between ticks
 const MAX_BUILD_QUEUE = 4; // build presses buffered between ticks
@@ -116,6 +117,7 @@ export class Game {
     this.cover.reset();
     createMower(this);
     createRack(this);
+    spawnParts(this);
     if (this.config.features.initialGarden) initGarden(this);
     for (const p of this.humans()) this._resetPlayer(p);
   }
@@ -168,6 +170,7 @@ export class Game {
   removePlayer(id) {
     const e = this.entities.get(id);
     if (!e || e.kind !== 'player') return;
+    dropCarried(this, e, 'left');
     this.entities.delete(id);
     if (this.humans().length === 0) this._resetToLobby();
   }
@@ -276,6 +279,8 @@ export class Game {
     p.timer = 0;
     p.slowTimer = 0;
     p.slowFactor = 1;
+    p.carry = undefined;
+    p.carryLock = 0;
     p.item = null;
     p.using = false;
     delete p.itemHp;
@@ -376,6 +381,7 @@ export class Game {
       }
       stepBots(this, dt);
       this._stepActors(dt);
+      stepParts(this);
       stepMower(this, dt);
       stepEquipment(this, dt);
       stepGarden(this, dt);
@@ -607,6 +613,7 @@ export class Game {
     if (e.state === 'wilted' || e.state === 'sprout' || e.state === 'destroyed') o.respawnIn = round(Math.max(0, e.timer), 1);
     if (e.slowTimer > 0) o.slowed = true;
     if (e.using) o.using = true;
+    if (e.kind === 'mower') o.parts = partsMask(e.parts);
     if (e.kind === 'rack_item' && !e.available && e.heldBy === null) o.respawnIn = round(Math.max(0, e.timer), 1);
     return o;
   }

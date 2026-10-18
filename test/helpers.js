@@ -78,3 +78,9 @@ export function forceRoute(game, bot, route, door) {
 export function breakDoors(game, ...ids) {
   for (const id of ids.length ? ids : ['front', 'side', 'back', 'garage']) game.cover.destroy(game.cover.get(`door:${id}`));
 }
+
+/** Install every part: powered garage tools and a startable mower (parts have their own tests). */
+export function powerAll(game) {
+  for (const r of game.racks?.values() ?? []) r.powered = true;
+  if (game.mower) game.mower.parts = { battery: true, gas: true, plug: true };
+}

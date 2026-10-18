@@ -103,7 +103,7 @@ test('zombie bots shoot garden plants in sight and in range', () => {
   game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
   const plant = plantAt(game, slotIdx(0, 0, 1));
   plant.hp = plant.maxHp = 1e6; // observe damage instead of death
-  const bot = game.spawnBot('zombie', plant.x, plant.z - 12);
+  const bot = forceRoute(game, game.spawnBot('zombie', plant.x, plant.z - 12), 'front', 'front');
   bot.hp = bot.maxHp = 1e6;
   const player = game.entities.get('a');
   player.x = 38;

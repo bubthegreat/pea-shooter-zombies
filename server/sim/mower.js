@@ -2,6 +2,7 @@
 import { WORLD } from './world.js';
 import { dist2D } from './vec.js';
 import { creditKill, feedInfo } from './combat.js';
+import { mowerComplete } from './parts.js';
 
 export function createMower(game) {
   const h = WORLD.mowerHome;
@@ -22,6 +23,7 @@ export function createMower(game) {
     progress: 0, // 0..1 while starting
     driver: null,
     timer: 0, // seconds until a wrecked mower respawns
+    parts: { battery: false, gas: false, plug: false }, // installed parts (all three start it); kept for the round, even through a wreck
   };
   game.entities.set(m.id, m);
   game.mower = m;
@@ -79,6 +81,7 @@ export function stepMower(game, dt) {
   }
 
   if (m.state === 'idle') {
+    if (!mowerComplete(m)) return; // needs Battery + Gas Can + Spark Plug first
     let best = null;
     let bestDist = c.mowerUseRange;
     for (const e of game.entities.values()) {

@@ -120,21 +120,24 @@ export const DEFAULT_CONFIG = {
   equipment: {
     weed_eater: {
       name: 'Weed Eater', blurb: 'Shreds garden plants in seconds, hurts plant kids - but the range is tiny',
-      range: 3, halfAngle: 0.7, tick: 0.1, dpsGarden: 40, dpsFighter: 30, dpsStruct: 22, speedScale: 1,
+      range: 3, halfAngle: 0.7, tick: 0.1, dpsGarden: 40, dpsFighter: 30, dpsStruct: 22, speedScale: 1, needs: 'gas',
     },
     leaf_blower: {
       name: 'Leaf Blower', blurb: 'Pushes plant kids back, swats peas, blows suns away - but barely hurts',
-      range: 9, halfAngle: 0.45, tick: 0.1, dpsGarden: 2, dpsFighter: 3, knock: 12, deflect: 0.85, deflectMaxDamage: 2, blowSun: 8, speedScale: 1,
+      range: 9, halfAngle: 0.45, tick: 0.1, dpsGarden: 2, dpsFighter: 3, knock: 12, deflect: 0.85, deflectMaxDamage: 2, blowSun: 8, speedScale: 1, needs: 'battery',
     },
     hedge_trimmer: {
       name: 'Hedge Trimmer', blurb: 'Wilts plant kids fast and chews turrets - but you walk slower',
-      range: 2, halfAngle: 0.8, tick: 0.1, dpsGarden: 30, dpsFighter: 150, dpsStruct: 40, speedScale: 0.75,
+      range: 2, halfAngle: 0.8, tick: 0.1, dpsGarden: 30, dpsFighter: 150, dpsStruct: 40, speedScale: 0.75, needs: 'battery',
     },
     wheelbarrow: {
       name: 'Wheelbarrow', blurb: 'A rolling shield that soaks up shots - but you cannot attack',
       hp: 30, speedScale: 0.85, shield: { forward: 1.1, halfWidth: 0.9, depth: 0.7, height: 1.2 },
     },
   },
+  // Mower parts: counts per round, how close a kid must be to pick one up, how long a shot carrier cannot pick anything up.
+  // The tools with `needs` (equipment) and the mower (Battery + Gas Can + Spark Plug) start unpowered.
+  parts: { counts: { battery: 3, gas: 2, plug: 1 }, pickRange: 1.8, lockSecs: 2, botChance: 0.2 },
   // Share of zombie bots that go for each item (rolled once per bot, after the mower roll).
   botItemChance: { weed_eater: 0, hedge_trimmer: 0, leaf_blower: 0, wheelbarrow: 0 },
 

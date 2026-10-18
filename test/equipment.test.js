@@ -4,7 +4,7 @@ import { DEFAULT_CONFIG, publicConfig } from '../server/sim/config.js';
 import { WORLD } from '../server/sim/world.js';
 import { plantAt, spawnSun } from '../server/sim/garden.js';
 import { applyDamage, spawnProjectile } from '../server/sim/combat.js';
-import { makeGame, run, keys, entitiesOfKind, slotIdx } from './helpers.js';
+import { makeGame, run, keys, entitiesOfKind, slotIdx, powerAll } from './helpers.js';
 
 const OZ = -20; // the open front yard: tool fights happen around (0, OZ)
 
@@ -17,6 +17,7 @@ function setup(extra = {}) {
   const p = game.addPlayer('p', { name: 'Pea', team: 'plant' });
   p.x = 0;
   p.z = OZ;
+  powerAll(game);
   return { game, z, p };
 }
 
