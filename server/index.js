@@ -140,8 +140,10 @@ function lanUrls(port) {
  */
 export function clientIp(req) {
   const raw = req.headers?.['x-forwarded-for'];
-  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(',')[0].trim();
-  const ip = first || req.socket?.remoteAddress || 'unknown';
+  // Envoy appends the peer it saw, so the rightmost entry is the one a client can't forge.
+  const header = Array.isArray(raw) ? raw[raw.length - 1] : raw;
+  const last = header?.split(',').pop().trim();
+  const ip = last || req.socket?.remoteAddress || 'unknown';
   return ip.replace(/^::ffff:/i, '').slice(0, MAX_IP_LENGTH);
 }
 

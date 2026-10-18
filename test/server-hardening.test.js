@@ -109,13 +109,13 @@ test('a client that answers pings stays connected across many heartbeats', async
 
 // ---- 2. client address + per-IP caps ----------------------------------------------------------------------------
 
-test('clientIp: first X-Forwarded-For entry, else the socket address', () => {
+test('clientIp: last X-Forwarded-For entry, else the socket address', () => {
   const req = (headers, remoteAddress = '10.1.1.1') => ({ headers, socket: { remoteAddress } });
-  assert.equal(clientIp(req({ 'x-forwarded-for': '203.0.113.7, 10.0.0.2' })), '203.0.113.7');
+  assert.equal(clientIp(req({ 'x-forwarded-for': '6.6.6.6, 203.0.113.7' })), '203.0.113.7', 'spoofed leading entry ignored');
   assert.equal(clientIp(req({ 'x-forwarded-for': '  203.0.113.7  ' })), '203.0.113.7');
   assert.equal(clientIp(req({})), '10.1.1.1');
   assert.equal(clientIp(req({ 'x-forwarded-for': '' })), '10.1.1.1');
-  assert.equal(clientIp(req({ 'x-forwarded-for': ' , 1.2.3.4' })), '10.1.1.1', 'empty first entry: fall back');
+  assert.equal(clientIp(req({ 'x-forwarded-for': '1.2.3.4, ' })), '10.1.1.1', 'empty last entry: fall back');
   assert.equal(clientIp(req({}, '::ffff:192.0.2.5')), '192.0.2.5');
   assert.equal(clientIp({ headers: {}, socket: {} }), 'unknown');
   assert.ok(clientIp(req({ 'x-forwarded-for': 'x'.repeat(500) })).length <= 64);
