@@ -202,7 +202,7 @@ export class LobbyManager {
     if (l.status === 'playing') {
       // dropping into a game already under way
       l.game.addPlayer(member.id, { name: member.name, team: member.team });
-      member.send({ t: 'welcome', id: member.id, config: l.publicConfig });
+      member.send({ t: 'welcome', id: member.id, config: l.publicConfig, state: l.game.mapState() });
     }
     if (!this._broadcastState(l)) this._sendStateTo(l, member); // the newcomer does not wait for the coalesced flush
   }
@@ -374,7 +374,7 @@ export class LobbyManager {
     for (const m of l.members.values()) {
       m.inputActive = false;
       m.lastInputAt = t;
-      m.send({ t: 'welcome', id: m.id, config: l.publicConfig });
+      m.send({ t: 'welcome', id: m.id, config: l.publicConfig, state: l.game.mapState() });
     }
     this._broadcastState(l);
     this.log(`lobby ${l.id} started (${l.mode}, ${l.difficulty}, ${l.members.size} players)`);

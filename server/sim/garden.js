@@ -1,5 +1,6 @@
 // The garden: slots, planting, auto-firing turrets, and falling sunshine.
-import { gardenSlots } from './world.js';
+import { WORLD, gardenSlots, inRect } from './world.js';
+import { terrainHeight } from './terrain.js';
 import { spawnProjectile } from './combat.js';
 import { dist2D, forwardVec } from './vec.js';
 
@@ -49,7 +50,7 @@ export function plantAt(game, idx, kind) {
     label: type.name ?? kind, // kill-feed name (not sent in snapshots)
     level: 1,
     x: slot.x,
-    y: 0,
+    y: terrainHeight(slot.x, slot.z),
     z: slot.z,
     yaw: 0,
     pitch: 0,
@@ -67,11 +68,10 @@ export function plantAt(game, idx, kind) {
   return e;
 }
 
-/** Pre-plant every other column (0, 2, 4, 6, 8) of every row. Skips occupied slots. */
+/** Pre-plant every other column (0 and 2) of every row of every plot. Skips occupied slots. */
 export function initGarden(game) {
-  const cols = game.slots.length / 4;
-  game.slots.forEach((_, idx) => {
-    if (idx % cols % 2 === 0) plantAt(game, idx);
+  game.slots.forEach((s, idx) => {
+    if (s.col % 2 === 0) plantAt(game, idx);
   });
 }
 
@@ -238,12 +238,14 @@ export function stepGarden(game, dt) {
 /** Create a sun pickup. It falls from the sky unless `landed`. */
 export function spawnSun(game, x, z, { landed = false } = {}) {
   const c = game.config;
+  const ground = terrainHeight(x, z);
   const e = {
     id: game.newId('s'),
     kind: 'sun',
     team: 'plant',
     x,
-    y: landed ? c.sunRestHeight : c.sunDropHeight,
+    y: ground + (landed ? c.sunRestHeight : c.sunDropHeight),
+    ground,
     z,
     yaw: 0,
     hp: 1,
@@ -253,6 +255,25 @@ export function spawnSun(game, x, z, { landed = false } = {}) {
   };
   game.entities.set(e.id, e);
   return e;
+}
+
+const NO_SUN = [WORLD.house, WORLD.garage, WORLD.pen, WORLD.cellar.ramp, WORLD.cellar.slab, WORLD.shed, WORLD.deck];
+
+/** A random spot in the yard where a sun can land (not inside buildings, not on top of cover). */
+function sunDropPoint(game) {
+  const c = game.config;
+  const [x0, x1] = c.sunDropX;
+  const [z0, z1] = c.sunDropZ;
+  let x = 0;
+  let z = 0;
+  for (let i = 0; i < 16; i++) {
+    x = x0 + game.rng() * (x1 - x0);
+    z = z0 + game.rng() * (z1 - z0);
+    if (NO_SUN.some((r) => inRect(r, x, z, 0.8))) continue;
+    if (game.field.groundAt(x, z, 10) > terrainHeight(x, z) + 0.3) continue;
+    break;
+  }
+  return { x, z };
 }
 
 /** Drop suns on a timer, let them fall, expire, and be collected by plant players. */
@@ -269,22 +290,22 @@ export function stepSun(game, dt) {
     if (game.sunTimer <= 0) {
       game.sunTimer += c.sunDropInterval;
       if (suns.length < c.sunMaxActive) {
-        const [x0, x1] = c.sunDropX;
-        const [z0, z1] = c.sunDropZ;
-        suns.push(spawnSun(game, x0 + game.rng() * (x1 - x0), z0 + game.rng() * (z1 - z0)));
+        const p = sunDropPoint(game);
+        suns.push(spawnSun(game, p.x, p.z));
       }
     }
   } else if (game.sunTimer < c.sunDropInterval) {
     game.sunTimer = c.sunDropInterval;
   }
   for (const sun of suns) {
-    if (sun.y > c.sunRestHeight) sun.y = Math.max(c.sunRestHeight, sun.y - c.sunFallSpeed * dt);
+    const rest = (sun.ground ?? 0) + c.sunRestHeight;
+    if (sun.y > rest) sun.y = Math.max(rest, sun.y - c.sunFallSpeed * dt);
     sun.life -= dt;
     if (sun.life <= 0) {
       game.removeEntity(sun);
       continue;
     }
-    if (sun.y > c.sunRestHeight) continue; // still falling
+    if (sun.y > rest) continue; // still falling
     for (const p of collectors) {
       if (dist2D(p.x, p.z, sun.x, sun.z) <= c.sunPickupRadius) {
         p.sunshine += c.sunValue;

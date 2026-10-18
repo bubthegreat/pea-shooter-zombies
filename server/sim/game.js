@@ -1,6 +1,9 @@
 // Authoritative game simulation. Pure logic: no I/O, no timers. The server ticks it.
 import { DEFAULT_CONFIG } from './config.js';
-import { WORLD, clampToWorld } from './world.js';
+import { WORLD } from './world.js';
+import { terrainHeight } from './terrain.js';
+import { createField, STEP, MAX_SLOPE } from './collide.js';
+import { Cover } from './cover.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
@@ -35,6 +38,8 @@ export class Game {
     this._ids = {};
     this.slots = emptySlots();
     this.sunTimer = config.sunDropInterval;
+    this.field = createField(); // static walls + this round's doors, cover and builds
+    this.cover = new Cover(this);
     this._resetToLobby();
   }
 
@@ -57,6 +62,7 @@ export class Game {
     this.finalWaveSpawned = false;
     this.endTimer = 0;
     this.gardenerTimer = 0;
+    this.headStart = 0;
   }
 
   difficultyConfig() {
@@ -101,6 +107,7 @@ export class Game {
     this.finalWaveSpawned = false;
     this.endTimer = 0;
     this.gardenerTimer = 0;
+    this.cover.reset();
     createMower(this);
     createRack(this);
     if (this.config.features.initialGarden) initGarden(this);
@@ -202,7 +209,7 @@ export class Game {
       kind: 'bot',
       team,
       x,
-      y: 0,
+      y: terrainHeight(x, z),
       z,
       yaw: team === 'plant' ? 0 : Math.PI,
       pitch: 0,
@@ -248,9 +255,10 @@ export class Game {
   respawn(p) {
     const s = this.spawnPoint(p.team);
     p.x = s.x;
-    p.y = 0;
+    p.y = terrainHeight(s.x, s.z);
     p.z = s.z;
     p.vy = 0;
+    p.grounded = false;
     p.hp = p.maxHp;
     p.state = 'alive';
     p.timer = 0;
@@ -434,30 +442,57 @@ export class Game {
     const ix = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
     const iz = (keys.f ? 1 : 0) - (keys.b ? 1 : 0);
     const len = Math.hypot(ix, iz);
+    let nx = e.x;
+    let nz = e.z;
     if (len > 0) {
       const speed = this.moveSpeedFor(e);
       const s = Math.sin(e.yaw);
       const co = Math.cos(e.yaw);
       // forward = (-sin, -cos), right = (cos, -sin)
-      const dx = (co * ix - s * iz) / len;
-      const dz = (-s * ix - co * iz) / len;
-      e.x += dx * speed * dt;
-      e.z += dz * speed * dt;
+      nx += ((co * ix - s * iz) / len) * speed * dt;
+      nz += ((-s * ix - co * iz) / len) * speed * dt;
     }
-    if (e.y <= 0 && e.vy <= 0) {
-      e.y = 0;
+    // Walls, cover and doors push the body out; a terrain face taller than a step cannot be walked up (try sliding).
+    const feet = e.y;
+    const h0 = terrainHeight(e.x, e.z);
+    const place = (tx, tz) => {
+      const p = { x: tx, z: tz };
+      this.field.resolve(p, e.radius, feet, feet + e.height, e.team);
+      const h1 = terrainHeight(p.x, p.z);
+      if (h1 > feet + STEP + 1e-6) return null; // a terrain wall
+      // a face too steep to climb is a wall too (only when the feet would really be on the terrain, not on a slab or step)
+      const run = Math.hypot(p.x - e.x, p.z - e.z);
+      if (h1 - h0 > MAX_SLOPE * run + 0.01 && this.field.groundAt(p.x, p.z, feet) <= h1 + 1e-6) return null;
+      return p;
+    };
+    const p = place(nx, nz) ?? place(nx, e.z) ?? place(e.x, nz) ?? place(e.x, e.z);
+    if (p) {
+      e.x = p.x;
+      e.z = p.z;
+    }
+    // Vertical: stand on the ground (terrain or a ledge within a step), otherwise fall; jump from the ground.
+    const ground = this.field.groundAt(e.x, e.z, e.y);
+    if (e.vy <= 0 && e.y <= ground + (e.grounded ? STEP : 1e-3)) {
+      e.y = ground;
       e.vy = 0;
-      if (keys.jump) e.vy = c.jumpSpeed;
-    }
-    if (e.vy !== 0 || e.y > 0) {
+      e.grounded = true;
+      if (keys.jump) {
+        e.vy = c.jumpSpeed;
+        e.grounded = false;
+      }
+    } else e.grounded = false; // walked off a ledge: fall
+    if (!e.grounded) {
       e.vy -= c.gravity * dt;
       e.y += e.vy * dt;
-      if (e.y <= 0) {
-        e.y = 0;
-        e.vy = 0;
+      if (e.vy <= 0) {
+        const g2 = this.field.groundAt(e.x, e.z, e.y);
+        if (e.y <= g2) {
+          e.y = g2;
+          e.vy = 0;
+          e.grounded = true;
+        }
       }
     }
-    clampToWorld(e, e.radius);
     for (const b of this._blockers ?? []) {
       // solid plants (wall-nuts): slide around them instead of walking through
       const bx = e.x - b.x;
@@ -481,6 +516,11 @@ export class Game {
     let n = 0;
     for (const e of this.entities.values()) if (e.kind === 'garden') n++;
     return n;
+  }
+
+  /** Static-map changes since the round began (for late joiners and reconnects): broken pieces, damage, builds. */
+  mapState() {
+    return this.cover.mapState();
   }
 
   // ---- snapshots -------------------------------------------------------------
@@ -513,6 +553,7 @@ export class Game {
       t: 'snap',
       time: Math.round(this.time * 1000), // sim clock in milliseconds
       phase: this.phase,
+      round: this.cover.round,
       winner: this.winner,
       roundTime: round(this.roundTime, 2),
       roundLength: this.config.roundLength,

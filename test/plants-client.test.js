@@ -49,8 +49,8 @@ test('client upgrade target matches the server for random positions and looks', 
   const rnd = mulberry32(99);
   let withTarget = 0;
   for (let i = 0; i < 400; i++) {
-    p.x = -18 + rnd() * 36;
-    p.z = -3 + rnd() * 18;
+    p.x = -6 + rnd() * 22;
+    p.z = -14 + rnd() * 20;
     p.yaw = (rnd() * 2 - 1) * Math.PI;
     const s = serverPick(game, p);
     const c = pickUpgradeTarget(game.entities, p, cfg);

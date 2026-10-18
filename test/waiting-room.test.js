@@ -24,7 +24,7 @@ test('startMatch seats everyone on their team and begins the round', () => {
   assert.equal(game.entities.get('a').team, 'plant');
   assert.equal(game.entities.get('b').team, 'zombie');
   assert.equal(game.entities.get('b').name, 'Bo');
-  assert.equal(game.gardenCount(), 20);
+  assert.equal(game.gardenCount(), 32);
   for (const p of game.humans()) assert.equal(p.state, 'alive');
   run(game, 1);
   assert.equal(game.phase, 'playing');
@@ -79,7 +79,7 @@ test('autoRestart:false: after the result screen the game returns to the lobby p
   // the same game can run another round
   game.startMatch({ mode: 'versus', difficulty: 'normal', players: players() });
   assert.equal(game.phase, 'playing');
-  assert.equal(game.gardenCount(), 20);
+  assert.equal(game.gardenCount(), 32);
   assert.equal(game.mower.state, 'idle');
 });
 

@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../server/sim/game.js';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
-import { WORLD, gardenSlots, clampToWorld } from '../server/sim/world.js';
+import { WORLD, gardenSlots } from '../server/sim/world.js';
+import { clampToWorld } from '../server/sim/collide.js';
 import { makeGame, run, keys } from './helpers.js';
 
 test('addPlayer first sets mode and phase "playing"', () => {
@@ -106,29 +107,32 @@ test('positions stay clamped inside the yard (house and fence block)', () => {
   assert.ok(p.x <= WORLD.bounds.maxX, `x=${p.x}`);
 });
 
-test('garage interior is reachable through the door, walls block elsewhere', () => {
+test('the garage is reachable through its door (plants walk through their own doors), walls block elsewhere', () => {
   const game = makeGame();
   game.addPlayer('a', { team: 'plant', mode: 'coop' });
   const p = game.entities.get('a');
-  p.x = 20;
-  p.z = 24;
-  game.handleInput('a', { keys: keys({ b: true }), yaw: 0, pitch: 0 }); // +z
+  const d = WORLD.doors.find((x) => x.id === 'garage');
+  p.x = WORLD.garage.maxX + 3;
+  p.z = d.z;
+  game.handleInput('a', { keys: keys({ f: true }), yaw: Math.PI / 2, pitch: 0 }); // toward -x
   run(game, 2);
-  assert.ok(p.z > 32, `entered garage z=${p.z}`);
-  assert.ok(p.z <= WORLD.garage.maxZ, 'stays inside garage');
+  assert.ok(p.x < WORLD.garage.maxX - 3, `entered garage x=${p.x}`);
+  assert.ok(p.x >= WORLD.garage.minX, 'stays inside the garage');
   // beside the door: blocked at the wall
-  p.x = 12.5;
-  p.z = 24;
+  p.x = WORLD.garage.maxX + 3;
+  p.z = WORLD.garage.maxZ - 1;
   run(game, 2);
-  assert.ok(p.z <= WORLD.bounds.maxZ, `blocked at z=${p.z}`);
+  assert.ok(p.x >= WORLD.garage.maxX, `blocked at x=${p.x}`);
 });
 
-test('clampToWorld pushes points out of solids', () => {
-  const pos = clampToWorld({ x: 0, y: 0, z: 40 });
-  assert.ok(pos.z <= 30);
-  const inside = clampToWorld({ x: 20, y: 0, z: 40 });
-  assert.equal(inside.x, 20);
-  assert.equal(inside.z, 40);
+test('clampToWorld pushes points out of the static walls and the yard edge', () => {
+  const pos = clampToWorld({ x: -10, y: 0, z: WORLD.house.minZ + 0.2 }); // inside the front wall
+  assert.ok(pos.z <= WORLD.house.minZ - 0.4 || pos.z >= WORLD.house.minZ + 0.4 + 0.4, `z=${pos.z}`);
+  const inside = clampToWorld({ x: 0, y: 0, z: 15 }); // inside the kitchen: free
+  assert.equal(inside.x, 0);
+  assert.equal(inside.z, 15);
+  const out = clampToWorld({ x: 99, y: 0, z: -99 });
+  assert.ok(out.x <= WORLD.bounds.maxX && out.z >= WORLD.bounds.minZ);
 });
 
 test('jump rises and lands again', () => {
@@ -222,15 +226,20 @@ test('snapshot follows the protocol shape', () => {
   assert.doesNotThrow(() => JSON.stringify(s));
 });
 
-test('gardenSlots lays out 4 rows of 9 with fixed kinds', () => {
+test('gardenSlots: four plots of 4 rows x 4 columns, rows Peashooter / Cactus / Cactus / Peashooter', () => {
   const slots = gardenSlots();
-  assert.equal(slots.length, 36);
-  assert.deepEqual(slots.slice(0, 9).map((s) => s.x), [-16, -12, -8, -4, 0, 4, 8, 12, 16]);
-  const kindAt = (z) => new Set(slots.filter((s) => s.z === z).map((s) => s.kind));
-  assert.deepEqual([...kindAt(0)], ['peashooter']);
-  assert.deepEqual([...kindAt(4)], ['cactus']);
-  assert.deepEqual([...kindAt(8)], ['cactus']);
-  assert.deepEqual([...kindAt(12)], ['peashooter']);
+  assert.equal(slots.length, 64);
+  for (let plot = 0; plot < 4; plot++) {
+    const mine = slots.filter((s) => s.plot === plot);
+    assert.equal(mine.length, 16);
+    assert.deepEqual([0, 1, 2, 3].map((r) => mine.find((s) => s.row === r && s.col === 0).kind), ['peashooter', 'cactus', 'cactus', 'peashooter']);
+    assert.deepEqual(new Set(mine.map((s) => s.door)).size, 1);
+  }
+  assert.deepEqual(['front', 'side', 'back', 'garage'], [0, 1, 2, 3].map((i) => slots[i * 16].door));
+  // plots sit outside their doors, facing the way zombies come
+  const front = slots.filter((s) => s.plot === 0);
+  assert.ok(front.every((s) => s.z < WORLD.house.minZ));
+  assert.ok(slots.filter((s) => s.plot === 2).every((s) => s.z > WORLD.house.maxZ + 4));
 });
 
 test('Game constructor defaults work', () => {

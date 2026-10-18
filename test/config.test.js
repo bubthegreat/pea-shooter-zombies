@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, publicConfig } from '../server/sim/config.js';
 import { applyDamage } from '../server/sim/combat.js';
 import { stepGarden, plantAt } from '../server/sim/garden.js';
-import { gardenSlots } from '../server/sim/world.js';
-import { makeGame, run, entitiesOfKind } from './helpers.js';
+import { makeGame, run, entitiesOfKind, slotIdx } from './helpers.js';
 
 test('publicConfig is plain JSON with everything the client needs', () => {
   const cfg = publicConfig(DEFAULT_CONFIG);
@@ -12,9 +11,9 @@ test('publicConfig is plain JSON with everything the client needs', () => {
   assert.deepEqual(round, cfg);
   for (const k of [
     'tickRate', 'snapRate', 'moveSpeed', 'eyeHeight', 'playerHeight', 'roundLength', 'wiltRespawn', 'sproutTime',
-    'tierThresholds', 'streakBonus', 'weapons', 'plantTypes', 'startSunshine', 'mowerStartTime', 'waves', 'world', 'gardenSlots',
+    'tierThresholds', 'streakBonus', 'weapons', 'plantTypes', 'startSunshine', 'mowerStartTime', 'waves', 'map', 'gardenSlots',
   ]) assert.ok(k in cfg, `missing ${k}`);
-  assert.equal(cfg.gardenSlots.length, 36);
+  assert.equal(cfg.gardenSlots.length, 64);
   assert.equal(cfg.plantTypes.peashooter.cost, 50);
   assert.equal(cfg.plantTypes.cactus.cost, 100);
   assert.deepEqual(cfg.weapons.plant.map((w) => w.id), ['pea_blaster'], 'plant kids keep one gun');
@@ -26,8 +25,10 @@ test('publicConfig is plain JSON with everything the client needs', () => {
   assert.equal(cfg.plantLevels.max, 3);
   assert.equal(cfg.weapons.zombie.at(-1).id, 'auto_shot_rifle');
   assert.equal(cfg.waves.times[0], 5);
-  assert.equal(cfg.world.garage.doorMinX, 14);
-  assert.equal(cfg.world.mowerHome.z, 34);
+  assert.equal(cfg.map.garage.maxX, 20);
+  assert.equal(cfg.map.doors.length, 4);
+  assert.equal(cfg.map.terrain.nx * cfg.map.terrain.nz * 2, Buffer.from(cfg.map.terrain.data, 'base64').length);
+  assert.ok(cfg.map.statics.length > 50 && cfg.map.fridge.x < cfg.map.house.maxX);
   assert.ok(!('features' in cfg) && !('difficulties' in cfg), 'server tuning stays private');
 });
 
@@ -45,12 +46,11 @@ test('converted bots never pile up: each one poofs into a sun pickup and nothing
 });
 
 test('turrets aim where a moving target was a moment ago', () => {
-  const idx = gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 0);
   const aimYaw = (vx) => {
     const game = makeGame();
     game.addPlayer('a', { team: 'plant', mode: 'coop' });
-    const plant = plantAt(game, idx);
-    const z = game.spawnBot('zombie', 0, -15);
+    const plant = plantAt(game, slotIdx(0, 0, 1));
+    const z = game.spawnBot('zombie', plant.x, plant.z - 15);
     z.vx = vx;
     plant.cooldown = 99;
     stepGarden(game, 1 / 30);

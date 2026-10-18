@@ -1,6 +1,7 @@
 // Projectiles, damage, conversion (zombies -> plants) and wilting (plants).
 import { distPointSegment, forwardVec } from './vec.js';
-import { WORLD, insideSolid } from './world.js';
+import { WORLD } from './world.js';
+import { terrainHeight } from './terrain.js';
 import { getWeapon } from './weapons.js';
 import { recordHurt, recordKill } from './upgrades.js';
 import { spawnSun } from './garden.js';
@@ -90,10 +91,11 @@ function projectileHits(p, t) {
 
 const isFighter = (e) => e.kind === 'player' || e.kind === 'bot';
 
-/** Move projectiles (substepped so fast shots can't tunnel), resolve hits. */
+/** Move projectiles (substepped so fast shots can't tunnel), resolve hits against the world, cover and targets. */
 export function stepProjectiles(game, dt) {
   const c = game.config;
-  const ext = WORLD.extent;
+  const ext = WORLD.bounds;
+  const field = game.field;
   const projectiles = [];
   const targets = [];
   const barrows = [];
@@ -109,6 +111,9 @@ export function stepProjectiles(game, dt) {
     const sdt = dt / steps;
     let dead = false;
     for (let s = 0; s < steps && !dead; s++) {
+      const ox = p.x;
+      const oy = p.y;
+      const oz = p.z;
       if (p.gravity) {
         p.vy -= p.gravity * sdt;
         p.pitch = Math.atan2(p.vy, Math.hypot(p.vx, p.vz));
@@ -116,13 +121,21 @@ export function stepProjectiles(game, dt) {
       p.x += p.vx * sdt;
       p.y += p.vy * sdt;
       p.z += p.vz * sdt;
-      if (p.y <= 0 || p.x < ext.minX || p.x > ext.maxX || p.z < ext.minZ || p.z > ext.maxZ || insideSolid(p.x, p.y, p.z)) {
-        if (p.splash && p.y <= 0) {
-          p.y = 0.05;
+      const ground = terrainHeight(p.x, p.z);
+      if (p.y <= ground || p.x < ext.minX || p.x > ext.maxX || p.z < ext.minZ || p.z > ext.maxZ) {
+        if (p.splash && p.y <= ground) {
+          p.y = ground + 0.05;
           explode(game, p);
         }
         dead = true;
         break;
+      }
+      // walls, cover, doors: stop at the first thing in the way (targets right in front of it still get hit first)
+      const wallHit = field.segment(ox, oy, oz, p.x, p.y, p.z, p.radius * 0.5, p.team);
+      if (wallHit) {
+        p.x = ox + (p.x - ox) * wallHit.t;
+        p.y = oy + (p.y - oy) * wallHit.t;
+        p.z = oz + (p.z - oz) * wallHit.t;
       }
       const barrow = barrows.find((b) => b.item === 'wheelbarrow' && barrowBlocks(game, b, p));
       if (barrow) {
@@ -145,6 +158,12 @@ export function stepProjectiles(game, dt) {
         dead = true;
         break;
       }
+      if (!dead && wallHit) {
+        const owner = game.entities.get(p.owner) ?? null;
+        if (p.splash) explode(game, p);
+        else if (wallHit.c._piece) game.cover.damage(wallHit.c._piece, p.damage, owner, p.team);
+        dead = true;
+      }
     }
     p.life -= dt;
     if (dead || p.life <= 0) {
@@ -164,6 +183,7 @@ export function applySlow(target, { factor, secs }) {
 function explode(game, p) {
   const owner = game.entities.get(p.owner) ?? null;
   game.emit('explode', { x: p.x, y: p.y, z: p.z, radius: p.splash, projKind: p.projKind, team: p.team });
+  game.cover.splash(p.x, p.y, p.z, p.splash, p.damage, owner, p.team);
   for (const t of [...game.entities.values()]) {
     if (!isTargetable(game, t) || t.team === p.team || (t.kind !== 'mower' && t.state !== 'alive')) continue;
     const y0 = t.y + t.radius;

@@ -194,7 +194,8 @@ test('fast projectiles do not tunnel through thin targets', () => {
 test('projectiles die on walls, ground and after their lifetime', () => {
   const game = makeGame();
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  // toward the house (+z): yaw = PI
+  // toward the house wall (+z): yaw = PI, away from the door
+  a.x = -4;
   a.yaw = Math.PI;
   fireWeapon(game, a);
   run(game, 0.2);

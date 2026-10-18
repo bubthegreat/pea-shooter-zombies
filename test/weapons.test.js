@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, publicConfig } from '../server/sim/config.js';
-import { WORLD, gardenSlots } from '../server/sim/world.js';
+import { WORLD } from '../server/sim/world.js';
 import { PLANT_LADDER, ZOMBIE_LADDER, getWeapon } from '../server/sim/weapons.js';
 import { fireWeapon, stepProjectiles, spawnProjectile, applyDamage } from '../server/sim/combat.js';
 import { plantAt } from '../server/sim/garden.js';
 import { tierForProgress } from '../server/sim/upgrades.js';
-import { makeGame, run, entitiesOfKind } from './helpers.js';
+import { makeGame, run, entitiesOfKind, slotIdx } from './helpers.js';
 
 const SPAWN = WORLD.plantSpawn;
 
@@ -151,7 +151,9 @@ test('zombie shots headshot plant players too', () => {
 test('garden plants have no head zone', () => {
   const game = makeGame();
   game.addPlayer('z', { team: 'zombie', mode: 'coop' });
-  const plant = plantAt(game, gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 0));
+  const plant = plantAt(game, slotIdx(0, 0, 1));
+  plant.x = 0;
+  plant.z = 0;
   plant.height = 3; // tall enough that a high shot would be a "head" on a fighter
   spawnProjectile(game, { team: 'zombie', owner: 'z', projKind: 'bullet', damage: 8, speed: 20, x: 0, y: 2.8, z: 5, dir: { x: 0, y: 0, z: -1 } });
   for (let i = 0; i < 30; i++) stepProjectiles(game, 1 / 30);
@@ -162,7 +164,9 @@ test('garden plants have no head zone', () => {
 test('garden turret shots never headshot', () => {
   const game = makeGame();
   game.addPlayer('p', { team: 'plant', mode: 'coop' });
-  const turret = plantAt(game, gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 0));
+  const turret = plantAt(game, slotIdx(0, 0, 1));
+  turret.x = 0;
+  turret.z = 0;
   const z = game.spawnBot('zombie', 0, -10);
   z.hp = z.maxHp = 100;
   spawnProjectile(game, { team: 'plant', owner: turret.id, projKind: 'pea', damage: 1, speed: 50, x: 0, y: 1.65, z: -5, dir: { x: 0, y: 0, z: -1 } });
@@ -243,7 +247,7 @@ test('brain cannon splash hurts garden plants and plant kids alike', () => {
   const p = game.addPlayer('p', { team: 'plant' });
   p.x = 0;
   p.z = -10;
-  const plant = plantAt(game, gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 0));
+  const plant = plantAt(game, slotIdx(0, 0, 1));
   plant.x = 3;
   plant.z = -10;
   const w = getWeapon('brain_cannon');

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WORLD } from '../server/sim/world.js';
+import { MAP } from '../server/sim/map.js';
+import { STEP } from '../server/sim/collide.js';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
 import { Game } from '../server/sim/game.js';
 import { mulberry32 } from './helpers.js';
@@ -56,8 +58,13 @@ for (const seed of [1, 2, 3]) {
           for (const k of ['x', 'y', 'z', 'yaw', 'hp', 'maxHp']) assert.ok(Number.isFinite(e[k]), `${e.kind} ${e.id}.${k}=${e[k]}`);
           assert.ok(e.hp >= 0, `${e.id} hp ${e.hp}`);
           if (e.kind === 'player' || e.kind === 'bot') {
-            assert.ok(Math.abs(e.x) <= WORLD.extent.maxX && e.z >= WORLD.extent.minZ && e.z <= WORLD.extent.maxZ, `${e.id} out of world`);
-            assert.ok(!(e.z > WORLD.bounds.maxZ && (e.x < 13.9 || e.x > 26.1)), `${e.id} inside a wall at ${e.x},${e.z}`);
+            const b = WORLD.bounds;
+            assert.ok(e.x >= b.minX && e.x <= b.maxX && e.z >= b.minZ && e.z <= b.maxZ, `${e.id} out of world`);
+            for (const c of MAP.statics) {
+              if (c.s !== 'box' || c.blocks === false || c.y1 <= e.y + STEP || c.y0 >= e.y + 1.8) continue;
+              const inside = e.x > c.minX + 0.05 && e.x < c.maxX - 0.05 && e.z > c.minZ + 0.05 && e.z < c.maxZ - 0.05;
+              assert.ok(!inside, `${e.id} inside a wall at ${e.x},${e.z} (y ${e.y})`);
+            }
           }
         }
         assert.ok(snap.entities.length < 400, 'entity count stays bounded');

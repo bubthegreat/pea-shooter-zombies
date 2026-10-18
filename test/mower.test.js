@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
-import { WORLD, gardenSlots } from '../server/sim/world.js';
+import { WORLD } from '../server/sim/world.js';
 import { plantAt } from '../server/sim/garden.js';
 import { applyDamage } from '../server/sim/combat.js';
-import { makeGame, run, keys, entitiesOfKind } from './helpers.js';
+import { makeGame, run, keys, entitiesOfKind, S, slotIdx } from './helpers.js';
 
 const HOME = WORLD.mowerHome;
 
@@ -99,6 +99,11 @@ function startDriving(game, z, mower) {
   run(game, 3.3);
   game.handleInput('z', { use: false });
   assert.equal(mower.state, 'driving');
+  // the garage is cramped: take the party out into the open yard
+  z.x = 30;
+  z.z = -30;
+  mower.x = 30;
+  mower.z = -30;
 }
 
 test('the driver is carried at mower speed and the mower follows them', () => {
@@ -109,7 +114,7 @@ test('the driver is carried at mower speed and the mower follows them', () => {
   run(game, 1);
   assert.ok(Math.abs(z0 - z.z - DEFAULT_CONFIG.mowerSpeed) < 0.6, `moved ${z0 - z.z}`);
   assert.ok(Math.hypot(mower.x - z.x, mower.z - z.z) < 0.01, 'mower sits under the driver');
-  assert.ok(mower.z < HOME.z - 5);
+  assert.ok(mower.z < -30 - 5);
   assert.equal(game.snapshot().entities.find((e) => e.id === 'mower').state, 'driving');
 });
 
@@ -123,15 +128,15 @@ test('a driver cannot shoot', () => {
 
 test('driving mower destroys plant in path (mow event counts as a kill)', () => {
   const { game, z, mower } = setup();
-  const slot = gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 12);
+  const slot = slotIdx(0, 3, 1);
   const plant = plantAt(game, slot);
-  const other = plantAt(game, gardenSlots().findIndex((s) => s.x === 4 && s.z === 12));
-  // drive straight through (0, 12) from the +z side
+  const other = plantAt(game, slotIdx(0, 3, 2));
+  // drive straight through the first plant from the +z side
   mower.state = 'driving';
   mower.driver = 'z';
   mower.progress = 1;
-  z.x = 0;
-  z.z = 17;
+  z.x = plant.x;
+  z.z = plant.z + 3.8;
   z.yaw = 0;
   mower.x = z.x;
   mower.z = z.z;
@@ -140,7 +145,7 @@ test('driving mower destroys plant in path (mow event counts as a kill)', () => 
   run(game, 1.2);
   assert.equal(plant.state, 'dead');
   assert.equal(game.entities.has(plant.id), false);
-  assert.equal(game.entities.has(other.id), true, 'plant 4 m off the path survives');
+  assert.equal(game.entities.has(other.id), true, 'plant 3.5 m off the path survives');
   const ev = game.drainEvents().filter((e) => e.type === 'mow');
   assert.equal(ev.length, 1);
   assert.equal(ev[0].id, plant.id);
@@ -153,29 +158,29 @@ test('driving mower destroys plant in path (mow event counts as a kill)', () => 
 
 test('a mower pass can clear a whole row', () => {
   const { game, z, mower } = setup();
-  gardenSlots().forEach((s, i) => { if (s.z === 12) plantAt(game, i); });
-  assert.equal(game.gardenCount(), 9);
+  for (let c = 0; c < 4; c++) plantAt(game, slotIdx(0, 3, c));
+  assert.equal(game.gardenCount(), 4);
   mower.state = 'driving';
   mower.driver = 'z';
   z.hp = z.maxHp = 1e6; // the row's own turrets would otherwise convert the driver
-  z.x = -18;
-  z.z = 12;
+  z.x = S(3, 0).x - 4;
+  z.z = S(3, 0).z;
   mower.x = z.x;
   mower.z = z.z;
   game.handleInput('z', { keys: keys({ r: true }), yaw: 0 });
   run(game, 6);
   assert.equal(game.gardenCount(), 0);
-  assert.equal(z.progress, 9);
-  assert.equal(z.tier, 3, "mowing earns upgrades (9 kills)");
+  assert.equal(z.progress, 4);
+  assert.equal(z.tier, 2, 'mowing earns upgrades (4 kills)');
 });
 
 test('plants are only mowed while driving', () => {
   const { game, z, mower } = setup();
-  const plant = plantAt(game, gardenSlots().findIndex((s) => s.x === 0 && s.z === 12));
-  z.x = 0;
-  z.z = 12;
-  mower.x = 0;
-  mower.z = 12;
+  const plant = plantAt(game, slotIdx(0, 3, 1));
+  z.x = plant.x;
+  z.z = plant.z;
+  mower.x = plant.x;
+  mower.z = plant.z;
   run(game, 0.5);
   assert.equal(game.entities.has(plant.id), true, 'idle mower does nothing');
 });

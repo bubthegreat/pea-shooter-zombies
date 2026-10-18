@@ -1,7 +1,9 @@
 // All gameplay tunables live here. Later modules read from game.config (never hard-code numbers).
-import { WORLD, gardenSlots } from './world.js';
+import { WORLD, PLOTS, gardenSlots } from './world.js';
 import { PLANT_LADDER, ZOMBIE_LADDER } from './weapons.js';
 import { planWaves } from './rules.js';
+import { MAP } from './map.js';
+import { terrainConfig } from './terrain.js';
 
 export const DEFAULT_CONFIG = {
   tickRate: 30,
@@ -12,6 +14,8 @@ export const DEFAULT_CONFIG = {
   // Feature switches (tests and debugging turn individual subsystems off).
   features: {
     initialGarden: true,
+    cover: true,
+    headStart: true,
     waves: true,
     botAI: true,
     sunDrops: true,
@@ -86,8 +90,8 @@ export const DEFAULT_CONFIG = {
   sunFallSpeed: 4,
   sunDropHeight: 12,
   sunRestHeight: 1,
-  sunDropX: [-28, 28],
-  sunDropZ: [-30, 20],
+  sunDropX: [-36, 36],
+  sunDropZ: [-40, 42],
   sunMaxActive: 10,
 
   // Mower
@@ -107,10 +111,10 @@ export const DEFAULT_CONFIG = {
   rackUseRange: 2,
   rackRespawn: 20, // an item is back on its hook this many seconds after a drop / wreck / conversion
   rack: [
-    { item: 'weed_eater', x: 15.5, z: 41.5 },
-    { item: 'leaf_blower', x: 18.5, z: 41.5 },
-    { item: 'hedge_trimmer', x: 21.5, z: 41.5 },
-    { item: 'wheelbarrow', x: 24.5, z: 41.5 },
+    { item: 'weed_eater', x: 11.2, z: 21.2 },
+    { item: 'leaf_blower', x: 13.6, z: 21.2 },
+    { item: 'hedge_trimmer', x: 16.0, z: 21.2 },
+    { item: 'wheelbarrow', x: 18.4, z: 21.2 },
   ],
   equipment: {
     weed_eater: {
@@ -131,7 +135,7 @@ export const DEFAULT_CONFIG = {
     },
   },
   // Share of zombie bots that go for each item (rolled once per bot, after the mower roll).
-  botItemChance: { weed_eater: 0.12, hedge_trimmer: 0.05, leaf_blower: 0.03, wheelbarrow: 0.05 },
+  botItemChance: { weed_eater: 0, hedge_trimmer: 0, leaf_blower: 0, wheelbarrow: 0 },
 
   // Rounds, waves and win rules
   roundLength: 480,
@@ -153,10 +157,15 @@ export const DEFAULT_CONFIG = {
   botAimRerollInterval: 0.3,
   zombieBotShootRange: 20,
   zombieBotStopDistance: 8, // zombies stop this far from the plant they are attacking
-  mowerBotChance: 0.25, // share of zombie bots that go for the mower
+  mowerBotChance: 0, // share of zombie bots that go for the mower
   mowerBotStopDistance: 1.2,
-  // Mower-seeking bots sneak up the right-hand flank (clear of the garden) before turning into the garage.
-  mowerFlank: { x: 28, startZ: -20, endZ: 22 },
+
+  // Doors: HP of each (a zombie shot does 8). Plants walk and shoot through their own doors; zombies must break them.
+  doorHp: { front: 150, side: 150, back: 150, garage: 260, default: 150 },
+  // Destructible cover by kind: hp. (Filled in with the cover layout.)
+  cover: {},
+  // Bots: how far from a door they stand and shoot at it, how long they must be stuck before they act.
+  botStuckTime: 0.5,
 
   // The Gardener: the plant team's only computer player, present only while no human plays plants.
   // It walks the garden replanting empty slots from its own sunshine income and shoots weakly.
@@ -174,7 +183,7 @@ export const DEFAULT_CONFIG = {
     plantReach: 2.5, // walks to within this distance of a slot before planting
     upgradeInterval: 45, // seconds between plant upgrades (it replants first)
     upgradeReserve: 100, // sunshine it keeps back after an upgrade, for replanting
-    restZ: 16, // idles behind the garden
+    rest: { x: 5, z: 4 }, // idles on the porch
   },
 };
 
@@ -236,8 +245,54 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     projectileRadius: c.projectileRadius,
     headshotMultiplier: c.headshotMultiplier,
     headHeight: c.headHeight,
-    // World layout (bounds, gate, house, garage, mowerHome, plantSpawn, solids) and garden slots
-    world: WORLD,
+    // Static map (terrain grid, colliders, doors, cover, plots...) and garden slots
+    map: publicMap(),
     gardenSlots: gardenSlots(),
   };
+}
+
+const r2 = (v) => Math.round(v * 100) / 100;
+
+function compact(c) {
+  const o = { s: c.s, y0: r2(c.y0), y1: r2(c.y1) };
+  if (c.s === 'box') Object.assign(o, { minX: r2(c.minX), maxX: r2(c.maxX), minZ: r2(c.minZ), maxZ: r2(c.maxZ) });
+  else Object.assign(o, { x: r2(c.x), z: r2(c.z), r: r2(c.r) });
+  if (c.id) o.id = c.id;
+  if (c.kind) o.kind = c.kind;
+  if (c.style) o.style = c.style;
+  if (c.rot) o.rot = r2(c.rot);
+  if (c.passTeam) o.passTeam = c.passTeam;
+  return o;
+}
+
+let mapCache = null;
+
+/** The static map in plain JSON, built once. */
+function publicMap() {
+  mapCache ??= {
+    bounds: WORLD.bounds,
+    gate: WORLD.gate,
+    pen: WORLD.pen,
+    house: WORLD.house,
+    garage: WORLD.garage,
+    doors: WORLD.doors,
+    doorways: WORLD.doorways,
+    rooms: WORLD.rooms,
+    fridge: WORLD.fridge,
+    mowerHome: WORLD.mowerHome,
+    plantSpawn: WORLD.plantSpawn,
+    deck: WORLD.deck,
+    shed: WORLD.shed,
+    cellar: WORLD.cellar,
+    creek: WORLD.creek,
+    bridge: WORLD.bridge,
+    gravel: WORLD.gravel,
+    plots: PLOTS.map((p) => ({ index: p.index, door: p.door, rect: p.rect })),
+    terrain: terrainConfig(),
+    statics: MAP.statics.map(compact),
+    doorPieces: MAP.doors.map(compact),
+    cover: MAP.cover.map(compact),
+    partSpots: MAP.partSpots,
+  };
+  return mapCache;
 }

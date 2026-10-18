@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, publicConfig } from '../server/sim/config.js';
-import { WORLD, gardenSlots } from '../server/sim/world.js';
+import { WORLD } from '../server/sim/world.js';
 import { plantAt, spawnSun } from '../server/sim/garden.js';
 import { applyDamage, spawnProjectile } from '../server/sim/combat.js';
-import { makeGame, run, keys, entitiesOfKind } from './helpers.js';
+import { makeGame, run, keys, entitiesOfKind, slotIdx } from './helpers.js';
+
+const OZ = -20; // the open front yard: tool fights happen around (0, OZ)
 
 const EQ = DEFAULT_CONFIG.equipment;
 const RACK = Object.fromEntries(DEFAULT_CONFIG.rack.map((r) => [r.item, r]));
@@ -14,7 +16,7 @@ function setup(extra = {}) {
   const z = game.addPlayer('z', { name: 'Zed', team: 'zombie', mode: 'versus' });
   const p = game.addPlayer('p', { name: 'Pea', team: 'plant' });
   p.x = 0;
-  p.z = 0;
+  p.z = OZ;
   return { game, z, p };
 }
 
@@ -38,8 +40,8 @@ test('four tools hang on the garage rack at round start, one each', () => {
   for (const r of racks) {
     assert.equal(r.available, true);
     assert.equal(r.heldBy, null);
-    assert.ok(r.x >= WORLD.garage.doorMinX && r.x <= WORLD.garage.doorMaxX);
-    assert.ok(r.z > WORLD.bounds.maxZ && r.z < 43, `inside the garage z=${r.z}`);
+    assert.ok(r.x > WORLD.garage.minX && r.x < WORLD.garage.maxX, `inside the garage x=${r.x}`);
+    assert.ok(r.z > WORLD.garage.minZ && r.z < WORLD.garage.maxZ, `inside the garage z=${r.z}`);
     const s = snapOf(game, r.id);
     assert.equal(s.kind, 'rack_item');
     assert.equal(s.itemId, r.itemId);
@@ -90,11 +92,12 @@ test('E at a rack takes the item; only zombies, only if free, only near, one at 
 
 test('holding E on arrival does not grab (a fresh press is needed)', () => {
   const { game, z } = setup();
-  z.x = 14.5;
-  z.z = 33; // away from every rack hook and from the mower
+  z.x = 10;
+  z.z = 16; // away from every rack hook and from the mower
   game.handleInput('z', { use: true });
   game.tick(1 / 30);
   z.x = RACK.hedge_trimmer.x;
+  z.z = RACK.hedge_trimmer.z - 1;
   run(game, 0.3);
   assert.equal(z.item, null);
 });
@@ -104,8 +107,8 @@ test('Q drops, E away from the rack drops, E at the rack puts it straight back; 
   grab(game, z, 'leaf_blower');
   assert.equal(z.item, 'leaf_blower');
   // Q away from the rack
-  z.x = 20;
-  z.z = 36;
+  z.x = 16;
+  z.z = 16;
   game.handleInput('z', { drop: true });
   game.tick(1 / 30);
   game.handleInput('z', { drop: false });
@@ -124,8 +127,8 @@ test('Q drops, E away from the rack drops, E at the rack puts it straight back; 
   // take it again and drop it with E away from the rack
   grab(game, z, 'leaf_blower');
   assert.equal(z.item, 'leaf_blower');
-  z.x = 20;
-  z.z = 34;
+  z.x = 16;
+  z.z = 14;
   game.handleInput('z', { use: true });
   game.tick(1 / 30);
   game.handleInput('z', { use: false });
@@ -182,7 +185,7 @@ test('a tool replaces the gun: fire uses the tool, no projectiles', () => {
   const { game, z } = setup();
   grab(game, z, 'weed_eater');
   z.x = 10;
-  z.z = 0;
+  z.z = OZ;
   game.handleInput('z', { fire: true, yaw: 0 });
   run(game, 1);
   assert.equal(entitiesOfKind(game, 'projectile').length, 0);
@@ -220,10 +223,18 @@ test('tools reset on a new round', () => {
 
 // ---- the tools -------------------------------------------------------------------------------
 
-const PEA_SLOT = gardenSlots().findIndex((s) => s.kind === 'peashooter' && s.x === 0 && s.z === 0);
+const PEA_SLOT = slotIdx(0, 0, 1);
+
+/** The test turret, moved to the middle of the tool arena. */
+function turretAtArena(game, x = 0, z = OZ) {
+  const t = plantAt(game, PEA_SLOT);
+  t.x = x;
+  t.z = z;
+  return t;
+}
 
 /** A zombie 'z' holding `item`, standing `dist` m south (+z) of the target spot facing it (-z... we face +z? no: face the target). */
-function armed(item, targetX = 0, targetZ = 0, dist = 2) {
+function armed(item, targetX = 0, targetZ = OZ, dist = 2) {
   const { game, z, p } = setup();
   grab(game, z, item);
   z.hp = z.maxHp = 1e6; // nearby turrets must not convert the tester
@@ -235,7 +246,7 @@ function armed(item, targetX = 0, targetZ = 0, dist = 2) {
 
 test('weed eater shreds a garden plant in about 1.5 s and counts as a kill', () => {
   const { game, z } = armed('weed_eater');
-  const plant = plantAt(game, PEA_SLOT);
+  const plant = turretAtArena(game);
   game.handleInput('z', { fire: true, yaw: 0 });
   run(game, 1.2);
   assert.equal(plant.state, 'alive');
@@ -248,8 +259,8 @@ test('weed eater shreds a garden plant in about 1.5 s and counts as a kill', () 
 });
 
 test('weed eater has a short cone: nothing behind it or past 3 m is touched; plant kids take moderate damage', () => {
-  const { game, z, p } = armed('weed_eater', 0, 0, 2);
-  const behind = plantAt(game, PEA_SLOT);
+  const { game, z, p } = armed('weed_eater', 0, OZ, 2);
+  const behind = turretAtArena(game);
   z.z = behind.z - 2; // plant now behind (z is further than... face +z instead of -z)
   z.yaw = 0; // faces -z, away from the plant
   game.handleInput('z', { fire: true, yaw: 0 });
@@ -270,21 +281,19 @@ test('weed eater has a short cone: nothing behind it or past 3 m is touched; pla
 });
 
 test('hedge trimmer wilts a plant kid in about a second, chews turrets, and slows the holder 25%', () => {
-  const { game, z, p } = armed('hedge_trimmer', 0, 0, 1.5);
+  const { game, z, p } = armed('hedge_trimmer', 0, OZ, 1.5);
   const speed0 = DEFAULT_CONFIG.moveSpeed;
   assert.equal(game.moveSpeedFor(z), speed0 * 0.75);
   p.x = 0;
-  p.z = 0;
-  z.z = 1.5;
+  p.z = OZ;
+  z.z = OZ + 1.5;
   z.yaw = 0;
   game.handleInput('z', { fire: true, yaw: 0 });
   run(game, 0.5);
   assert.ok(p.hp < p.maxHp);
   run(game, 0.5);
   assert.equal(p.state, 'wilted', `wilted within ~1 s, hp ${p.hp}`);
-  const plant = plantAt(game, PEA_SLOT);
-  plant.x = 0;
-  plant.z = 0;
+  const plant = turretAtArena(game);
   run(game, 1.5);
   assert.ok(plant.hp < plant.maxHp);
   run(game, 1.0);
@@ -292,15 +301,13 @@ test('hedge trimmer wilts a plant kid in about a second, chews turrets, and slow
 });
 
 test('leaf blower: pushes plant kids back, barely damages, ignores turrets mostly', () => {
-  const { game, z, p } = armed('leaf_blower', 0, 0, 6);
+  const { game, z, p } = armed('leaf_blower', 0, OZ, 6);
   p.x = 0;
-  p.z = 0;
-  const plant = plantAt(game, PEA_SLOT);
-  plant.x = 3;
-  plant.z = -1;
+  p.z = OZ;
+  const plant = turretAtArena(game, 3, OZ - 1);
   game.handleInput('z', { fire: true, yaw: 0 });
   run(game, 1);
-  assert.ok(p.z < -3, `plant kid blown back to z=${p.z}`);
+  assert.ok(p.z < OZ - 3, `plant kid blown back to z=${p.z}`);
   assert.ok(p.maxHp - p.hp < 10, `tiny damage ${p.maxHp - p.hp}`);
   assert.equal(p.state, 'alive');
   run(game, 6);
@@ -314,9 +321,9 @@ test('leaf blower: pushes plant kids back, barely damages, ignores turrets mostl
 });
 
 test('leaf blower swats incoming peas inside its cone and blows suns away', () => {
-  const { game, z, p } = armed('leaf_blower', 0, 0, 6);
-  p.x = 25;
-  p.z = 25; // out of the way
+  const { game, z, p } = armed('leaf_blower', 0, OZ, 6);
+  p.x = 38;
+  p.z = 44; // out of the way
   game.handleInput('z', { fire: true, yaw: 0 });
   // 40 peas flying at the blower from 8 m
   for (let i = 0; i < 40; i++) {
@@ -334,7 +341,7 @@ test('leaf blower swats incoming peas inside its cone and blows suns away', () =
 });
 
 test('leaf blower does not stop heavy shots (melon / house gun)', () => {
-  const { game, z } = armed('leaf_blower', 0, 0, 6);
+  const { game, z } = armed('leaf_blower', 0, OZ, 6);
   game.handleInput('z', { fire: true, yaw: 0 });
   spawnProjectile(game, { team: 'plant', owner: 'p', projKind: 'housepea', damage: 5, speed: 1, x: 0, y: 1.2, z: z.z - 6, dir: { x: 0, y: 0, z: 1 } });
   run(game, 0.3);
@@ -342,7 +349,7 @@ test('leaf blower does not stop heavy shots (melon / house gun)', () => {
 });
 
 test('wheelbarrow: 15% slower, no attack, blocks plant shots from the front and breaks after its HP', () => {
-  const { game, z, p } = armed('wheelbarrow', 0, 0, 6);
+  const { game, z, p } = armed('wheelbarrow', 0, OZ, 6);
   assert.equal(game.moveSpeedFor(z), DEFAULT_CONFIG.moveSpeed * 0.85);
   assert.equal(z.itemHp, 30);
   assert.equal(snapOf(game, 'z').itemHp, 30);
@@ -354,8 +361,8 @@ test('wheelbarrow: 15% slower, no attack, blocks plant shots from the front and 
   assert.equal(p.hp, p.maxHp);
   assert.equal(entitiesOfKind(game, 'projectile').length, 0);
   game.handleInput('z', { fire: false });
-  p.x = 25;
-  p.z = 25;
+  p.x = 38;
+  p.z = 44;
   // shots from the front hit the barrow, not the pusher
   game.drainEvents();
   for (let i = 0; i < 5; i++) {
@@ -384,9 +391,9 @@ test('wheelbarrow: 15% slower, no attack, blocks plant shots from the front and 
 });
 
 test('a zombie hiding behind the wheelbarrow is covered; one beside it is not', () => {
-  const { game, z, p } = armed('wheelbarrow', 0, 0, 6);
-  p.x = 25;
-  p.z = 25;
+  const { game, z, p } = armed('wheelbarrow', 0, OZ, 6);
+  p.x = 38;
+  p.z = 44;
   const hider = game.spawnBot('zombie', 0, z.z + 1.5);
   const side = game.spawnBot('zombie', 3, z.z - 1);
   for (const b of [hider, side]) b.hp = b.maxHp = 50;
@@ -396,87 +403,4 @@ test('a zombie hiding behind the wheelbarrow is covered; one beside it is not', 
   run(game, 1);
   assert.equal(hider.hp, 50);
   assert.equal(side.hp, 48);
-});
-
-// ---- bots -------------------------------------------------------------------------------------
-
-import { ensureAI } from '../server/sim/bots.js';
-
-function botGame() {
-  return makeGame({ features: { botAI: true } });
-}
-
-test('roughly the configured share of zombie bots go for each garage tool', () => {
-  const game = botGame();
-  game.addPlayer('p', { team: 'plant', mode: 'coop' });
-  const counts = {};
-  const total = 2000;
-  for (let i = 0; i < total; i++) {
-    const b = game.spawnBot('zombie', 0, -40);
-    ensureAI(game, b);
-    const k = b.ai.seeksMower ? 'mower' : b.ai.seeksItem ?? 'none';
-    counts[k] = (counts[k] ?? 0) + 1;
-    game.removeEntity(b);
-  }
-  assert.ok(counts.weed_eater / total > 0.07 && counts.weed_eater / total < 0.17, JSON.stringify(counts));
-  for (const item of Object.keys(DEFAULT_CONFIG.botItemChance)) assert.ok(counts[item] > 0, `${item} sometimes`);
-  assert.ok(counts.mower / total > 0.2 && counts.mower / total < 0.3);
-});
-
-test('a bot that wants the weed eater walks to the rack, takes it, and shreds the garden', () => {
-  const game = botGame();
-  game.addPlayer('p', { team: 'plant', mode: 'coop' }).x = -25;
-  for (const s of gardenSlots().keys()) if (s % 9 === 4 && s < 9) plantAt(game, s);
-  const plant = [...game.entities.values()].find((e) => e.kind === 'garden');
-  plant.hp = plant.maxHp = 60;
-  const bot = game.spawnBot('zombie', 22, 26);
-  bot.hp = bot.maxHp = 1e6;
-  ensureAI(game, bot);
-  bot.ai.seeksMower = false;
-  bot.ai.seeksItem = 'weed_eater';
-  let took = false;
-  for (let i = 0; i < 30 * 90 && plant.state === 'alive'; i++) {
-    game.tick(1 / 30);
-    if (bot.item === 'weed_eater') took = true;
-  }
-  assert.ok(took, 'took the weed eater');
-  assert.equal(plant.state, 'dead', 'and mowed down the plant');
-  assert.ok(game.events.some((e) => e.type === 'item_take' && e.id === bot.id));
-});
-
-test('a bot gives up on a tool somebody else already holds', () => {
-  const game = botGame();
-  game.addPlayer('p', { team: 'plant', mode: 'coop' });
-  const z = game.addPlayer('z', { team: 'zombie' });
-  grab(game, z, 'weed_eater');
-  const bot = game.spawnBot('zombie', 0, -30);
-  ensureAI(game, bot);
-  bot.ai.seeksMower = false;
-  bot.ai.seeksItem = 'weed_eater';
-  run(game, 1);
-  assert.equal(bot.ai.seeksItem, null);
-});
-
-test('armed bots with each tool go after something and use it', () => {
-  for (const item of ['hedge_trimmer', 'leaf_blower', 'wheelbarrow']) {
-    const game = botGame();
-    const p = game.addPlayer('p', { team: 'plant', mode: 'coop' });
-    p.x = 20;
-    p.z = 20;
-    p.hp = p.maxHp = 1e6;
-    plantAt(game, PEA_SLOT); // something for the wheelbarrow to roll toward
-    const bot = game.spawnBot('zombie', RACK[item].x, RACK[item].z - 1);
-    bot.hp = bot.maxHp = 1e6;
-    ensureAI(game, bot);
-    bot.ai.seeksMower = false;
-    bot.ai.seeksItem = item;
-    let used = false;
-    for (let i = 0; i < 30 * 100; i++) {
-      game.tick(1 / 30);
-      if (bot.using) used = true;
-      if (item === 'wheelbarrow' && Math.hypot(bot.x, bot.z) < 8) used = true; // rolled up to the turret
-    }
-    assert.ok(used, `${item} bot engaged`);
-    if (item !== 'wheelbarrow') assert.equal(bot.item, item, `${item} kept`);
-  }
 });

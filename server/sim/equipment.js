@@ -1,7 +1,6 @@
 // Garage equipment rack: lawn tools zombies can grab instead of their gun. One instance of each item;
 // it respawns on its rack slot rackRespawn seconds after it is dropped, destroyed or its holder is converted.
 // Everything is data-driven from config.equipment / config.rack.
-import { clampToWorld } from './world.js';
 import { dist2D, forwardVec, rightVec } from './vec.js';
 import { applyDamage } from './combat.js';
 
@@ -142,7 +141,7 @@ function swing(game, holder, def, tick) {
     if (def.knock && isFighter(t) && t.state === 'alive') {
       t.x += f.x * def.knock * tick;
       t.z += f.z * def.knock * tick;
-      clampToWorld(t, t.radius);
+      game.field.resolve(t, t.radius, t.y, t.y + t.height, t.team);
     }
   }
   if (def.blowSun) {
@@ -156,7 +155,7 @@ function swing(game, holder, def, tick) {
       if (Math.acos(Math.max(-1, Math.min(1, cos))) > def.halfAngle) continue;
       sun.x += (dx / d) * def.blowSun * tick;
       sun.z += (dz / d) * def.blowSun * tick;
-      clampToWorld(sun, 0);
+      game.field.resolve(sun, 0, 0, 1, null);
     }
   }
   if (def.deflect) {

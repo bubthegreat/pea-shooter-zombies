@@ -125,6 +125,7 @@ export function stepMower(game, dt) {
 
   // driving: the mower rides along with its driver and flattens every garden plant it touches
   m.x = driver.x;
+  m.y = driver.y;
   m.z = driver.z;
   m.yaw = driver.yaw;
   for (const g of [...game.entities.values()]) {

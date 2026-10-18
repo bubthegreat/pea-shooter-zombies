@@ -1,65 +1,141 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
-import { WORLD, gardenSlots } from '../server/sim/world.js';
+import { WORLD } from '../server/sim/world.js';
 import { plantAt, initGarden } from '../server/sim/garden.js';
 import { ensureAI } from '../server/sim/bots.js';
-import * as combat from '../server/sim/combat.js';
-import { makeGame, run, entitiesOfKind } from './helpers.js';
+import { MAP } from '../server/sim/map.js';
+import { makeGame, run, entitiesOfKind, slotIdx, forceRoute, breakDoors, insideStatic } from './helpers.js';
 
-const nearestPlantDist = (game, b) =>
-  Math.min(...entitiesOfKind(game, 'garden').map((g) => Math.hypot(g.x - b.x, g.z - b.z)));
+const FRIDGE = WORLD.fridge.stand;
+const atFridge = (b) => Math.hypot(b.x - FRIDGE.x, b.z - FRIDGE.z) < 1.3;
 
 function botGame(features = {}, overrides = {}) {
   return makeGame({ features: { botAI: true, ...features }, botItemChance: {}, mowerBotChance: 0, ...overrides }); // no mower/tool errands unless a test asks
 }
 
-test('zombie bot moves toward garden over 2 s', () => {
-  const game = botGame({ initialGarden: true });
-  game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
-  const bot = game.spawnBot('zombie', 0, WORLD.gate.z);
-  const d0 = nearestPlantDist(game, bot);
+/** A game with an AFK plant kid parked far away, so bots have nothing to shoot at but the building. */
+function emptyYard(overrides = {}) {
+  const game = botGame({}, overrides);
+  const a = game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
+  a.x = 38;
+  a.z = 44;
+  return { game, a };
+}
+
+test('zombie bots slow-walk (kid-friendly speed) along their route', () => {
+  const { game } = emptyYard();
+  const bot = forceRoute(game, game.spawnBot('zombie', 0, WORLD.gate.z), 'front', 'front');
+  assert.ok(DEFAULT_CONFIG.zombieBotSpeed < DEFAULT_CONFIG.moveSpeed);
   run(game, 2);
   const moved = Math.hypot(bot.x - 0, bot.z - WORLD.gate.z);
   assert.ok(moved > 3 && moved < 7, `moved ${moved}`);
   assert.ok(bot.z > WORLD.gate.z + 3);
-  assert.ok(nearestPlantDist(game, bot) < d0 - 3);
 });
 
-test('zombie bots slow-walk (kid-friendly speed) and stop short of the front row to shoot', () => {
-  const game = botGame({ initialGarden: true });
-  game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'easy' });
-  const bot = game.spawnBot('zombie', 0, WORLD.gate.z);
-  bot.hp = bot.maxHp = 1e6; // survive turrets for this test
-  assert.ok(DEFAULT_CONFIG.zombieBotSpeed < DEFAULT_CONFIG.moveSpeed);
-  run(game, 40);
-  // it parks about zombieBotStopDistance short of the front row (it may shuffle sideways while shooting)
-  assert.ok(bot.z < -2 && bot.z > -14, `bot parked at z=${bot.z}`);
-  const nearest = Math.min(...entitiesOfKind(game, 'garden').map((g) => Math.hypot(g.x - bot.x, g.z - bot.z)));
-  assert.ok(nearest > 3, `kept its distance (${nearest.toFixed(1)} m)`);
+test('every route leads to the fridge: front lawn, left gravel path, right hedge path (doors already broken)', () => {
+  for (const [route, door] of [['front', 'front'], ['front', 'side'], ['left', 'back'], ['left', 'side'], ['right', 'garage']]) {
+    const { game } = emptyYard();
+    breakDoors(game);
+    const bot = forceRoute(game, game.spawnBot('zombie', 0, WORLD.gate.z), route, door);
+    bot.hp = bot.maxHp = 1e6;
+    let t = 0;
+    while (!atFridge(bot) && t < 110) {
+      game.tick(1 / 30);
+      t += 1 / 30;
+      assert.equal(insideStatic(bot), null, `${route}/${door}: inside a wall at ${bot.x.toFixed(1)},${bot.z.toFixed(1)}`);
+    }
+    assert.ok(atFridge(bot), `${route}/${door}: reached the fridge (at ${bot.x.toFixed(1)}, ${bot.z.toFixed(1)} after ${t.toFixed(0)} s)`);
+  }
 });
 
-test('zombie bots shoot garden plants within range', () => {
+test('closed doors stop zombies: they shoot the door down, and only then get in', () => {
+  for (const [route, door] of [['front', 'front'], ['left', 'back'], ['right', 'garage']]) {
+    const { game } = emptyYard();
+    const bot = forceRoute(game, game.spawnBot('zombie', 0, WORLD.gate.z), route, door);
+    bot.hp = bot.maxHp = 1e6;
+    const piece = game.cover.get(`door:${door}`);
+    let t = 0;
+    let brokeAt = null;
+    while (!atFridge(bot) && t < 160) {
+      game.tick(1 / 30);
+      t += 1 / 30;
+      if (brokeAt === null && piece.state === 'broken') brokeAt = t;
+      if (brokeAt === null) assert.ok(!(bot.z > WORLD.house.minZ + 1 && bot.z < WORLD.house.maxZ - 1 && bot.x < WORLD.garage.maxX - 1 && door === 'front'), 'got in through a closed door');
+    }
+    assert.ok(brokeAt !== null && brokeAt < t, `${door} door broke before the fridge was reached`);
+    assert.ok(atFridge(bot), `${route}/${door}: reached the fridge`);
+    assert.ok(game.drainEvents().some((e) => e.type === 'coverBreak' && e.id === `door:${door}`));
+  }
+});
+
+test('zombie bots pick a route by weight: front 40 / left 30 / right 30 %, and all five itineraries get used', () => {
+  const game = botGame({});
+  game.addPlayer('a', { team: 'plant', mode: 'coop' });
+  const count = {};
+  const total = 600;
+  for (let i = 0; i < total; i++) {
+    const b = game.spawnBot('zombie', 0, WORLD.gate.z);
+    ensureAI(game, b);
+    const k = `${b.ai.itin.route}/${b.ai.itin.door}`;
+    count[k] = (count[k] ?? 0) + 1;
+  }
+  const fam = (r) => Object.entries(count).filter(([k]) => k.startsWith(r)).reduce((a, [, n]) => a + n, 0) / total;
+  assert.ok(Math.abs(fam('front') - 0.4) < 0.07, `front ${fam('front')}`);
+  assert.ok(Math.abs(fam('left') - 0.3) < 0.07, `left ${fam('left')}`);
+  assert.ok(Math.abs(fam('right') - 0.3) < 0.07, `right ${fam('right')}`);
+  assert.equal(Object.keys(count).length, 5, JSON.stringify(count));
+});
+
+test('zombies are held at the gate while the head start runs', () => {
+  const { game } = emptyYard();
+  const bot = forceRoute(game, game.spawnBot('zombie', 0, WORLD.gate.z), 'front', 'front');
+  game.headStart = 3;
+  run(game, 2);
+  assert.ok(Math.abs(bot.z - WORLD.gate.z) < 0.01, `still at the gate, z=${bot.z}`);
+  game.headStart = 0;
+  run(game, 2);
+  assert.ok(bot.z > WORLD.gate.z + 3, 'walking once released');
+});
+
+test('zombie bots shoot garden plants in sight and in range', () => {
   const game = botGame({});
   game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
-  const plant = plantAt(game, gardenSlots().findIndex((s) => s.x === 0 && s.z === 0));
+  const plant = plantAt(game, slotIdx(0, 0, 1));
   plant.hp = plant.maxHp = 1e6; // observe damage instead of death
-  const bot = game.spawnBot('zombie', 0, -12);
+  const bot = game.spawnBot('zombie', plant.x, plant.z - 12);
   bot.hp = bot.maxHp = 1e6;
   const player = game.entities.get('a');
-  player.x = 25;
-  player.z = 25; // far away
+  player.x = 38;
+  player.z = 44; // far away
   run(game, 15);
   assert.ok(plant.hp < 1e6, 'plant took hits');
+});
+
+test('zombie bots do not shoot through walls', () => {
+  const game = botGame({});
+  game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
+  const a = game.entities.get('a');
+  a.x = -3;
+  a.z = 12; // inside the house, behind the front wall
+  a.hp = a.maxHp = 1e6;
+  const bot = game.spawnBot('zombie', -3, 0); // 12 m away, wall in between
+  bot.hp = bot.maxHp = 1e6;
+  forceRoute(game, bot, 'front', 'front');
+  bot.ai.pi = 99; // no walking, only looking
+  bot.ai.mode = 'inside';
+  bot.ai.path = [{ x: -3, z: 0 }];
+  run(game, 6);
+  assert.equal(game.events.filter((e) => e.type === 'hit' && e.id === 'a').length, 0, 'no hits through the wall');
 });
 
 test('zombie bots shoot human plants, with a reaction delay and imperfect aim', () => {
   const game = botGame({}, { difficulties: { ...DEFAULT_CONFIG.difficulties, normal: { ...DEFAULT_CONFIG.difficulties.normal, reaction: 1 } } });
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
   a.x = 0;
-  a.z = 0;
+  a.z = -30;
   a.hp = a.maxHp = 1e6; // never wilts, so damage stays visible
-  const bot = game.spawnBot('zombie', 0, -15);
+  const bot = game.spawnBot('zombie', 0, -45);
   bot.hp = bot.maxHp = 1e6;
   run(game, 0.6);
   assert.equal(entitiesOfKind(game, 'projectile').length, 0, 'still reacting');
@@ -73,10 +149,14 @@ function hitsTaken(aimError, seconds = 12) {
   const game = botGame({}, { difficulties: { ...DEFAULT_CONFIG.difficulties, normal: diff }, seed: 42 });
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
   a.x = 0;
-  a.z = 0;
+  a.z = -30;
   a.hp = a.maxHp = 1e6;
-  const bot = game.spawnBot('zombie', 0, -14);
+  const bot = game.spawnBot('zombie', 0, -44);
   bot.hp = bot.maxHp = 1e6;
+  forceRoute(game, bot, 'front', 'front');
+  bot.ai.mode = 'inside';
+  bot.ai.path = [{ x: 0, z: -44 }]; // stand still and shoot
+  bot.ai.replan = 1e9;
   run(game, seconds);
   return game.events.filter((e) => e.type === 'hit' && e.id === 'a').length;
 }
@@ -98,68 +178,6 @@ test('easy is gentler than normal', () => {
   assert.ok(d.easy.waveBase < d.normal.waveBase);
 });
 
-test('about 1 in 4 zombie bots go for the mower', () => {
-  const game = botGame({}, { mowerBotChance: DEFAULT_CONFIG.mowerBotChance });
-  game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  let n = 0;
-  const total = 400;
-  for (let i = 0; i < total; i++) {
-    const b = game.spawnBot('zombie', 0, 0);
-    ensureAI(game, b);
-    if (b.ai.seeksMower) n++;
-  }
-  const share = n / total;
-  assert.ok(share > 0.15 && share < 0.35, `share ${share}`);
-});
-
-test('a mower-seeking bot fetches the mower and drives it into the garden', () => {
-  const game = botGame({ initialGarden: true });
-  game.addPlayer('a', { team: 'plant', mode: 'coop', difficulty: 'normal' });
-  const bot = game.spawnBot('zombie', 24, 24);
-  bot.hp = bot.maxHp = 1e6;
-  ensureAI(game, bot);
-  bot.ai.seeksMower = true;
-  const states = new Set();
-  let mowed = null;
-  for (let i = 0; i < 30 * 120 && !mowed; i++) {
-    game.tick(1 / 30);
-    states.add(game.mower.state);
-    mowed = game.events.find((e) => e.type === 'mow');
-  }
-  assert.ok(states.has('starting'), 'bot started the mower');
-  assert.ok(states.has('driving'), 'bot drove the mower');
-  assert.ok(mowed, 'mower mowed a plant');
-});
-
-test('mower-seeking bots take the right-hand flank, staying clear of the garden columns', () => {
-  const game = botGame({});
-  game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  const bot = game.spawnBot('zombie', -10, WORLD.gate.z);
-  bot.hp = bot.maxHp = 1e6;
-  ensureAI(game, bot);
-  bot.ai.seeksMower = true;
-  let minXInYard = Infinity;
-  for (let i = 0; i < 30 * 60 && game.mower.state === 'idle'; i++) {
-    game.tick(1 / 30);
-    if (bot.z > -8 && bot.z < 28) minXInYard = Math.min(minXInYard, bot.x);
-  }
-  assert.ok(minXInYard > 22, `walked up the flank, x >= ${minXInYard}`);
-  assert.notEqual(game.mower.state, 'idle', 'it reached the mower');
-});
-
-test('a bot that loses the race for the mower gives up on it', () => {
-  const game = botGame({ initialGarden: true });
-  game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  const z = game.addPlayer('z', { team: 'zombie' });
-  const bot = game.spawnBot('zombie', 0, -40);
-  ensureAI(game, bot);
-  bot.ai.seeksMower = true;
-  game.mower.state = 'driving';
-  game.mower.driver = z.id;
-  run(game, 2);
-  assert.equal(bot.ai.seeksMower, false);
-});
-
 test('bots survive degenerate situations (no garden, no targets, everything dead)', () => {
   const game = botGame({ gardener: true });
   game.addPlayer('a', { team: 'plant', mode: 'coop' });
@@ -171,18 +189,31 @@ test('bots survive degenerate situations (no garden, no targets, everything dead
   assert.doesNotThrow(() => run(game, 5));
 });
 
-test('bots stay inside the world and never walk through the house', () => {
-  const game = botGame({ initialGarden: true });
-  game.addPlayer('a', { team: 'plant', mode: 'coop' });
+test('bots stay inside the world and never walk through walls', () => {
+  const { game } = emptyYard();
   const bots = [];
-  for (let i = 0; i < 6; i++) {
-    const b = game.spawnBot('zombie', -20 + i * 8, WORLD.gate.z);
+  for (let i = 0; i < 8; i++) {
+    const b = game.spawnBot('zombie', -20 + i * 5, WORLD.gate.z);
     b.hp = b.maxHp = 1e6;
     bots.push(b);
   }
-  run(game, 60);
-  for (const b of bots) {
-    assert.ok(b.z <= WORLD.bounds.maxZ + 0.01 || (b.x >= 14 && b.x <= 26), `bot at ${b.x}, ${b.z}`);
-    assert.ok(Math.abs(b.x) <= WORLD.bounds.maxX);
+  for (let t = 0; t < 90; t++) {
+    run(game, 1);
+    for (const b of bots) {
+      assert.equal(insideStatic(b), null, `bot inside a wall at ${b.x.toFixed(1)}, ${b.z.toFixed(1)}`);
+      assert.ok(b.x >= WORLD.bounds.minX && b.x <= WORLD.bounds.maxX && b.z >= WORLD.bounds.minZ && b.z <= WORLD.bounds.maxZ);
+    }
   }
+});
+
+test('the nav graph: every edge is walkable and every doorway node is reachable from the gate', async () => {
+  const { planRoute, nodePath, NAV_IDS } = await import('../server/sim/nav.js');
+  const game = botGame({});
+  for (const [a, b] of MAP.edges) {
+    const pa = MAP.nodes[a];
+    const pb = MAP.nodes[b];
+    assert.ok(game.field.walkLine(pa[0], pa[1], pb[0], pb[1], 'plant'), `edge ${a} - ${b} is blocked by a wall`);
+  }
+  for (const id of NAV_IDS) assert.ok(nodePath('f1', id), `${id} is connected`);
+  assert.ok(planRoute(game.field, 0, WORLD.gate.z, FRIDGE.x, FRIDGE.z, 'zombie').length > 1);
 });

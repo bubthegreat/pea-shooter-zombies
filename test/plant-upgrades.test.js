@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG, publicConfig } from '../server/sim/config.js';
-import { gardenSlots } from '../server/sim/world.js';
+import { terrainHeight } from '../server/sim/terrain.js';
 import { PLANT_LADDER } from '../server/sim/weapons.js';
-import { plantAt, tryPlant, tryUpgrade, upgradeCost, levelScale, pickUpgradeTarget, stepGarden } from '../server/sim/garden.js';
+import { plantAt as realPlantAt, tryPlant, tryUpgrade, upgradeCost, levelScale, pickUpgradeTarget, stepGarden } from '../server/sim/garden.js';
 import { recordKill, recordHurt } from '../server/sim/upgrades.js';
 import { applyDamage, stepProjectiles } from '../server/sim/combat.js';
-import { makeGame, run, entitiesOfKind } from './helpers.js';
+import { makeGame, run, entitiesOfKind, S, slotPos } from './helpers.js';
 
 const TYPES = DEFAULT_CONFIG.plantTypes;
 const ORDER = ['peashooter', 'cactus', 'repeater', 'snowpea', 'spikesquash', 'melonpult', 'wallnut', 'gatling', 'houseplant'];
@@ -18,7 +18,19 @@ function plantGame(overrides) {
   return { game, p };
 }
 
-const slotAt = (x, z) => gardenSlots().findIndex((s) => s.x === x && s.z === z);
+// The fixtures below were written in a simple open yard (plants at z = 0..12). They keep those coordinates, shifted OFF metres
+// north into the open front yard: a plant is put in any free slot and then moved to its fixture spot (no walls or cover involved).
+const OFF = -20;
+let uniq = 0;
+const slotAt = (x, z) => ({ x, z: z + OFF, idx: uniq++ % 64 });
+const plantAt = (game, slot, kind) => {
+  if (typeof slot === 'number') return realPlantAt(game, slot, kind);
+  const g = realPlantAt(game, slot.idx, kind);
+  g.x = slot.x;
+  g.z = slot.z;
+  g.y = terrainHeight(g.x, g.z);
+  return g;
+};
 
 function kills(game, p, n) {
   for (let i = 0; i < n; i++) {
@@ -104,8 +116,8 @@ test('streak bonus jumping two tiers unlocks both plants, event names the newest
 
 test('planting a locked plant does nothing; unlocking it allows it', () => {
   const { game, p } = plantGame();
-  p.x = -6;
-  p.z = -1;
+  p.x = S(0, 0).x;
+  p.z = S(0, 0).z + 1;
   assert.equal(tryPlant(game, p, 'repeater'), null, 'repeater needs tier 1');
   assert.equal(p.sunshine, 5000);
   assert.ok(tryPlant(game, p, 'peashooter'));
@@ -122,24 +134,24 @@ test('planting a locked plant does nothing; unlocking it allows it', () => {
 
 test('any plant goes in any slot: a cactus in a peashooter-row slot, nearest empty slot wins', () => {
   const { game, p } = plantGame();
-  p.x = -12.5;
-  p.z = -1;
+  p.x = S(0, 0).x - 0.5;
+  p.z = S(0, 0).z + 1;
   const c = tryPlant(game, p, 'cactus');
   assert.ok(c);
-  assert.equal(c.z, 0, 'front row is a peashooter row, cactus goes there anyway');
-  assert.equal(c.x, -12);
-  p.x = 10;
-  p.z = 6; // between rows 4 and 8: row 4 slot (8 or 12) is nearest
+  assert.equal(c.z, S(0, 0).z, 'front row is a peashooter row, cactus goes there anyway');
+  assert.equal(c.x, S(0, 0).x);
+  p.x = S(1, 2).x;
+  p.z = S(1, 2).z + 1.2; // row 1 (a cactus row) is nearest
   const q = tryPlant(game, p, 'peashooter');
   assert.ok(q);
-  assert.equal(q.z, 4, 'a peashooter in a cactus row');
-  assert.equal(q.x, 8);
+  assert.equal(q.z, S(1, 2).z, 'a peashooter in a cactus row');
+  assert.equal(q.x, S(1, 2).x);
 });
 
 test('planting still needs an empty slot within 4 m', () => {
   const { game, p } = plantGame();
-  p.x = 0;
-  p.z = 20;
+  p.x = 30;
+  p.z = -30;
   assert.equal(tryPlant(game, p, 'peashooter'), null);
   assert.equal(p.sunshine, 5000);
 });
@@ -147,12 +159,11 @@ test('planting still needs an empty slot within 4 m', () => {
 test('input plant 1-9 picks the kind by index; 10 and junk are ignored', () => {
   const { game, p } = plantGame();
   kills(game, p, 23); // everything unlocked
-  p.x = -14;
-  p.z = -1;
   for (let n = 1; n <= 9; n++) {
     game.handleInput('a', { plant: n, plantSeq: n });
-    p.x = -16 + 4 * ((n - 1) % 9);
-    p.z = 0.4 + 4 * Math.floor((n - 1) / 9);
+    const s = slotPos(0, Math.floor((n - 1) / 4), (n - 1) % 4); // stand by the nth slot of the front plot
+    p.x = s.x;
+    p.z = s.z + 0.4;
     game.tick(1 / 30);
   }
   const kinds = entitiesOfKind(game, 'garden').map((g) => g.plantKind).sort();
@@ -182,7 +193,7 @@ test('tryUpgrade levels a nearby plant 1 -> 2 -> 3, charges, heals to a bigger m
   const g = plantAt(game, slotAt(0, 4), 'cactus');
   g.hp = 10;
   p.x = 0;
-  p.z = 6;
+  p.z = 6 + OFF;
   p.sunshine = 400;
   game.drainEvents();
   assert.equal(g.level, 1);
@@ -209,19 +220,19 @@ test('tryUpgrade needs sunshine, a plant within 3 m, a living plant kid, and a p
   const { game, p } = plantGame();
   const g = plantAt(game, slotAt(0, 4), 'cactus');
   p.x = 0;
-  p.z = 6;
+  p.z = 6 + OFF;
   p.sunshine = 74;
   assert.equal(tryUpgrade(game, p), null);
   assert.equal(g.level, 1);
   assert.equal(p.sunshine, 74);
   p.sunshine = 500;
-  p.z = 4 + 3.2;
+  p.z = 4 + 3.2 + OFF;
   assert.equal(tryUpgrade(game, p), null, 'too far');
-  p.z = 4 + 2.9;
+  p.z = 4 + 2.9 + OFF;
   assert.ok(tryUpgrade(game, p));
   const z = game.addPlayer('z', { team: 'zombie' });
   z.x = 0;
-  z.z = 6;
+  z.z = 6 + OFF;
   z.sunshine = 999;
   assert.equal(tryUpgrade(game, z), null);
   p.state = 'wilted';
@@ -236,7 +247,7 @@ test('upgrade target: the plant you look at beats a nearer one; otherwise the ne
   const left = plantAt(game, slotAt(-4, 4), 'cactus');
   const right = plantAt(game, slotAt(0, 4), 'cactus');
   p.x = -1.5; // 2.5 m from the left plant, 1.5 m from the right one... both within 3 m of (x=-1.5,z=4)
-  p.z = 4;
+  p.z = 4 + OFF;
   p.yaw = Math.PI / 2; // +yaw turns left: faces -x, toward the left plant
   assert.equal(pickUpgradeTarget(game, p), left);
   p.yaw = -Math.PI / 2; // faces +x, toward the right plant
@@ -253,7 +264,7 @@ test('input upgrade is a rising edge: one press, one level', () => {
   const { game, p } = plantGame();
   const g = plantAt(game, slotAt(0, 4), 'peashooter');
   p.x = 0;
-  p.z = 6;
+  p.z = 6 + OFF;
   game.handleInput('a', { upgrade: true });
   run(game, 0.5); // held for many ticks
   assert.equal(g.level, 2);
@@ -274,7 +285,7 @@ test('level multipliers: +40% damage per level on the shot, +25% fire rate per l
     const g = plantAt(game, slotAt(0, 0), 'peashooter');
     g.level = level;
     g.cooldown = 0;
-    const z = game.spawnBot('zombie', 0, -12);
+    const z = game.spawnBot('zombie', 0, -12 + OFF);
     z.hp = z.maxHp = 1e6;
     game.drainEvents();
     for (let i = 0; i < Math.round(seconds * 30); i++) {
@@ -301,7 +312,7 @@ function turretFixture(kind, targetZ = -10, over = {}) {
   const { game } = plantGame({ plantTypes: types });
   const g = plantAt(game, slotAt(0, 4), kind);
   g.cooldown = 0;
-  const z = game.spawnBot('zombie', 0, targetZ);
+  const z = game.spawnBot('zombie', 0, targetZ + OFF);
   z.hp = z.maxHp = 1e6;
   game.drainEvents();
   return { game, g, z };
@@ -346,7 +357,7 @@ test('Snow Pea slows zombies to half speed for 2 s', () => {
 
 test('Melon-pult lobs an arcing melon that splashes a clump of zombies', () => {
   const { game, g, z } = turretFixture('melonpult', -20);
-  const z2 = game.spawnBot('zombie', 1.2, -20);
+  const z2 = game.spawnBot('zombie', 1.2, -20 + OFF);
   z2.hp = z2.maxHp = 1e6;
   stepGarden(game, 1 / 30);
   const shots = entitiesOfKind(game, 'projectile');
@@ -375,19 +386,19 @@ test('House Plant converts a zombie with one hit, slowly', () => {
 test('Wall-nut never shoots, soaks up projectiles aimed past it, and zombies cannot walk through it', () => {
   const { game } = plantGame();
   const w = plantAt(game, slotAt(0, 4), 'wallnut');
-  const z = game.spawnBot('zombie', 0, -4);
+  const z = game.spawnBot('zombie', 0, -4 + OFF);
   z.hp = z.maxHp = 1e6;
   run(game, 3);
   assert.equal(entitiesOfKind(game, 'projectile').filter((s) => s.owner === w.id).length, 0);
   game.drainEvents();
   // a zombie shot flies at the plant behind it: the wall-nut takes it
   const behind = plantAt(game, slotAt(0, 8), 'peashooter');
-  const shooter = game.spawnBot('zombie', 0, -4);
+  const shooter = game.spawnBot('zombie', 0, -4 + OFF);
   shooter.hp = shooter.maxHp = 1e6;
   shooter.yaw = Math.PI;
   shooter.pitch = 0;
   shooter.x = 0;
-  shooter.z = 0.5;
+  shooter.z = 0.5 + OFF;
   shooter.input.fire = true;
   shooter.fireScale = 1;
   game.config.features.botAI = false;
@@ -401,16 +412,16 @@ test('Wall-nut blocks walking: a zombie pushing against it stays outside its rad
   const w = plantAt(game, slotAt(0, 4), 'wallnut');
   const z = game.addPlayer('z', { team: 'zombie', mode: 'versus' });
   z.x = 0;
-  z.z = 0;
+  z.z = OFF;
   z.yaw = Math.PI; // facing +z toward the nut at z=4
   game.handleInput('z', { keys: { f: true }, yaw: Math.PI, pitch: 0 });
   run(game, 3);
-  assert.ok(z.z < 4 - w.radius - z.radius + 0.01, `stopped at z=${z.z.toFixed(2)}`);
-  assert.ok(z.z > 4 - w.radius - z.radius - 0.2);
+  assert.ok(z.z < 4 + OFF - w.radius - z.radius + 0.01, `stopped at z=${z.z.toFixed(2)}`);
+  assert.ok(z.z > 4 + OFF - w.radius - z.radius - 0.2);
   // other plants do not block
   const pea = plantAt(game, slotAt(8, 4), 'peashooter');
   z.x = 8;
-  z.z = 0;
+  z.z = OFF;
   game.handleInput('z', { keys: { f: true }, yaw: Math.PI });
   run(game, 3);
   assert.ok(z.z > pea.z + 1, 'walked straight through the peashooter');
@@ -423,7 +434,7 @@ test('mower still flattens a Wall-nut', () => {
   const z = game.addPlayer('z', { team: 'zombie', mode: 'versus' });
   game.mower.driver = z.id;
   z.x = 0;
-  z.z = 0;
+  z.z = OFF;
   game.handleInput('z', { keys: { f: true }, yaw: Math.PI });
   run(game, 2);
   assert.equal(game.entities.has(w.id), false);

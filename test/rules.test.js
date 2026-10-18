@@ -195,7 +195,7 @@ test('ended restarts after 10 s with tiers reset', () => {
   assert.equal(a.weapon, 'pea_blaster');
   assert.equal(a.sunshine, DEFAULT_CONFIG.startSunshine);
   assert.equal(a.state, 'alive');
-  assert.equal(game.gardenCount(), 20);
+  assert.equal(game.gardenCount(), 32);
   assert.equal(game.wave, 0);
 });
 

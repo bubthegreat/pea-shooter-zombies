@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlantSender } from '../client/input.js';
-import { makeGame } from './helpers.js';
+import { makeGame, S } from './helpers.js';
 
 function plantingGame() {
   const game = makeGame();
   const p = game.addPlayer('a', { team: 'plant', mode: 'coop' });
   p.sunshine = 1000;
-  p.x = -6; // empty front-row slots at x=-8 and x=-4
-  p.z = -1;
+  p.x = (S(0, 0).x + S(0, 1).x) / 2; // two empty front-row slots in reach, the next row is out of reach
+  p.z = S(0, 0).z - 2.5;
   return { game, p };
 }
 
@@ -23,7 +23,6 @@ test('PlantSender: three quick presses of the same key plant three times (no zer
     const f = ps.fields();
     game.handleInput('a', { keys: {}, ...f });
     ps.commit(f);
-    p.x = -6;
     game.tick(1 / 30);
   }
   assert.equal(game.gardenCount(), 2, 'only two empty peashooter slots in range, both filled');
