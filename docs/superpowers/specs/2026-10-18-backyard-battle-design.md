@@ -73,7 +73,7 @@ Upgrades swap your gun for a better one, earned during a round. Both earning pat
 - **Streak bonus:** beat 10 enemies in a row without being hurt and you get a big jump, skipping ahead an upgrade. This was Jacob's ask.
 - Dying or wilting doesn't take upgrades away during a round. Everything resets at the start of the next round.
 
-### Plant gun ladder
+### Plant gun ladder (replaced by "Plant upgrades (2026-10-18)" below)
 1. Pea Blaster (start)
 2. Pea Rifle
 3. Spike Shotgun (Jacob's shotgun; spiky cactus balls, close range)
@@ -139,7 +139,7 @@ hurts you.
 **D. Headshots.** The top 0.4 m of the 1.8 m body is the head: triple damage for shots from players and bots against players and bots
 (not garden turrets, not splash). The `hit` event carries `head: true`; the shooter gets a "HEADSHOT!" pop and a ding.
 
-**E. Eight-rung gun ladders.** Kills needed (cumulative): 0, 2, 4, 7, 10, 14, 18, 23, so a decent kid reaches the top most rounds.
+**E. Eight-rung gun ladders** (the plant half was replaced by plant upgrades, see the last section). Kills needed (cumulative): 0, 2, 4, 7, 10, 14, 18, 23, so a decent kid reaches the top most rounds.
 The 10-in-a-row no-hurt bonus still skips one rung.
 Plants: Pea Blaster, Double Pea, Pea Rifle, Snow Pea (slows zombies 50% for 2 s), Spike Shotgun, Repeater (very fast), Melon Lobber
 (arcing, splash), House Gun (one-hit convert).
@@ -171,3 +171,50 @@ defence). A plant kid who stands still all round: zombies win about 13% of Easy 
 shoots and replants wins every round. The mower is driven in most AFK rounds. Knobs: peashooter aim error 0.14, cactus damage 3
 (range 50, aim error 0.12), bot aim error 0.16 / 0.14 (Easy / Normal) at fire scale 0.3, Easy waves 2+n and Normal waves 3+n, 25% of
 bots chase the mower (via the right-hand flank).
+
+## Plant upgrades (2026-10-18)
+
+Feedback after the lobby playtest: "the planter has his own gun, but he shouldn't get an upgraded gun - he should be able to upgrade
+his plants." This **replaces the plant gun ladder** (sections "Plant gun ladder" and playtest item E, plants half). The zombie gun
+ladder is unchanged.
+
+**One gun.** A plant kid has the Pea Blaster for the whole round. The kill meter (cumulative kills 0, 2, 4, 7, 10, 14, 18, 23, and the
+10-in-a-row no-hurt bonus that skips one rung) is unchanged, but each rung now **unlocks a plant type** instead of a gun. Zombie kids
+climb the gun ladder exactly as before.
+
+| Tier (kills) | Unlocks | Cost | What it does |
+|---|---|---|---|
+| 0 (0) | Peashooter | 50 | medium range, steady fire (as before) |
+| 0 (0) | Cactus | 100 | long range sniper, 3 damage (as before) |
+| 1 (2) | Repeater | 125 | peas, twice the Peashooter's rate |
+| 2 (4) | Snow Pea | 150 | frost peas, slow zombies 50% for 2 s |
+| 3 (7) | Spike Squash | 175 | short range (12 m) shotgun spray: 8 spikes, tight spread |
+| 4 (10) | Melon-pult | 200 | lobs an arcing melon (ballistic aim), 3.5 m splash, 7 damage |
+| 5 (14) | Wall-nut | 150 | no attack, 400 HP, solid: blocks walking and soaks up shots |
+| 6 (18) | Gatling Pea | 250 | 6 peas a second, long range |
+| 7 (23) | House Plant | 300 | giant (3 m tall, 150 HP), slow fire, every shot converts a zombie in one hit |
+
+Planting: the seed bar shows every unlocked plant with its cost; **keys 1-9** plant the nth one (nine plants, so nine keys; the
+`plant` input is the key number 1-9, still sent with the `plantSeq` counter). **Any plant fits any slot** (the row kinds only decide
+what the pre-planted garden and the Gardener put there); the nearest empty slot within 4 m is taken. Touch: the seed cards are the
+buttons for the unlocked plants and the bar scrolls sideways.
+
+Levels: a garden plant starts at level 1. **U** (touch: the UPGRADE button, which appears when it is offered) spends sunshine to raise
+the plant you look at (30 degree cone) or, failing that, the nearest one within 3 m, to level 2 and then 3. Cost is 0.75x then 1.25x
+the plant's price (Cactus 75 then 125). Each level above 1 adds **+40% damage, +25% fire rate and +50% max HP** (the plant is healed
+to full). Level 3 is the top. Plants show their level: 1.15x / 1.3x model size and 2 / 3 gold stars (level 1 has none). The prompt
+reads "Press U to upgrade Cactus ★★ - 75☀".
+
+Protocol: the `upgrade` event for a plant kid is `{ id, tier, plantKind, plantKinds, name, bonus }` (newest unlock; HUD banner
+"NEW PLANT! Snow Pea"); zombie kids still get `{ id, tier, weapon, name, bonus }`. Input gains `upgrade` (rising edge, like `use`).
+Garden entities carry `level`; a successful upgrade emits `plantUp { id, plantKind, level, x, z, by }`. `publicConfig` carries all
+nine `plantTypes` (`tier`, `name`, `cost`, `range`, `rate`, `damage`, `projKind`, `pellets`, `splash`, `slow`, `hp`, `radius`, `height`,
+`noAttack`, `blocks`) and `plantLevels`. The Gardener (computer) only plants Peashooters and Cacti, and when the garden is full and it
+has spare sunshine it levels one plant up now and then (at most every 45 s, keeping 100 sunshine back).
+
+Sunshine is now the plant kids' power, so the economy is richer: start 200 (was 100), a sun drops every 3 s (was 8) with up to 10 on
+the ground (was 6), 25 each as before. **Balance** (`node scripts/balance.mjs`, seeded full rounds): a plant kid who stands still:
+zombies win about 10% of Easy rounds and 48% of Normal (Easy bot aim error 0.16 -> 0.15 keeps the old numbers); a scripted kid who
+shoots, plants his three best unlocked plants and levels the weakest plant up: zombies win 0 of 100 co-op Normal rounds; versus
+(scripted plant kid against a scripted zombie kid who shoots at the garden): zombies win about 48% (was about 45%).
+
