@@ -16,7 +16,8 @@ const DEFAULT_PORT = 8080;
 const MAX_MESSAGE_BYTES = 4096; // larger client messages are ignored
 const HARD_MAX_PAYLOAD = 16 * 1024; // ws closes connections that exceed this
 const STALE_INPUT_MS = 500; // no input for this long => release all keys
-const HEARTBEAT_MS = 10000;
+export const HEARTBEAT_MS = 3000; // ping period; a client that misses one ping round is dropped, so ~6 s worst case
+const MAX_CID_LENGTH = 64;
 const MAX_CATCHUP_STEPS = 5;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 
@@ -132,7 +133,7 @@ function parsePort(value) {
 
 /**
  * Start the game server. Resolves once listening.
- * Options: port (default $PORT or 8080), host (default 0.0.0.0), clientDir, config, rng, log.
+ * Options: port (default $PORT or 8080), host (default 0.0.0.0), clientDir, config, rng, log, heartbeatMs.
  */
 export function startServer(opts = {}) {
   const {
@@ -142,6 +143,7 @@ export function startServer(opts = {}) {
     config = DEFAULT_CONFIG,
     rng = Math.random,
     log = () => {},
+    heartbeatMs = HEARTBEAT_MS,
   } = opts;
 
   const game = new Game(config, rng);
@@ -154,20 +156,34 @@ export function startServer(opts = {}) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
   }
 
+  /** Forget a client; if it had joined, take its player out of the game. Safe to call twice. */
+  function dropClient(client) {
+    clients.delete(client);
+    if (client.joined) {
+      client.joined = false;
+      game.removePlayer(client.id);
+      log(`player ${client.id} left`);
+    }
+  }
+
+  /** A page retrying on a fresh socket (join timeout, network blip) must not be locked out by its own ghost. */
+  function evictGhosts(client, cid) {
+    for (const other of [...clients]) {
+      if (other === client || other.cid !== cid) continue;
+      dropClient(other);
+      other.ws.terminate();
+      log(`replaced stale connection ${other.id}`);
+    }
+  }
+
   wss.on('connection', (ws) => {
-    const client = { ws, id: `p${nextClientId++}`, joined: false, lastInputAt: 0, inputActive: false, alive: true };
+    const client = { ws, id: `p${nextClientId++}`, cid: null, joined: false, lastInputAt: 0, inputActive: false, alive: true };
     clients.add(client);
     ws.on('pong', () => {
       client.alive = true;
     });
     ws.on('error', () => {});
-    ws.on('close', () => {
-      clients.delete(client);
-      if (client.joined) {
-        game.removePlayer(client.id);
-        log(`player ${client.id} left`);
-      }
-    });
+    ws.on('close', () => dropClient(client));
     ws.on('message', (data, isBinary) => {
       try {
         if (isBinary || !data || data.length > MAX_MESSAGE_BYTES) return;
@@ -180,6 +196,10 @@ export function startServer(opts = {}) {
         if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
         if (msg.t === 'join') {
           if (client.joined) return;
+          if (typeof msg.cid === 'string' && msg.cid !== '' && msg.cid.length <= MAX_CID_LENGTH) {
+            client.cid = msg.cid;
+            evictGhosts(client, msg.cid);
+          }
           const p = game.addPlayer(client.id, { name: msg.name, team: msg.team, mode: msg.mode, difficulty: msg.difficulty });
           if (!p) {
             send(ws, { t: 'error', reason: 'full', message: 'The game is full (2 players). Try again later!' });
@@ -264,7 +284,7 @@ export function startServer(opts = {}) {
         // socket already closing
       }
     }
-  }, HEARTBEAT_MS);
+  }, heartbeatMs);
 
   return new Promise((resolve, reject) => {
     server.once('error', reject);

@@ -179,6 +179,7 @@ const S = {
   sfxLast: new Map(),
 };
 let SLOTS = gardenSlots();
+const CID = Math.random().toString(36).slice(2, 12) + performance.now().toString(36).replace('.', ''); // names this page to the server
 const myId = () => (net.id === null || net.id === undefined ? null : String(net.id));
 
 function sfx(name, pos, vol = 1, gap = 0) {
@@ -250,7 +251,7 @@ lobby.onPlay = (choice) => {
   S.gotCam = false;
   S.eyeY = 1.6;
   vm.gunId = null;
-  net.send({ t: 'join', name: choice.name, team: choice.team, mode: choice.mode, difficulty: choice.difficulty });
+  net.send({ t: 'join', name: choice.name, team: choice.team, mode: choice.mode, difficulty: choice.difficulty, cid: CID });
   hud.show();
   hud.resetForJoin(performance.now());
   lobby.hide();
@@ -566,7 +567,11 @@ function frame() {
   }
 
   // join timeout
-  if (S.joined && !own && nowMs - S.joinAt > 6000) leaveToLobby("Couldn't join the game. Try again!", true);
+  if (S.joined && !own && nowMs - S.joinAt > 6000) {
+    // The socket may be half-dead: retry on a fresh one (the server swaps out any ghost of ours via cid).
+    net.restart();
+    leaveToLobby("Couldn't join the game. Reconnecting — try again in a moment!", true);
+  }
 
   // ---- view model (own gun)
   let alive = inRound && own.state !== 'wilted' && own.state !== 'sprout';
