@@ -11,9 +11,9 @@ import { planWaves, stepRules } from './rules.js';
 import { stepBots } from './bots.js';
 import { sanitizeName } from './names.js';
 
-const TEAMS = new Set(['plant', 'zombie']);
-const MODES = new Set(['coop', 'versus']);
-const DIFFICULTIES = new Set(['easy', 'normal']);
+export const TEAMS = new Set(['plant', 'zombie']);
+export const MODES = new Set(['coop', 'versus']);
+export const DIFFICULTIES = new Set(['easy', 'normal']);
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
 const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy'];
