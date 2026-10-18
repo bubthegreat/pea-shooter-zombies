@@ -671,9 +671,11 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   if (alive && snap && snap.phase === 'playing') {
     if (team === 'zombie' && mower) {
       const d = Math.hypot(mower.x - own.x, mower.z - own.z);
+      // `driver` is the entity id at the controls (null when idle); older servers omit it.
+      const mine = mower.driver === undefined ? d < 3.4 : mower.driver !== null && String(mower.driver) === String(myId());
       if (mower.state === 'idle' && d < 3.4) prompt = 'Hold E to start the mower! \u{1F69C}';
-      else if (mower.state === 'starting' && d < 3.4) prompt = `Engine starting… keep holding E! ${Math.round(num(mower.progress, 0) * 100)}%`;
-      else if (mower.state === 'driving' && d < 1.8) prompt = "You're driving the mower — squash the plants!";
+      else if (mower.state === 'starting' && mine) prompt = `Engine starting… keep holding E! ${Math.round(num(mower.progress, 0) * 100)}%`;
+      else if (mower.state === 'driving' && mine) prompt = "You're driving the mower — squash the plants! Press E to hop off";
     }
     if (team === 'plant' && !prompt) {
       const s = nearestEmptySlot(entities, own.x, own.z, null);

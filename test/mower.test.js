@@ -234,3 +234,68 @@ test('mower resets to the garage on a new round', () => {
   assert.equal(game.mower.z, HOME.z);
   assert.equal(entitiesOfKind(game, 'mower').length, 1);
 });
+
+test('pressing use again while driving dismounts: mower idles where it is', () => {
+  const { game, z, mower } = setup();
+  startDriving(game, z, mower); // use is released after starting
+  game.handleInput('z', { keys: keys({ f: true }), yaw: 0 });
+  run(game, 1);
+  game.handleInput('z', { keys: keys() });
+  const spot = { x: mower.x, z: mower.z };
+  game.handleInput('z', { use: true }); // fresh press
+  game.tick(1 / 30);
+  assert.equal(mower.state, 'idle');
+  assert.equal(mower.driver, null);
+  assert.ok(Math.hypot(mower.x - spot.x, mower.z - spot.z) < 0.5, 'mower stays at the dismount spot');
+  assert.equal(game.isDriving(z), false);
+  // still holding use right next to it must not instantly re-mount
+  run(game, 1);
+  assert.equal(mower.state, 'idle', 'held key does not restart the mower');
+  // releasing and pressing again can start it once more
+  game.handleInput('z', { use: false });
+  game.tick(1 / 30);
+  game.handleInput('z', { use: true });
+  game.tick(1 / 30);
+  assert.equal(mower.state, 'starting');
+});
+
+test('holding use through the whole start does not dismount', () => {
+  const { game, z, mower } = setup();
+  game.handleInput('z', { use: true });
+  run(game, 3.5);
+  assert.equal(mower.state, 'driving');
+  run(game, 1);
+  assert.equal(mower.state, 'driving', 'only a new press dismounts');
+  assert.equal(mower.driver, 'z');
+  assert.ok(z);
+});
+
+test('mashing use while the engine starts does not dismount either', () => {
+  const { game, mower } = setup();
+  for (let i = 0; i < 80; i++) {
+    game.handleInput('z', { use: i % 2 === 0 });
+    game.tick(1 / 30);
+  }
+  assert.equal(mower.state, 'starting');
+  game.handleInput('z', { use: false });
+  run(game, 0.6);
+  assert.equal(mower.state, 'driving');
+  run(game, 0.5);
+  assert.equal(mower.state, 'driving');
+});
+
+test('the mower snapshot names its driver (or null)', () => {
+  const { game, z, mower } = setup();
+  const snapMower = () => game.snapshot().entities.find((e) => e.kind === 'mower');
+  assert.equal(snapMower().driver, null);
+  game.handleInput('z', { use: true });
+  game.tick(1 / 30);
+  assert.equal(snapMower().driver, 'z');
+  game.handleInput('z', { use: false });
+  run(game, 3.3);
+  assert.equal(mower.state, 'driving');
+  assert.equal(snapMower().driver, 'z');
+  applyDamage(game, z, 99, null);
+  game.tick(1 / 30);
+  assert.equal(snapMower().driver, null);
+});

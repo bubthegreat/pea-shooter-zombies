@@ -34,7 +34,7 @@ function release(m) {
   m.progress = 0;
 }
 
-/** idle -> starting (3 s) -> driving. Losing the driver leaves the mower idle where it is. */
+/** idle -> starting (3 s) -> driving. Losing the driver (or a fresh press of use) leaves the mower idle where it is. */
 export function stepMower(game, dt) {
   const m = game.mower;
   if (!m) return;
@@ -44,7 +44,9 @@ export function stepMower(game, dt) {
     let best = null;
     let bestDist = c.mowerUseRange;
     for (const e of game.entities.values()) {
-      if (!isZombieFighter(e) || !e.input.use) continue;
+      if (!isZombieFighter(e)) continue;
+      if (e.mountLatch && !e.input.use) e.mountLatch = false;
+      if (!e.input.use || e.mountLatch) continue;
       const d = dist2D(e.x, e.z, m.x, m.z);
       if (d <= bestDist) {
         best = e;
@@ -61,6 +63,13 @@ export function stepMower(game, dt) {
 
   const driver = game.entities.get(m.driver);
   if (!isZombieFighter(driver)) {
+    release(m);
+    return;
+  }
+
+  if (m.state === 'driving' && driver.usePressed) {
+    // A fresh press of use hops off. (Presses while the engine was still starting don't count.)
+    driver.mountLatch = true; // holding the key must not instantly remount
     release(m);
     return;
   }

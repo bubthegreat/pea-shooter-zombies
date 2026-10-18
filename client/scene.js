@@ -1105,7 +1105,9 @@ export class EntityLayer {
     let riding = false;
     if (rec.key === 'char:zombie') {
       for (const m of mowers) {
-        if (Math.hypot(m.x - x, m.z - z) < 1.6) { riding = true; break; }
+        // the server names the driver; fall back to proximity for servers that don't
+        const rides = m.driver === undefined ? Math.hypot(m.x - x, m.z - z) < 1.6 : m.driver !== null && String(m.driver) === String(e.id);
+        if (rides) { riding = true; break; }
       }
     }
     try {

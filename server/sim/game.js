@@ -14,7 +14,7 @@ const MODES = new Set(['coop', 'versus']);
 const DIFFICULTIES = new Set(['easy', 'normal']);
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
-const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq'];
+const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver'];
 const MAX_PENDING_EVENTS = 500;
 
 export function neutralInput() {
@@ -200,6 +200,7 @@ export class Game {
   clearInput(e) {
     e.input = neutralInput();
     e.plantPending = 0;
+    e.usePressed = false;
   }
 
   /** Spawn point for a team; zombies appear along the gate. */
@@ -253,7 +254,11 @@ export class Game {
       for (const name of KEY_NAMES) if (k[name] !== undefined) inp.keys[name] = Boolean(k[name]);
     }
     if (raw.fire !== undefined) inp.fire = Boolean(raw.fire);
-    if (raw.use !== undefined) inp.use = Boolean(raw.use);
+    if (raw.use !== undefined) {
+      const use = Boolean(raw.use);
+      if (use && !inp.use) e.usePressed = true; // rising edge: consumed by the sim at the end of the tick
+      inp.use = use;
+    }
     if (Number.isInteger(raw.plant) && raw.plant >= 0 && raw.plant <= 2) {
       // Planting is edge-triggered: 0 -> 1/2 queues one planting attempt.
       if (raw.plant !== 0 && inp.plant === 0) e.plantPending = raw.plant;
@@ -282,10 +287,17 @@ export class Game {
       stepGarden(this, dt);
       stepProjectiles(this, dt);
       stepSun(this, dt);
+      this._clearEdges();
     } else {
       this._stepActors(dt); // result screen: everyone can still walk around, nobody can shoot
+      this._clearEdges();
     }
     stepRules(this, dt);
+  }
+
+  /** Edge-triggered presses live for exactly one tick. */
+  _clearEdges() {
+    for (const e of this.entities.values()) if (e.kind === 'player') e.usePressed = false;
   }
 
   _stepActors(dt) {
