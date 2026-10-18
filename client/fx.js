@@ -245,6 +245,28 @@ export class Fx {
     }
   }
 
+  /**
+   * A plant levelled up: a golden ring of sparkles, glitter and gold stars / leaves bursting upward.
+   * level 2 is a small celebration, level 3 a bigger one.
+   */
+  levelUp(x, y, z, level = 2) {
+    const big = level >= 3;
+    const n = big ? 26 : 16;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      const sp = (big ? 4.6 : 3.4) * rnd(0.92, 1.08);
+      this.emit(x + Math.cos(a) * 0.3, y + 0.25, z + Math.sin(a) * 0.3, Math.cos(a) * sp, rnd(0.2, 0.9), Math.sin(a) * sp,
+        rnd(0.55, 0.85), 0.42, 0.06, i % 3 === 0 ? 0xffffff : i % 2 ? 0xffd54f : 0xfff59d, 1, 2.4, 0.5);
+    }
+    for (let i = 0; i < (big ? 18 : 10); i++) {
+      this.emit(x + rnd(-0.5, 0.5), y + 0.3 + rnd(0, 0.6), z + rnd(-0.5, 0.5), rnd(-0.4, 0.4), rnd(2.2, 4.6), rnd(-0.4, 0.4),
+        rnd(0.7, 1.2), 0.34, 0.05, i % 3 ? 0xffe066 : 0xffffff, 1, 0.8, 1.5);
+    }
+    this.leafBurst(x, y + 0.8, z, big ? 12 : 7, [0xffd54f, 0xfff176, 0xffc107], 3.2, 7.5, 0.7); // gold stars
+    this.leafBurst(x, y + 0.5, z, big ? 8 : 4, [0x66bb6a, 0x8bd450, 0xa5e84f], 2.6, 5.5);
+    if (big) this.sparkle(x, y + 1.2, z, 0xffffff, 10, 1.6);
+  }
+
   plantPop(x, y, z) {
     this.dust(x, y, z, 0x9b6b43, 10);
     this.leafBurst(x, y + 0.4, z, 6, [0x66bb6a, 0x8bd450], 2.5, 3.5);

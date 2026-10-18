@@ -152,7 +152,7 @@ export class Sound {
   /**
    * name: pea | snow | spike | melon | housepea | goo | slime | bone | sludge | brain | boing | bloom | chime | plant | sun |
    *       crunch | wilt | hurt | tick | headshot | splat | squish | deflect | pickup | drop | thunk | mower_break | respawn |
-   *       wave | win | lose | hitme | click
+   *       levelup | unlock | wave | win | lose | hitme | click
    */
   play(name, pos, vol = 1) {
     if (!this.ctx) return;
@@ -301,6 +301,24 @@ export class Sound {
           this._tone(out, { type: 'sine', f0: f * 2, dur: 0.4, vol: 0.08, delay: i * 0.085 });
         });
         secs = 0.9;
+        break;
+      case 'levelup': // a plant got upgraded: quick rising, sparkly three-note arpeggio
+        [659.25, 880, 1318.5].forEach((f, i) => {
+          this._tone(out, { type: 'triangle', f0: f, dur: 0.3, vol: 0.28, delay: i * 0.075 });
+          this._tone(out, { type: 'sine', f0: f * 2, dur: 0.22, vol: 0.08, delay: i * 0.075 + 0.01 });
+        });
+        this._noiseBurst(out, { dur: 0.12, type: 'highpass', f0: 5000, vol: 0.07, delay: 0.17 });
+        secs = 0.55;
+        break;
+      case 'unlock': // a new plant type unlocked: a little five-note fanfare
+        [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
+          const last = i === 4;
+          this._tone(out, { type: 'triangle', f0: f, dur: last ? 0.9 : 0.24, vol: 0.3, delay: i * 0.11 });
+          this._tone(out, { type: 'sine', f0: f * 2, dur: last ? 0.7 : 0.2, vol: 0.08, delay: i * 0.11 });
+        });
+        [783.99, 1046.5].forEach((f) => this._tone(out, { type: 'sine', f0: f, dur: 0.8, vol: 0.12, delay: 0.5 }));
+        this._noiseBurst(out, { dur: 0.25, type: 'highpass', f0: 4500, vol: 0.08, delay: 0.5 });
+        secs = 1.45;
         break;
       case 'plant':
         this._tone(out, { type: 'sine', f0: 260, f1: 720, dur: 0.12, vol: 0.4 });
