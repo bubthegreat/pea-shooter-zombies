@@ -36,4 +36,4 @@ Open http://localhost:8080 (or `http://<this-computer's-LAN-IP>:8080` from anoth
 
 ## Develop
 
-`npm test` runs the server simulation tests. Tunables live in `server/sim/config.js`. Design and plan in `docs/superpowers/`.
+`npm test` runs the server simulation tests. Tunables live in `server/sim/config.js`. `node scripts/balance.mjs [seeds] [scenario...]` plays seeded rounds headlessly (AFK kids, scripted kids) and prints win rates, mower and tool usage; `BAL_CFG='{"mowerBotChance":0.4}'` overrides config values for an experiment. Design and plan in `docs/superpowers/`.
