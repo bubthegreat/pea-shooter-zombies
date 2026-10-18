@@ -351,6 +351,20 @@ test('reconnect: a dropped member rejoins the same lobby by client token; explic
   assert.equal(mgr.rejoin(member('p14', 'Cy', undefined)), null, 'no token');
 });
 
+test('joining or creating somewhere else clears the slip-back-in record', () => {
+  const { mgr } = setup();
+  const a = member('p1', 'Ann', 'tok-a');
+  const b = member('p2', 'Bo', 'tok-b');
+  const first = mgr.create(a, {}).lobby;
+  mgr.join(b, first.id, {});
+  mgr.leave(b, { remember: true });
+  const b2 = member('p3', 'Bo', 'tok-b');
+  assert.ok(mgr.recent.has('tok-b'));
+  const other = mgr.create(b2, { lobbyName: 'Elsewhere' }).lobby;
+  assert.ok(!mgr.recent.has('tok-b'), 'seated again: the record is used up');
+  assert.ok(other);
+});
+
 test('stale input is released so a silent member stops moving', () => {
   const { mgr, advance } = setup();
   const a = member('p1');

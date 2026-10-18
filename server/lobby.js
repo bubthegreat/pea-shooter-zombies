@@ -127,6 +127,7 @@ export class LobbyManager {
     const t = this.now();
     l.members.set(member.id, member);
     member.lobby = l;
+    if (member.cid) this.recent.delete(member.cid); // seated again: any "slip back in" record is used up
     member.inputActive = false;
     member.lastInputAt = t;
     if (l.hostId === null) l.hostId = member.id;
