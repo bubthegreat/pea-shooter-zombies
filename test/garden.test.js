@@ -330,12 +330,12 @@ test('sun is not collected from afar, by zombies, or while still falling', () =>
   assert.equal(p.sunshine, DEFAULT_CONFIG.startSunshine + 25);
 });
 
-test('sun drops every 8 s in the yard and expires after 30 s; none without a plant human', () => {
+test('sun drops on a timer in the yard and expires after 30 s; none without a plant human', () => {
   const game = makeGame({ features: { sunDrops: true } });
   const p = game.addPlayer('a', { team: 'plant', mode: 'coop' });
   p.x = 29; // far from the drop area so nothing gets collected
   p.z = 29;
-  run(game, 7.8);
+  run(game, DEFAULT_CONFIG.sunDropInterval - 0.2);
   assert.equal(entitiesOfKind(game, 'sun').length, 0);
   run(game, 0.5);
   const suns = entitiesOfKind(game, 'sun');
@@ -345,6 +345,7 @@ test('sun drops every 8 s in the yard and expires after 30 s; none without a pla
   const firstId = suns[0].id;
   run(game, 30);
   assert.equal(game.entities.has(firstId), false, 'expired');
+  assert.ok(entitiesOfKind(game, 'sun').length <= DEFAULT_CONFIG.sunMaxActive, 'never more than sunMaxActive at once');
 
   const zgame = makeGame({ features: { sunDrops: true } });
   zgame.addPlayer('z', { team: 'zombie', mode: 'coop' });

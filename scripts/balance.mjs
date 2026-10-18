@@ -4,7 +4,7 @@
 //
 // Scenarios (default: all)
 //   afk-easy / afk-normal   a plant kid who never moves or shoots (the worst case for the plants)
-//   active-normal           a scripted plant kid who stands behind the front row, shoots, and replants with sunshine
+//   active-normal           a scripted plant kid who stands behind the front row, shoots, plants unlocked plants and levels them up
 //   zdirect-normal          a scripted zombie kid who zig-zags straight at the garden shooting it
 //   zmower-normal           a zombie kid who runs the right flank to the garage and mows
 //   zweed-normal            a zombie kid who grabs the weed eater and shreds the garden
@@ -77,22 +77,46 @@ function flankWaypoint(me, goal) {
 
 // ---- scripted humans ---------------------------------------------------------------------------
 
-/** Plant kid who stays near the garden, shoots the nearest zombie, and plants when there is sunshine. */
+// Best-first shopping list for the scripted plant kid (wall-nuts are left out: they do not shoot).
+const PLANT_PREF = ['houseplant', 'gatling', 'melonpult', 'spikesquash', 'snowpea', 'repeater', 'cactus', 'peashooter'];
+
+/**
+ * Plant kid who stays near the garden, shoots the nearest zombie, and spends sunshine: it plants the best unlocked plant it can
+ * afford in the nearest empty slot, and once the garden is full it levels plants up (weakest first).
+ */
 function activePlant(g, me, st) {
-  const inp = { keys: NO_KEYS(), fire: false, use: false, drop: false };
+  const inp = { keys: NO_KEYS(), fire: false, use: false, drop: false, upgrade: false };
   if (me.state !== 'alive') return inp;
+  const c = g.config;
   // collect sunshine lying around, otherwise hold the line just behind the garden
-  const sun = nearestOf(g, (e) => e.kind === 'sun' && e.y <= g.config.sunRestHeight + 0.01, me.x, me.z);
+  const sun = nearestOf(g, (e) => e.kind === 'sun' && e.y <= c.sunRestHeight + 0.01, me.x, me.z);
   const zed = nearestOf(g, (e) => (e.kind === 'bot' || e.kind === 'player') && e.team === 'zombie' && e.state === 'alive', me.x, me.z);
-  const empty = g.slots.map((s, i) => ({ s, i })).filter(({ s }) => !s.plantId && me.sunshine >= g.config.plantTypes[s.kind].cost);
+  // buys from its three best unlocked plants (saving up rather than spamming peashooters), else levels plants up
+  const unlocked = PLANT_PREF.filter((k) => c.plantTypes[k].tier <= me.tier);
+  const kind = unlocked.slice(0, 3).find((k) => me.sunshine >= c.plantTypes[k].cost);
+  const empty = kind ? g.slots.map((s, i) => ({ s, i })).filter(({ s }) => !s.plantId) : [];
+  const nearestTo = (list, pos) => list.reduce((a, b) => (dist2D(me.x, me.z, pos(a).x, pos(a).z) < dist2D(me.x, me.z, pos(b).x, pos(b).z) ? a : b));
   let dest = { x: 0, z: 14 };
+  const ups = [...g.entities.values()].filter((e) => {
+    if (e.kind !== 'garden' || (e.level ?? 1) >= c.plantLevels.max || c.plantTypes[e.plantKind].noAttack) return false;
+    return me.sunshine >= upgradeCostOf(c, e);
+  });
   if (empty.length) {
-    const e = empty.reduce((a, b) => (dist2D(me.x, me.z, a.s.x, a.s.z) < dist2D(me.x, me.z, b.s.x, b.s.z) ? a : b));
+    const e = nearestTo(empty, (q) => q.s);
     dest = { x: e.s.x, z: e.s.z + 2 };
     if (dist2D(me.x, me.z, e.s.x, e.s.z) < 3) {
       st.plantSeq = (st.plantSeq ?? 0) + 1;
-      inp.plant = e.s.kind === 'peashooter' ? 1 : 2;
+      inp.plant = g.plantOrder.indexOf(kind) + 1;
       inp.plantSeq = st.plantSeq;
+    }
+  } else if (ups.length) {
+    // level up the weakest plant first, strongest type among equals, closest wins ties
+    const rank = (e) => (e.level ?? 1) * 100 - c.plantTypes[e.plantKind].tier * 10 + dist2D(me.x, me.z, e.x, e.z) * 0.1;
+    const t = ups.reduce((a, b) => (rank(a) <= rank(b) ? a : b));
+    dest = { x: t.x, z: t.z + 1.5 };
+    if (dist2D(me.x, me.z, t.x, t.z) < 2.4) {
+      st.upTap = !st.upTap;
+      inp.upgrade = st.upTap; // alternate so there is a rising edge
     }
   } else if (sun && dist2D(me.x, me.z, sun.x, sun.z) < 25) dest = sun;
   const moving = dist2D(me.x, me.z, dest.x, dest.z) > 0.8;
@@ -187,6 +211,10 @@ function zombieErrand(g, me, want, st) {
   return inp;
 }
 
+function upgradeCostOf(c, e) {
+  return Math.round(c.plantTypes[e.plantKind].cost * c.plantLevels.cost[(e.level ?? 1) - 1]);
+}
+
 // humans[0] is 'h'; a second human is 'k'. script(g, me, st) returns an input (or null = idle).
 const SCENARIOS = {
   'afk-easy': { difficulty: 'easy', mode: 'coop', humans: [{ team: 'plant' }] },
@@ -211,7 +239,7 @@ function runRound(seed, sc) {
   const me = humans.find((h) => h.me.team === 'zombie')?.me ?? humans[0].me; // the stats follow the zombie kid if there is one
   const r = {
     minGarden: 99, destroyed: 0, mows: 0, mowerStarted: false, mowerDrove: false, mowerWrecked: 0,
-    takes: {}, toolKills: {}, humanConverts: 0, humanAlive: 0, humanTier: 0, kidNearGarden: false,
+    takes: {}, toolKills: {}, humanConverts: 0, humanAlive: 0, humanTier: 0, kidNearGarden: false, planted: 0, ups: 0, avgLevel: 0, kinds: {},
   };
   const dt = 1 / 30;
   while (g.phase === 'playing' && g.roundTime < 600) {
@@ -233,6 +261,11 @@ function runRound(seed, sc) {
         const item = holders.get(e.by);
         if (item) r.toolKills[item] = (r.toolKills[item] ?? 0) + 1;
       }
+      if (e.type === 'plant' && e.by === 'h') {
+        r.planted++;
+        r.kinds[e.plantKind] = (r.kinds[e.plantKind] ?? 0) + 1;
+      }
+      if (e.type === 'plantUp' && e.by === 'h') r.ups++;
       if (e.type === 'item_take') r.takes[e.itemId] = (r.takes[e.itemId] ?? 0) + 1;
       if (e.type === 'mower_destroyed') r.mowerWrecked++;
       if (e.type === 'convert' && e.id === me.id) r.humanConverts++;
@@ -248,6 +281,14 @@ function runRound(seed, sc) {
   r.winner = g.winner;
   r.t = g.roundTime;
   r.humanTier = me.tier;
+  const kid = humans.find((h) => h.me.team === 'plant' && h.script)?.me;
+  if (kid) {
+    r.kidTier = kid.tier;
+    r.kidKills = kid.progress;
+    r.kidSun = kid.sunshine;
+  }
+  const plants = [...g.entities.values()].filter((e) => e.kind === 'garden');
+  r.avgLevel = plants.length ? plants.reduce((a, e) => a + (e.level ?? 1), 0) / plants.length : 0;
   return r;
 }
 
@@ -280,6 +321,11 @@ for (const [name, sc] of Object.entries(SCENARIOS)) {
     `toolTakes/rd {${per(takes)}}`,
     `plantsKilledBy/rd {${per(toolKills)}}`,
   ];
+  if (sc.humans.some((h) => h.team === 'plant' && h.script)) {
+    const kinds = {};
+    for (const r of rs) for (const [k, v] of Object.entries(r.kinds)) kinds[k] = (kinds[k] ?? 0) + v;
+    line.push(`planted/rd ${fmt(sum((r) => r.planted) / n)} {${per(kinds)}}`, `plantUps/rd ${fmt(sum((r) => r.ups) / n)}`, `avgLevel@end ${fmt(sum((r) => r.avgLevel) / n, 2)}`, `kidTier ${fmt(sum((r) => r.kidTier ?? 0) / n)}`, `kidKills ${fmt(sum((r) => r.kidKills ?? 0) / n)}`, `kidSun@end ${fmt(sum((r) => r.kidSun ?? 0) / n, 0)}`);
+  }
   if (sc.humans.some((h) => h.team === 'zombie')) {
     line.push(`humanConverts ${fmt(sum((r) => r.humanConverts) / n)}`, `humanLife ${fmt(sum((r) => r.humanAlive) / Math.max(1, sum((r) => r.humanConverts) + n))}s`, `nearGarden ${count((r) => r.kidNearGarden)}/${n}`, `topTier ${fmt(sum((r) => r.humanTier) / n)}`);
   }

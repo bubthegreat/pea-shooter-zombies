@@ -91,7 +91,7 @@ test('aim error makes bots miss: sloppier aim lands fewer hits', () => {
 test('easy is gentler than normal', () => {
   const d = DEFAULT_CONFIG.difficulties;
   assert.ok(d.easy.aimError > d.normal.aimError);
-  assert.equal(d.easy.aimError, 0.16);
+  assert.equal(d.easy.aimError, 0.15);
   assert.equal(d.normal.aimError, 0.14);
   assert.ok(d.easy.fireScale <= d.normal.fireScale);
   assert.ok(d.easy.reaction > d.normal.reaction);

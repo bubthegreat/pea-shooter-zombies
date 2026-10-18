@@ -431,7 +431,7 @@ test('mower still flattens a Wall-nut', () => {
 
 // ---- Gardener -----------------------------------------------------------------------------------
 
-test('the Gardener spends spare sunshine upgrading plants (and still only plants basic kinds)', () => {
+test('with a full garden the Gardener spends spare sunshine upgrading plants (and only plants basic kinds)', () => {
   const game = makeGame({ features: { gardener: true, botAI: true, initialGarden: true }, seed: 77 });
   const cfg = game.config;
   game.addPlayer('z', { team: 'zombie', mode: 'coop' }).x = 28;
@@ -440,7 +440,8 @@ test('the Gardener spends spare sunshine upgrading plants (and still only plants
   const gardener = [...game.entities.values()].find((e) => e.isGardener);
   assert.ok(gardener);
   gardener.sunshine = cfg.gardener.maxSunshine;
-  run(game, 90);
+  game.slots.forEach((slot, i) => { if (!slot.plantId) plantAt(game, i); }); // nothing left to replant: it levels plants instead
+  run(game, 120);
   const plants = entitiesOfKind(game, 'garden');
   assert.ok(plants.some((g) => g.level > 1), 'at least one plant was upgraded by the Gardener');
   assert.ok(plants.every((g) => g.plantKind === 'peashooter' || g.plantKind === 'cactus'));

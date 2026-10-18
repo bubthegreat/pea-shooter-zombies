@@ -77,10 +77,10 @@ export const DEFAULT_CONFIG = {
   turretAimHeight: 0.6, // fraction of target height to aim at
   turretLag: 0.5, // seconds: turrets aim at where a moving target was this long ago
   plantRange: 4, // a plant can be placed in an empty slot this close to the player
-  startSunshine: 100,
+  startSunshine: 200,
   sunPerConversion: 25,
   sunValue: 25,
-  sunDropInterval: 8,
+  sunDropInterval: 3.5,
   sunLifetime: 30,
   sunPickupRadius: 1.5,
   sunFallSpeed: 4,
@@ -88,7 +88,7 @@ export const DEFAULT_CONFIG = {
   sunRestHeight: 1,
   sunDropX: [-28, 28],
   sunDropZ: [-30, 20],
-  sunMaxActive: 6,
+  sunMaxActive: 10,
 
   // Mower
   mowerStartTime: 3, // seconds from "use" to driving
@@ -145,7 +145,7 @@ export const DEFAULT_CONFIG = {
   // Bots. aimError = random cone half-angle (rad); fireScale scales the weapon fire rate;
   // reaction = seconds before a freshly spotted target is shot at; waveBase + wave number = wave size.
   difficulties: {
-    easy: { aimError: 0.16, fireScale: 0.3, reaction: 0.8, waveBase: 2 },
+    easy: { aimError: 0.15, fireScale: 0.3, reaction: 0.8, waveBase: 2 },
     normal: { aimError: 0.14, fireScale: 0.3, reaction: 0.4, waveBase: 3 },
   },
   zombieBotSpeed: 3,
@@ -163,7 +163,7 @@ export const DEFAULT_CONFIG = {
   gardener: {
     name: 'Gardener',
     speed: 4,
-    startSunshine: 100,
+    startSunshine: 200,
     income: 10, // sunshine per second
     maxSunshine: 300,
     respawn: 10, // seconds after it wilts
@@ -172,8 +172,8 @@ export const DEFAULT_CONFIG = {
     fireScale: 0.25,
     reaction: 0.6,
     plantReach: 2.5, // walks to within this distance of a slot before planting
-    upgradeInterval: 25, // seconds between plant upgrades (it replants first)
-    upgradeReserve: 50, // sunshine it keeps back after an upgrade, for replanting
+    upgradeInterval: 45, // seconds between plant upgrades (it replants first)
+    upgradeReserve: 100, // sunshine it keeps back after an upgrade, for replanting
     restZ: 16, // idles behind the garden
   },
 };
