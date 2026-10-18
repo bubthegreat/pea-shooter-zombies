@@ -9,6 +9,7 @@ import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentT
 import { ruleText } from './lobbyview.js';
 import { Fx } from './fx.js';
 import { Sound } from './audio.js';
+import { LoopMixer, loopsAllowed, alarmTarget } from './soundstate.js';
 import { HUD } from './hud.js';
 import { Lobby } from './lobby.js';
 import { Options } from './options.js';
@@ -50,6 +51,7 @@ const fx = new Fx(world.scene);
 fx.groundAt = (x, z) => world.groundAt(x, z);
 const layer = new EntityLayer(world.scene);
 const sound = new Sound();
+const loops = new LoopMixer(sound); // the only thing that drives the alarm / engine / tool loops (see soundstate.js)
 const hud = new HUD();
 const net = new Net();
 const input = new Input(canvas);
@@ -245,7 +247,8 @@ const S = {
   joinedAt: 0,
   lastHs: 0,
   buildFailAt: 0,
-  alarmLevel: 0,
+  alarmWant: 0,
+  loopsOn: false,
   lastWeapon: null,
   lastSun: null,
   lastOwnState: null,
@@ -297,7 +300,7 @@ function leaveGameView() {
   buildCancel();
   layer.clear();
   world.hideSlot();
-  sound.engineLevel(0);
+  loops.silence(); // alarm, mower engine and tool loops stop dead whenever we leave the game (lobby, disconnect)
   lobby.show();
 }
 
@@ -1070,8 +1073,7 @@ function frame() {
   if (inRound) gameplayFrame(dt, t, nowMs, own, snap, entities);
   else {
     hud.update({ own: null, snap: null, config: S.config, now: nowMs, locked: false, nearSlot: null });
-    sound.engineLevel(0);
-    for (const k of ['weed', 'blower', 'trimmer', 'squeak']) sound.loopLevel(k, 0);
+    loops.silence();
   }
 
   // join timeout
@@ -1191,9 +1193,8 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
     const f = S.config.map && S.config.map.fridge;
     const n = fr ? num(fr.n, 0) : 0;
     const d = f ? Math.hypot(f.x - camera.position.x, f.z - camera.position.z) : 99;
-    const want = n > 0 ? clamp(1.1 - d / 50, 0.2, 1) : 0;
-    S.alarmLevel += (want - S.alarmLevel) * Math.min(1, dt * 6);
-    sound.loopLevel('alarm', S.alarmLevel);
+    S.loopsOn = loopsAllowed({ joined: S.joined, hasSelf: true, phase: snap ? snap.phase : null });
+    S.alarmWant = alarmTarget({ allowed: S.loopsOn, n, dist: d }); // n is frozen by the sim once the round ends: the phase gate decides
   }
 
   const held = alive && typeof own.item === 'string' && own.item ? own.item : null;
@@ -1424,11 +1425,7 @@ function entityEffects(dt, nowMs, entities, own, usingSelf) {
       if (Math.random() < dt * 9) fx.leafBurst(ox + fx0 * 1.4, num(e.y, 0) + 0.8, oz + fz0 * 1.4, 1, [0x43a047, 0x66bb6a], 2.5, 2);
     }
   }
-  sound.engineLevel(engine);
-  sound.loopLevel('weed', loopLv.weed);
-  sound.loopLevel('blower', loopLv.blower);
-  sound.loopLevel('trimmer', loopLv.trimmer);
-  sound.loopLevel('squeak', loopLv.squeak);
+  loops.update({ allowed: S.loopsOn, alarm: S.alarmWant, levels: { engine, weed: loopLv.weed, blower: loopLv.blower, trimmer: loopLv.trimmer, squeak: loopLv.squeak } }, dt);
 }
 
 requestAnimationFrame(frame);

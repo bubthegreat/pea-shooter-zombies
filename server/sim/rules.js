@@ -48,9 +48,12 @@ export function endRound(game, winner) {
   game.phase = 'ended';
   game.winner = winner;
   game.endTimer = game.config.endedTime;
+  // the sim stops stepping the fridge and the tools: nothing may be left "ringing" or "running" on the result screen
+  game.fridge.n = 0;
   for (const [id, e] of game.entities) {
     if (e.kind === 'projectile') game.entities.delete(id);
     else if (e.kind === 'bot') game.clearInput(e);
+    if (e.using) e.using = false;
   }
   game.emit('win', { winner });
 }

@@ -54,6 +54,20 @@ export class Sound {
     }
   }
 
+  /** Cut every continuous loop (alarm, tools, mower engine) at once - no fade. Used when a round ends or we leave the game. */
+  stopAll() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const cut = (g) => {
+      try {
+        g.gain.cancelScheduledValues(t);
+        g.gain.setValueAtTime(0, t);
+      } catch (_) { /* ignore */ }
+    };
+    for (const L of Object.values(this.loops)) cut(L.g);
+    if (this.engine) cut(this.engine.g);
+  }
+
   setListener(x, y, z, yaw) {
     this.lis.x = x; this.lis.y = y; this.lis.z = z; this.lis.yaw = yaw;
   }
