@@ -5,8 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
-import { Game } from './sim/game.js';
-import { DEFAULT_CONFIG, publicConfig } from './sim/config.js';
+import { DEFAULT_CONFIG } from './sim/config.js';
+import { sanitizeName } from './sim/names.js';
+import { LobbyManager, MAX_LOBBIES, MAX_PLAYERS_PER_LOBBY } from './lobby.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_CLIENT_DIR = path.join(ROOT, 'client');
@@ -15,10 +16,11 @@ const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
 const DEFAULT_PORT = 8080;
 const MAX_MESSAGE_BYTES = 4096; // larger client messages are ignored
 const HARD_MAX_PAYLOAD = 16 * 1024; // ws closes connections that exceed this
-const STALE_INPUT_MS = 500; // no input for this long => release all keys
+const LIST_PUSH_MS = 500; // how often the live lobby list is re-checked (round timers tick every second)
+const MANAGE_PER_SEC = 10; // lobby-management messages per client: sustained rate...
+const MANAGE_BURST = 20; // ...and burst
 export const HEARTBEAT_MS = 3000; // ping period; a client that misses one ping round is dropped, so ~6 s worst case
 const MAX_CID_LENGTH = 64;
-const MAX_CATCHUP_STEPS = 5;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
 
 const MIME = {
@@ -39,8 +41,6 @@ const MIME = {
   '.woff2': 'font/woff2',
   '.wasm': 'application/wasm',
 };
-
-const NEUTRAL_INPUT = { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, drop: false, plant: 0 };
 
 /** Join `rel` under `base`, refusing anything that escapes it. */
 function safeJoin(base, rel) {
@@ -133,7 +133,8 @@ function parsePort(value) {
 
 /**
  * Start the game server. Resolves once listening.
- * Options: port (default $PORT or 8080), host (default 0.0.0.0), clientDir, config, rng, log, heartbeatMs.
+ * Options: port (default $PORT or 8080), host (default 0.0.0.0), clientDir, config, rng, log, heartbeatMs,
+ * maxLobbies / maxPlayersPerLobby (hidden safety caps, tests lower them).
  */
 export function startServer(opts = {}) {
   const {
@@ -144,26 +145,22 @@ export function startServer(opts = {}) {
     rng = Math.random,
     log = () => {},
     heartbeatMs = HEARTBEAT_MS,
+    maxLobbies = MAX_LOBBIES,
+    maxPlayersPerLobby = MAX_PLAYERS_PER_LOBBY,
   } = opts;
 
-  const game = new Game(config, rng);
+  const manager = new LobbyManager({ config, rng, log, maxLobbies, maxPlayers: maxPlayersPerLobby });
   const server = http.createServer(makeHttpHandler(path.resolve(clientDir)));
   const wss = new WebSocketServer({ server, maxPayload: HARD_MAX_PAYLOAD });
   const clients = new Set();
   let nextClientId = 1;
+  let lastListJson = '';
 
-  function send(ws, obj) {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
-  }
-
-  /** Forget a client; if it had joined, take its player out of the game. Safe to call twice. */
+  /** Forget a client; if it was in a lobby, take it out (and remember it, so the same page can slip back in). */
   function dropClient(client) {
     clients.delete(client);
-    if (client.joined) {
-      client.joined = false;
-      game.removePlayer(client.id);
-      log(`player ${client.id} left`);
-    }
+    if (client.lobby) log(`player ${client.id} (${client.name}) left`);
+    manager.leave(client, { remember: true });
   }
 
   /** A page retrying on a fresh socket (join timeout, network blip) must not be locked out by its own ghost. */
@@ -176,14 +173,122 @@ export function startServer(opts = {}) {
     }
   }
 
+  function identify(client, cid) {
+    if (client.cid !== null || typeof cid !== 'string' || cid === '' || cid.length > MAX_CID_LENGTH) return;
+    client.cid = cid;
+    evictGhosts(client, cid);
+  }
+
+  /** Send the lobby list to everyone who is browsing, but only when it changed. */
+  function pushList(force = false) {
+    const json = JSON.stringify({ t: 'lobbies', lobbies: manager.list() });
+    if (!force && json === lastListJson) return;
+    lastListJson = json;
+    for (const c of clients) if (c.browsing && !c.lobby && c.ws.readyState === c.ws.OPEN) c.ws.send(json);
+  }
+
+  function sendList(client) {
+    client.browsing = true;
+    client.send({ t: 'lobbies', lobbies: manager.list() });
+  }
+
+  function reply(client, res) {
+    if (res.error) client.send({ t: 'error', reason: res.error, message: res.message });
+    if (!client.lobby) sendList(client); // not in a lobby (any more): show the list
+    else client.browsing = false;
+  }
+
+  /** Lobby-management messages are rate limited (input is not): ~10/s sustained. */
+  function allowManagement(client, now) {
+    client.tokens = Math.min(MANAGE_BURST, client.tokens + ((now - client.tokensAt) / 1000) * MANAGE_PER_SEC);
+    client.tokensAt = now;
+    if (client.tokens < 1) return false;
+    client.tokens -= 1;
+    return true;
+  }
+
+  function onMessage(client, msg) {
+    if (msg.t === 'input') {
+      manager.input(client, msg);
+      return;
+    }
+    if (!allowManagement(client, performance.now())) return;
+    switch (msg.t) {
+      case 'listLobbies': {
+        identify(client, msg.cid);
+        if (!client.lobby && typeof msg.name === 'string') client.name = sanitizeName(msg.name);
+        if (client.lobby) manager.join(client, client.lobby.id); // already in: just resend the room state
+        else if (manager.rejoin(client)) client.browsing = false;
+        else sendList(client);
+        break;
+      }
+      case 'createLobby': {
+        identify(client, msg.cid);
+        reply(client, manager.create(client, { lobbyName: msg.lobbyName, mode: msg.mode, difficulty: msg.difficulty, team: msg.team, name: msg.name }));
+        break;
+      }
+      case 'joinLobby': {
+        identify(client, msg.cid);
+        reply(client, manager.join(client, msg.lobbyId, { team: msg.team, name: msg.name }));
+        break;
+      }
+      case 'leaveLobby':
+        manager.leave(client);
+        sendList(client);
+        break;
+      case 'setTeam':
+        manager.setTeam(client, msg.team);
+        break;
+      case 'setName':
+        manager.setName(client, msg.name);
+        break;
+      case 'setOptions': {
+        const res = manager.setOptions(client, { mode: msg.mode, difficulty: msg.difficulty });
+        if (res.error) client.send({ t: 'error', reason: res.error, message: res.message });
+        break;
+      }
+      case 'startGame': {
+        const res = manager.start(client);
+        if (res.error) client.send({ t: 'error', reason: res.error, message: res.message });
+        break;
+      }
+      default:
+        return;
+    }
+    pushList();
+  }
+
   wss.on('connection', (ws) => {
-    const client = { ws, id: `p${nextClientId++}`, cid: null, joined: false, lastInputAt: 0, inputActive: false, alive: true };
+    const t0 = performance.now();
+    const client = {
+      ws,
+      id: `p${nextClientId++}`,
+      cid: null,
+      name: 'Player',
+      team: 'plant',
+      lobby: null, // set by the LobbyManager
+      browsing: false, // wants lobby-list pushes
+      lastInputAt: 0,
+      inputActive: false,
+      alive: true,
+      tokens: MANAGE_BURST,
+      tokensAt: t0,
+      send(obj) {
+        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+      },
+      raw(str) {
+        if (ws.readyState === ws.OPEN && ws.bufferedAmount <= MAX_BUFFERED_BYTES) ws.send(str);
+      },
+    };
     clients.add(client);
     ws.on('pong', () => {
       client.alive = true;
     });
     ws.on('error', () => {});
-    ws.on('close', () => dropClient(client));
+    ws.on('close', () => {
+      dropClient(client);
+      pushList();
+    });
     ws.on('message', (data, isBinary) => {
       try {
         if (isBinary || !data || data.length > MAX_MESSAGE_BYTES) return;
@@ -194,84 +299,24 @@ export function startServer(opts = {}) {
           return;
         }
         if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
-        if (msg.t === 'join') {
-          if (client.joined) return;
-          if (typeof msg.cid === 'string' && msg.cid !== '' && msg.cid.length <= MAX_CID_LENGTH) {
-            client.cid = msg.cid;
-            evictGhosts(client, msg.cid);
-          }
-          const p = game.addPlayer(client.id, { name: msg.name, team: msg.team, mode: msg.mode, difficulty: msg.difficulty });
-          if (!p) {
-            send(ws, { t: 'error', reason: 'full', message: 'The game is full (2 players). Try again later!' });
-            return;
-          }
-          client.joined = true;
-          client.lastInputAt = performance.now();
-          send(ws, { t: 'welcome', id: client.id, config: publicConfig(game.config) });
-          log(`player ${client.id} (${p.name}) joined as ${p.team}`);
-        } else if (msg.t === 'setName') {
-          if (client.joined) game.renamePlayer(client.id, msg.name);
-        } else if (msg.t === 'input') {
-          if (!client.joined) return;
-          client.lastInputAt = performance.now();
-          client.inputActive = true;
-          game.handleInput(client.id, msg);
-        }
+        onMessage(client, msg);
       } catch (err) {
         log(`message error: ${err?.message ?? err}`);
       }
     });
   });
 
-  function broadcast() {
-    const snap = game.snapshot();
-    game.drainEvents();
-    let payload = null;
-    for (const c of clients) {
-      if (!c.joined || c.ws.readyState !== c.ws.OPEN || c.ws.bufferedAmount > MAX_BUFFERED_BYTES) continue;
-      payload ??= JSON.stringify(snap);
-      c.ws.send(payload);
-    }
-  }
-
-  function releaseStaleInputs(now) {
-    for (const c of clients) {
-      if (c.joined && c.inputActive && now - c.lastInputAt > STALE_INPUT_MS) {
-        c.inputActive = false;
-        game.handleInput(c.id, NEUTRAL_INPUT);
-      }
-    }
-  }
-
-  const step = 1 / config.tickRate;
-  const snapStep = 1 / config.snapRate;
-  let last = performance.now();
-  let acc = 0;
-  let snapAcc = 0;
-  let loopErrors = 0;
+  // One timer drives every lobby's game (each has its own accumulator and snapshot fanout) and the live lobby list.
   const loop = setInterval(() => {
-    try {
-      const now = performance.now();
-      acc += Math.min((now - last) / 1000, 0.25);
-      last = now;
-      let steps = 0;
-      while (acc >= step && steps < MAX_CATCHUP_STEPS) {
-        releaseStaleInputs(now);
-        acc -= step; // consume first so a throwing tick can't wedge the loop
-        game.tick(step);
-        steps++;
-        snapAcc += step;
-        if (snapAcc >= snapStep - 1e-9) {
-          snapAcc -= snapStep;
-          broadcast();
-        }
-      }
-      if (steps === MAX_CATCHUP_STEPS) acc = 0; // fell behind; drop the backlog
-    } catch (err) {
-      // Never let one bad tick take the whole game down: log (rate-limited) and keep going.
-      if (loopErrors++ % 100 === 0) log(`tick error (#${loopErrors}): ${err?.stack ?? err}`);
-    }
+    manager.step(performance.now());
   }, Math.max(1, Math.floor(1000 / config.tickRate / 2)));
+  const listTimer = setInterval(() => {
+    try {
+      pushList();
+    } catch (err) {
+      log(`list error: ${err?.message ?? err}`);
+    }
+  }, LIST_PUSH_MS);
 
   const heartbeat = setInterval(() => {
     for (const c of clients) {
@@ -296,12 +341,14 @@ export function startServer(opts = {}) {
       resolve({
         server,
         wss,
-        game,
+        lobbies: manager,
         port: actualPort,
         close() {
           clearInterval(loop);
+          clearInterval(listTimer);
           clearInterval(heartbeat);
           for (const c of clients) c.ws.terminate();
+          manager.close();
           return new Promise((r) => {
             wss.close(() => server.close(() => r()));
             server.closeAllConnections?.();

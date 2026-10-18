@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { WebSocket } from 'ws';
 import { startServer } from '../server/index.js';
+import { connect as connectTo, waitFor, sleep, soloGame, onlyLobby } from './ws-helpers.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-client-'));
 fs.writeFileSync(path.join(tmp, 'index.html'), '<!doctype html><title>Test</title>');
@@ -24,36 +24,7 @@ test.after(async () => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-function connect() {
-  return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${srv.port}`);
-    ws.messages = [];
-    ws.waiters = [];
-    ws.on('message', (d) => {
-      const m = JSON.parse(d.toString());
-      ws.messages.push(m);
-      ws.waiters = ws.waiters.filter((w) => !w(m));
-    });
-    ws.on('open', () => resolve(ws));
-    ws.on('error', reject);
-  });
-}
-
-function waitFor(ws, pred, ms = 3000) {
-  const found = ws.messages.find(pred);
-  if (found) return Promise.resolve(found);
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('timeout waiting for message')), ms);
-    ws.waiters.push((m) => {
-      if (!pred(m)) return false;
-      clearTimeout(timer);
-      resolve(m);
-      return true;
-    });
-  });
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const connect = () => connectTo(srv);
 
 test('serves client files with correct MIME types', async () => {
   let r = await fetch(`${base}/`);
@@ -101,10 +72,9 @@ test('path traversal is refused', async () => {
   assert.ok(!raw.includes('backyard-battle'));
 });
 
-test('join gets welcome with config and snapshots containing the player entity', async () => {
+test('starting a lobby gets welcome with config and snapshots containing the player entity', async () => {
   const ws = await connect();
-  ws.send(JSON.stringify({ t: 'join', name: 'Tester', team: 'plant', mode: 'coop', difficulty: 'easy' }));
-  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
+  const welcome = await soloGame(ws, { name: 'Tester', team: 'plant', mode: 'coop', difficulty: 'easy' });
   assert.equal(typeof welcome.id, 'string');
   assert.equal(typeof welcome.config, 'object');
   assert.equal(welcome.config.eyeHeight, 1.6);
@@ -128,8 +98,7 @@ test('join gets welcome with config and snapshots containing the player entity',
 
 test('setName renames the player mid-game, sanitized', async () => {
   const ws = await connect();
-  ws.send(JSON.stringify({ t: 'join', name: 'Before', team: 'plant', mode: 'coop' }));
-  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
+  const welcome = await soloGame(ws, { name: 'Before' });
   const nameCtl = String.fromCharCode(0, 7);
   ws.send(JSON.stringify({ t: 'setName', name: `  ${nameCtl}After${'x'.repeat(30)}` }));
   const snap = await waitFor(ws, (m) => m.t === 'snap' && m.entities.find((e) => e.id === welcome.id)?.name === `After${'x'.repeat(11)}`);
@@ -150,64 +119,65 @@ test('malformed and oversized messages are ignored and the server keeps working'
   ws.send(JSON.stringify({ t: 42 }));
   ws.send(JSON.stringify({ t: 'input', yaw: 'x' })); // before join
   ws.send(Buffer.from([1, 2, 3]));
-  ws.send(JSON.stringify({ t: 'join', name: 'x'.repeat(8000) })); // > 4 KB: ignored
+  ws.send(JSON.stringify({ t: 'createLobby', name: 'x'.repeat(8000) })); // > 4 KB: ignored
   await sleep(150);
-  assert.ok(!ws.messages.some((m) => m.t === 'welcome'), 'oversized join ignored');
-  ws.send(JSON.stringify({ t: 'join', name: 'Ok', team: 'zombie', mode: 'versus', difficulty: 'normal' }));
+  assert.ok(!ws.messages.some((m) => m.t === 'lobbyState'), 'oversized create ignored');
+  ws.send(JSON.stringify({ t: 'createLobby', name: 'Ok', team: 'zombie', mode: 'versus', difficulty: 'normal' }));
+  await waitFor(ws, (m) => m.t === 'lobbyState' && m.lobby);
+  ws.send(JSON.stringify({ t: 'startGame' }));
   const welcome = await waitFor(ws, (m) => m.t === 'welcome');
   ws.send(JSON.stringify({ t: 'input', keys: 'bad', yaw: 'bad', pitch: {}, fire: [], plant: 'x' }));
   ws.send('x'.repeat(5000));
-  ws.send(JSON.stringify({ t: 'join', team: 'plant' })); // double join ignored
+  ws.send(JSON.stringify({ t: 'createLobby', team: 'plant' })); // creating again just moves you to a fresh waiting room
   await sleep(150);
-  const snap = await waitFor(ws, (m) => m.t === 'snap' && m.entities.some((e) => e.id === welcome.id));
-  assert.equal(snap.entities.find((e) => e.id === welcome.id).team, 'zombie');
+  assert.equal(srv.lobbies.lobbies.size, 1);
   ws.close();
   await sleep(100);
+  assert.ok(welcome.id);
 });
 
-test('disconnect removes the entity; last human out resets to lobby; a third player is no longer turned away', async () => {
+test('disconnect removes the entity; last human out closes the lobby at once', async () => {
   const a = await connect();
   const b = await connect();
   const c = await connect();
-  a.send(JSON.stringify({ t: 'join', name: 'A', team: 'plant', mode: 'versus' }));
+  a.send(JSON.stringify({ t: 'createLobby', name: 'A', team: 'plant', mode: 'versus' }));
+  const st = await waitFor(a, (m) => m.t === 'lobbyState' && m.lobby);
+  for (const [ws, name] of [[b, 'B'], [c, 'C']]) ws.send(JSON.stringify({ t: 'joinLobby', lobbyId: st.lobby.id, name, team: 'zombie' }));
+  await waitFor(c, (m) => m.t === 'lobbyState' && m.lobby?.players.length === 3);
+  a.send(JSON.stringify({ t: 'startGame' }));
   const wa = await waitFor(a, (m) => m.t === 'welcome');
-  b.send(JSON.stringify({ t: 'join', name: 'B', team: 'zombie' }));
   const wb = await waitFor(b, (m) => m.t === 'welcome');
-  c.send(JSON.stringify({ t: 'join', name: 'C', team: 'zombie' }));
-  await waitFor(c, (m) => m.t === 'welcome');
   await waitFor(a, (m) => m.t === 'snap' && m.entities.some((e) => e.id === wb.id));
+  const lobby = onlyLobby(srv);
 
   b.close();
   await waitFor(a, (m) => m.t === 'snap' && m.entities.some((e) => e.id === wa.id) && !m.entities.some((e) => e.id === wb.id));
-  assert.equal(srv.game.phase, 'playing');
+  assert.equal(lobby.game.phase, 'playing');
   c.close();
   a.close();
   const start = Date.now();
-  while (srv.game.phase !== 'lobby' && Date.now() - start < 2000) await sleep(20);
-  assert.equal(srv.game.phase, 'lobby');
-  assert.equal(srv.game.entities.size, 0);
-  c.close();
+  while (srv.lobbies.lobbies.size > 0 && Date.now() - start < 2000) await sleep(20);
+  assert.equal(srv.lobbies.lobbies.size, 0);
 });
 
 test('stale input is released so a silent client stops moving', async () => {
   const ws = await connect();
-  ws.send(JSON.stringify({ t: 'join', name: 'Idle', team: 'plant', mode: 'coop' }));
-  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
+  const welcome = await soloGame(ws, { name: 'Idle' });
   ws.send(JSON.stringify({ t: 'input', keys: { f: true }, yaw: 0, pitch: 0 }));
   await sleep(1200);
-  const p = srv.game.entities.get(welcome.id);
+  const p = onlyLobby(srv).game.entities.get(welcome.id);
   assert.equal(p.input.keys.f, false);
   ws.close();
   await sleep(100);
 });
 
-test('an exception in the tick loop is logged and the server keeps running', async () => {
+test('an exception in one lobby tick loop is logged and the server keeps running', async () => {
   const ws = await connect();
-  ws.send(JSON.stringify({ t: 'join', name: 'Boom', team: 'plant', mode: 'coop' }));
-  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
-  const orig = srv.game.tick;
+  const welcome = await soloGame(ws, { name: 'Boom' });
+  const game = onlyLobby(srv).game;
+  const orig = game.tick;
   let thrown = 0;
-  srv.game.tick = function patched(dt) {
+  game.tick = function patched(dt) {
     if (thrown < 3) {
       thrown++;
       throw new Error('boom');
@@ -220,12 +190,13 @@ test('an exception in the tick loop is logged and the server keeps running', asy
     assert.equal(thrown, 3);
     const after = ws.messages.slice(before).filter((m) => m.t === 'snap');
     assert.ok(after.length > 0, 'snapshots keep flowing after the errors');
-    const t0 = srv.game.time;
+    const t0 = game.time;
     await sleep(200);
-    assert.ok(srv.game.time > t0, 'the sim keeps advancing');
+    assert.ok(game.time > t0, 'the sim keeps advancing');
   } finally {
-    srv.game.tick = orig;
+    game.tick = orig;
   }
+  assert.ok(welcome.id);
   ws.close();
   await sleep(100);
 });
