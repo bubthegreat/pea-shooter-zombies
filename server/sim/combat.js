@@ -209,7 +209,7 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
 export function nameOf(e) {
   if (!e) return null;
   if (typeof e.name === 'string' && e.name !== '') return e.name;
-  if (e.kind === 'garden') return e.plantKind ? e.plantKind[0].toUpperCase() + e.plantKind.slice(1) : 'Plant';
+  if (e.kind === 'garden') return e.label || (e.plantKind ? e.plantKind[0].toUpperCase() + e.plantKind.slice(1) : 'Plant');
   if (e.kind === 'bot') return e.team === 'zombie' ? 'Zombie' : 'Plant';
   return null;
 }

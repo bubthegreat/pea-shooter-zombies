@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Input } from './input.js';
 import { World, EntityLayer, LAYOUT, gardenSlots } from './scene.js';
+import { plantList, unlockedPlants, pickUpgradeTarget, upgradePrompt, stars } from './plants.js';
 import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex } from './models.js';
 import { Fx } from './fx.js';
 import { Sound } from './audio.js';
@@ -70,7 +71,7 @@ const GUN_HANDS = [
   [0.0, -0.1, 0.03, 0.25, -0.5, 0.8], // right hand on the grip
   [-0.01, -0.07, -0.36, -0.6, -0.35, 0.7], // left hand under the barrel
 ];
-const VM_GUN_SCALE = { house_gun: 0.62, melon_lobber: 0.6, brain_cannon: 0.58, sludge_sprayer: 0.66, repeater: 0.68 };
+const VM_GUN_SCALE = { brain_cannon: 0.58, sludge_sprayer: 0.66 };
 
 class ViewModel {
   constructor(scene) {
@@ -469,11 +470,22 @@ function onSnap(snap) {
       }
       if (String(ev.id) === me) sfx('hurt', null, 0.8, 120);
     } else if (ev.type === 'upgrade' && me !== null && String(ev.id) === me) {
-      hud.banner(ev.bonus ? 'STREAK BONUS!' : 'UPGRADE!', typeof ev.name === 'string' ? ev.name : '', 'upgrade');
-      sfx('chime');
-      vm.swap = 1;
+      const name = typeof ev.name === 'string' ? ev.name : '';
+      if (typeof ev.plantKind === 'string' && ev.plantKind) {
+        // a plant kid keeps the Pea Blaster: the reward is a new plant for the seed bar
+        hud.banner(ev.bonus ? 'STREAK BONUS!' : 'NEW PLANT!', ev.bonus ? `NEW PLANT! ${name}` : name, 'upgrade');
+        sfx('unlock');
+        const fresh = plantList(S.config).find((p) => p.id === ev.plantKind);
+        if (fresh) hud.toast(`Press ${fresh.key} to plant a ${fresh.name}!`, 4500);
+      } else {
+        hud.banner(ev.bonus ? 'STREAK BONUS!' : 'UPGRADE!', name, 'upgrade');
+        sfx('chime');
+        vm.swap = 1;
+      }
       fx.sparkle(camera.position.x, camera.position.y - 0.4, camera.position.z, 0xfff59d, 14, 1.4);
       continue;
+    } else if (ev.type === 'plantUp' && me !== null && ev.by !== undefined && ev.by !== null && String(ev.by) === me) {
+      hud.toast(`${plantName(ev.plantKind)} grew to level ${num(ev.level, 2)}! ${stars(num(ev.level, 2))}`, 2200);
     }
     S.pending.push({ ev, due: now + EVENT_DELAY });
   }
@@ -585,6 +597,12 @@ function runEvent(ev) {
       if (pos) fx.mow(pos.x, 0.4, pos.z);
       sfx('crunch', pos, 0.8, 70);
       break;
+    case 'plantUp': {
+      const lv = num(ev.level, 2);
+      if (have) fx.levelUp(x, 0.6, z, lv);
+      sfx('levelup', pos, 1, 80);
+      break;
+    }
     case 'upgrade': {
       const p = recPos(ev.id);
       if (p) fx.sparkle(p.x, p.y + 1.2, p.z, 0xfff59d, 12, 1.2);
@@ -607,23 +625,19 @@ function runEvent(ev) {
 /* planting helpers                                                    */
 /* ------------------------------------------------------------------ */
 
-const PLANT_NAME = { peashooter: 'Peashooter', cactus: 'Cactus' };
-const PLANT_COST_DEFAULT = { peashooter: 50, cactus: 100 };
 const PLANT_RANGE = 4;
-function plantCost(kind) {
-  const t = S.config.plantTypes && S.config.plantTypes[kind];
-  return t && typeof t.cost === 'number' ? t.cost : PLANT_COST_DEFAULT[kind];
-}
+const plantInfo = (kind) => plantList(S.config).find((p) => p.id === kind) || null;
+const plantName = (kind) => (plantInfo(kind) ? plantInfo(kind).name : 'Plant');
 function worldMatches(w) {
   const same = (a, b, keys) => !a || !b || keys.every((k) => a[k] === b[k]);
   return same(w.house, LAYOUT.house, ['minX', 'maxX', 'minZ', 'maxZ']) && same(w.garage, LAYOUT.garage, ['minX', 'maxX', 'minZ', 'maxZ', 'doorMinX', 'doorMaxX'])
     && same(w.bounds, LAYOUT.bounds, ['minX', 'maxX', 'minZ', 'maxZ']);
 }
 
-function nearestEmptySlot(entities, px, pz, kind) {
+/** Nearest empty garden slot within planting range (any plant fits any slot). */
+function nearestEmptySlot(entities, px, pz) {
   let best = null, bd = PLANT_RANGE;
   for (const s of SLOTS) {
-    if (kind && s.kind !== kind) continue;
     const d = Math.hypot(s.x - px, s.z - pz);
     if (d > bd) continue;
     let taken = false;
@@ -640,17 +654,21 @@ function onPlantKey(n) {
   if (!S.joined || S.team !== 'plant' || !lastView || !lastView.self) return;
   const own = lastView.self;
   if (own.state === 'wilted' || own.state === 'sprout') return;
-  hud.pressSeed(n);
-  const kind = n === 1 ? 'peashooter' : 'cactus';
-  const cost = plantCost(kind);
-  if (num(own.sunshine, 0) < cost) {
-    hud.toast(`Not enough sunshine yet! ${PLANT_NAME[kind]} costs ${cost}`, 1800);
+  const info = plantList(S.config)[n - 1];
+  if (!info) return;
+  if (info.tier > num(own.tier, 0)) {
+    hud.toast(`${info.name} is locked! Convert more zombies to unlock it.`, 2200);
     sfx('hurt', null, 0.5);
     return;
   }
-  if (!nearestEmptySlot(lastView.entities, own.x, own.z, kind)) {
-    const rows = kind === 'peashooter' ? 'the front and back rows' : 'the two middle rows';
-    hud.toast(`Walk next to an empty spot in ${rows} to plant a ${PLANT_NAME[kind]}!`, 2600);
+  hud.pressSeed(n);
+  if (num(own.sunshine, 0) < info.cost) {
+    hud.toast(`Not enough sunshine yet! ${info.name} costs ${info.cost}`, 1800);
+    sfx('hurt', null, 0.5);
+    return;
+  }
+  if (!nearestEmptySlot(lastView.entities, own.x, own.z)) {
+    hud.toast(`Walk next to an empty garden spot to plant a ${info.name}!`, 2600);
     sfx('hurt', null, 0.5);
   }
 }
@@ -671,7 +689,7 @@ function demoEntities(t, cam) {
     put({ id: 'demo-p1', kind: 'bot', team: 'plant', name: 'Gardener', x: -1.4, y: 0, z: 3.8, hp: 100, maxHp: 100, weapon: 'pea_blaster', state: 'alive' });
     put({ id: 'demo-g1', kind: 'garden', team: 'plant', plantKind: 'peashooter', x: 1.6, y: 0, z: 3.6, hp: 60, maxHp: 60, pitch: 0.15 });
     put({ id: 'demo-g2', kind: 'garden', team: 'plant', plantKind: 'cactus', x: 4.2, y: 0, z: 3.0, hp: 60, maxHp: 60 });
-    put({ id: 'demo-p2', kind: 'player', team: 'plant', name: 'Sunny', x: 6.6, y: 0, z: 1.6, hp: 100, maxHp: 100, weapon: 'spike_shotgun', state: 'alive' });
+    put({ id: 'demo-p2', kind: 'player', team: 'plant', name: 'Sunny', x: 6.6, y: 0, z: 1.6, hp: 100, maxHp: 100, weapon: 'pea_blaster', state: 'alive' });
   }
   if (dbg.demo) for (const e of dbg.demo(t)) m.set(e.id, e);
   if (!dbg.noDemo) m.set('demo-s', { id: 'demo-s', kind: 'sun', team: 'plant', x: 0, y: 2.2 + Math.sin(t) * 0.2, z: 6.5, yaw: 0, hp: 1, maxHp: 1, state: 'alive' });
@@ -891,7 +909,7 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   if (!S.introShown && alive && snap && snap.phase === 'playing') {
     S.introShown = true;
     hud.toast(team === 'plant'
-      ? 'Shoot the zombies! Stand by an empty garden spot and press 1 or 2 to plant.'
+      ? 'Shoot the zombies! Stand by an empty garden spot and press 1 or 2 to plant. Press U by a plant to level it up!'
       : 'Head for the garage on the right: hold E by the mower, or press E at the rack to grab a tool!', 6000);
   }
 
@@ -972,15 +990,24 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
       }
     }
     if (team === 'plant' && !prompt) {
-      const s = nearestEmptySlot(entities, own.x, own.z, null);
-      if (s) {
-        nearSlotInfo = s;
-        const cost = plantCost(s.kind);
-        const ok = num(own.sunshine, 0) >= cost;
-        world.showSlot(s.x, s.z, ok);
+      const slot = nearestEmptySlot(entities, own.x, own.z);
+      const sun = num(own.sunshine, 0);
+      const mine = unlockedPlants(S.config, num(own.tier, 0));
+      const cheapest = mine.reduce((m, p) => Math.min(m, p.cost), Infinity);
+      // a plant you are looking at (or standing by, with no empty spot around) can be levelled up with U
+      const up = pickUpgradeTarget(entities, { x: own.x, z: own.z, yaw: input.yaw }, S.config);
+      const wantUp = up && (up.looked || !slot);
+      if (wantUp) {
+        const g = up.plant;
+        world.showSlot(g.x, g.z, true);
+        prompt = upgradePrompt(S.config, g, sun);
+      } else if (slot) {
+        nearSlotInfo = slot;
+        const ok = sun >= cheapest;
+        world.showSlot(slot.x, slot.z, ok);
         prompt = ok
-          ? `Press ${s.kind === 'peashooter' ? 1 : 2} to plant a ${PLANT_NAME[s.kind]}!`
-          : `A ${PLANT_NAME[s.kind]} needs ☀️ ${cost} — grab some sunshine!`;
+          ? (mine.length > 2 ? `Press 1-${mine.length} to plant here!` : 'Press 1 or 2 to plant here!')
+          : `Planting needs ☀️ ${cheapest} — grab some sunshine!`;
       }
     }
   }

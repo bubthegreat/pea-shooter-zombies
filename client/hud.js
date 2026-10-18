@@ -1,5 +1,6 @@
 // DOM heads-up display. Everything is driven from the latest snapshot's own entity.
 import { weaponInfo, itemInfo } from './models.js';
+import { unlockedPlants, nextUnlock } from './plants.js';
 
 const FEED_MAX = 5;
 const FEED_LIFE_MS = 6000;
@@ -20,7 +21,7 @@ export class HUD {
     this.el = {
       wave: $('wavetext'), timeSun: $('timesun'), timeFill: $('timefill'), timeLabel: $('timelabel'),
       garden: $('gardencount'), sunBox: $('sunbox'), sunCount: $('suncount'),
-      seeds: $('seedcards'), seed1: $('seed1'), seed2: $('seed2'),
+      seeds: $('seedcards'),
       hpIco: $('hpico'), hpFill: $('hpfill'), hpText: $('hptext'),
       weapon: $('weaponname'), pipsBox: $('pips'), pips: [...$('pips').children], upgFill: $('upgfill'), upgText: $('upgtext'),
       itemHp: $('itemhp'), itemHpFill: $('itemhpfill'), itemHpText: $('itemhptext'),
@@ -48,6 +49,8 @@ export class HUD {
     this._hitTimer = 0;
     this._bannerTimer = 0;
     this._cache = {};
+    this._seedSig = '';
+    this._seedCount = 0;
   }
 
   show() { this.root.classList.remove('hidden'); }
@@ -145,10 +148,56 @@ export class HUD {
   }
 
   pressSeed(n) {
-    const el = n === 1 ? this.el.seed1 : this.el.seed2;
+    const el = this.el.seeds.querySelector(`.seed[data-n="${n | 0}"]`);
+    if (!el) return;
     el.classList.remove('pressed');
     void el.offsetWidth;
     el.classList.add('pressed');
+  }
+
+  /**
+   * The seed bar: one card per unlocked plant (number key, icon, name, cost). Cards are rebuilt only when the unlocked
+   * set or a cost changes; affordability is toggled every frame. A freshly unlocked card scrolls into view (touch bar scrolls).
+   */
+  _syncSeeds(config, tier, sun) {
+    const plants = unlockedPlants(config, tier);
+    const sig = plants.map((p) => `${p.id}:${p.cost}`).join(',');
+    const box = this.el.seeds;
+    if (sig !== this._seedSig) {
+      this._seedSig = sig;
+      box.textContent = '';
+      for (const p of plants) {
+        const card = document.createElement('div');
+        card.className = 'seed';
+        card.dataset.n = String(p.key);
+        card.dataset.kind = p.id;
+        const add = (cls, text) => {
+          const el = document.createElement('span');
+          el.className = cls;
+          el.textContent = text;
+          card.appendChild(el);
+          return el;
+        };
+        add('key', String(p.key));
+        add('ico', p.icon);
+        add('nm', p.name);
+        const cost = add('cost', '\u2600\uFE0F ');
+        const b = document.createElement('b');
+        b.textContent = String(p.cost);
+        cost.appendChild(b);
+        box.appendChild(card);
+      }
+      box.classList.toggle('compact', plants.length > 5);
+      if (plants.length > this._seedCount && this._seedCount > 0 && box.lastChild && box.lastChild.scrollIntoView) {
+        try { box.lastChild.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (_) { /* old browsers */ }
+      }
+      this._seedCount = plants.length;
+      for (const k of Object.keys(this._cache)) if (k.startsWith('seed:')) delete this._cache[k];
+    }
+    for (const card of box.children) {
+      const cost = plants.find((p) => p.id === card.dataset.kind)?.cost ?? 0;
+      this._set('seed:' + card.dataset.kind, card, 'class', 'seed' + (sun < cost ? ' no' : ''));
+    }
   }
 
   /** One pip per gun tier (the server sends 8 thresholds; follow whatever it says). */
@@ -173,7 +222,7 @@ export class HUD {
   }
 
   /**
-   * ctx: { own, snap, config, now, locked, nearSlot: {kind}|null, mower: {hp, maxHp}|null (only while we drive it) }
+   * ctx: { own, snap, config, now, locked, mower: {hp, maxHp}|null (only while we drive it) }
    */
   update(ctx) {
     const { own, snap, config, now } = ctx;
@@ -225,17 +274,20 @@ export class HUD {
         if (this._cache['pip' + i] !== on) { this._cache['pip' + i] = on; e.pips[i].classList.toggle('on', on); }
       }
       const progress = num(own.progress, 0);
+      const plantKid = team === 'plant';
       if (tier >= top || th[tier + 1] === undefined) {
         this._set('uw', e.upgFill, 'width', '100%');
         this._set('uc', e.upgFill, 'class', 'max');
-        this._set('ut', e.upgText, 'text', 'Top gun! ⭐');
+        this._set('ut', e.upgText, 'text', plantKid ? 'All plants unlocked! ⭐' : 'Top gun! ⭐');
       } else {
         const next = th[tier + 1];
         const base = th[tier] || 0;
         const f2 = Math.max(0, Math.min(1, (progress - base) / Math.max(1, next - base)));
         this._set('uw', e.upgFill, 'width', (f2 * 100).toFixed(0) + '%');
         this._set('uc', e.upgFill, 'class', '');
-        this._set('ut', e.upgText, 'text', `Next gun: ${Math.min(progress, next)} / ${next}`);
+        const fresh = plantKid ? nextUnlock(config, tier) : null;
+        const label = plantKid ? `Next plant: ${fresh ? fresh.plants.map((p) => p.name).join(' + ') : '?'}` : 'Next gun';
+        this._set('ut', e.upgText, 'text', `${label}: ${Math.min(progress, next)} / ${next}`);
       }
       // wheelbarrow hit points
       const showBarrow = held === 'wheelbarrow';
@@ -263,12 +315,7 @@ export class HUD {
         this._set('sun', e.sunCount, 'text', String(sun));
         if (sun > this.lastSun) { e.sunBox.classList.remove('bump'); void e.sunBox.offsetWidth; e.sunBox.classList.add('bump'); }
         this.lastSun = sun;
-        const c1 = costOf(config, 'peashooter', 50), c2 = costOf(config, 'cactus', 100);
-        this._set('c1', e.seed1.querySelector('.cost b'), 'text', String(c1));
-        this._set('c2', e.seed2.querySelector('.cost b'), 'text', String(c2));
-        const near = ctx.nearSlot ? ctx.nearSlot.kind : null;
-        this._set('s1', e.seed1, 'class', 'seed' + (sun < c1 ? ' no' : '') + (near === 'peashooter' ? ' near' : ''));
-        this._set('s2', e.seed2, 'class', 'seed' + (sun < c2 ? ' no' : '') + (near === 'cactus' ? ' near' : ''));
+        this._syncSeeds(config, num(own.tier, 0), sun);
       }
 
       // ---- the mower's own hit points while we drive it
@@ -342,9 +389,4 @@ export class HUD {
       e.end.classList.add('hidden');
     }
   }
-}
-
-function costOf(config, kind, def) {
-  const t = config && config.plantTypes && config.plantTypes[kind];
-  return t && typeof t.cost === 'number' ? t.cost : def;
 }

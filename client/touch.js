@@ -4,16 +4,20 @@
 //   left thumb   floating joystick -> keys f/b/l/r (digital, 8-way, dead zone)
 //   right side   drag anywhere to look (settings invert + speed apply; touches have their own base multiplier)
 //   FIRE         hold to shoot; sliding the thumb while holding it still steers the view
-//   JUMP / USE (E) / DROP (Q, only while carrying a tool)       seed cards plant 1 / 2 (plant team)
+//   JUMP / USE (E) / DROP (Q, only while carrying a tool) / UPGRADE (U, only next to a garden plant you can level up)
+//   seed cards (one per unlocked plant, the bar scrolls sideways) plant that plant (plant team)
 //
 // Touch events with identifiers are used (not Pointer Events) so multi-touch behaves the same on iOS Safari and
 // Android Chrome. Every game touch is preventDefault()ed: no scrolling, zoom, long-press menus or mouse emulation.
 import { settings } from './settings.js';
 import { applyLook } from './input.js';
+import { plantList } from './plants.js';
 
 export const TOUCH_LOOK_MULT = 2.2; // touch drags are this many times a mouse pixel (before the user's speed setting)
 export const STICK_DEADZONE = 0.3; // fraction of the stick radius that is ignored
 export const STICK_AXIS = 0.38; // |component| of the stick direction needed to press that key (8-way sectors)
+export const SEED_TAP_SLOP = 10; // px a finger may wander on a seed card and still count as a tap
+export const SEED_TAP_MS = 600; // ... and how long it may stay down
 export const MIN_HOLD_MS = 110; // a tap is held at least this long so it spans a 30 Hz input message
 const LOOK_JUMP_MAX = 500; // ignore absurd single-event jumps (glitchy touch screens)
 
@@ -44,15 +48,14 @@ export function touchLook(yaw, pitch, dx, dy, look) {
   return applyLook(yaw, pitch, dx * TOUCH_LOOK_MULT, dy * TOUCH_LOOK_MULT, look);
 }
 
-const SEED_ICON = { 1: '\u{1F331}', 2: '\u{1F335}' };
-
-/** Rewrite keyboard hints ("Press E", "press 1 or 2 to plant") into touch wording. */
+/** Rewrite keyboard hints ("Press E", "press 1-3 to plant", "Press U") into touch wording. */
 export function mobilize(text) {
   if (typeof text !== 'string' || !text) return text;
   const tap = (w) => (w[0] === 'P' ? 'Tap' : 'tap');
   return text
-    .replace(/\b(press|tap) 1 or 2 to plant\b/gi, (_, w) => `${tap(w)} a seed card to plant`)
-    .replace(/\b(press) ([12]) to plant\b/gi, (_, w, n) => `${tap(w)} ${SEED_ICON[n]} to plant`)
+    .replace(/\b(press|tap) 1(?: or |-)[2-9] to plant\b/gi, (_, w) => `${tap(w)} a seed card to plant`)
+    .replace(/\b(press) ([1-9]) to plant\b/gi, (_, w, n) => `${tap(w)} ${plantList(null)[n - 1].icon} to plant`)
+    .replace(/\b([Pp]ress) U\b/g, (_, w) => `${tap(w)} UPGRADE`)
     .replace(/\b([Pp]ress) E\b/g, (_, w) => `${tap(w)} USE`)
     .replace(/\b([Pp]ress) Q\b/g, (_, w) => `${tap(w)} DROP`)
     .replace(/\bE\b/g, 'USE')
@@ -74,6 +77,7 @@ const UI_HTML = `
   <div id="tc-jump" class="tc-btn" data-act="jump"><b>&#11014;&#65039;</b><span>JUMP</span></div>
   <div id="tc-use" class="tc-btn small hidden" data-act="use"><b>&#9995;</b><span>USE</span></div>
   <div id="tc-drop" class="tc-btn small hidden" data-act="drop"><b>&#11015;&#65039;</b><span>DROP</span></div>
+  <div id="tc-up" class="tc-btn small hidden" data-act="upgrade"><b>&#11088;</b><span>UPGRADE</span></div>
 `;
 
 export class TouchControls {
@@ -87,7 +91,7 @@ export class TouchControls {
     this.stick = null; // { id, ox, oy, r, ex, ey }
     this.holds = {}; // act -> { ids: Set, t0, timer, el }
     this.prompt = '';
-    this._shown = { use: null, drop: null, attn: null };
+    this._shown = { use: null, drop: null, up: null, attn: null, upattn: null };
     this.wake = null;
 
     if (isTouch()) this.enable();
@@ -126,9 +130,9 @@ export class TouchControls {
     this.ui = ui;
     this.el = {
       stick: $('tc-stick'), knob: $('tc-knob'), rest: $('tc-rest'),
-      fire: $('tc-fire'), jump: $('tc-jump'), use: $('tc-use'), drop: $('tc-drop'),
+      fire: $('tc-fire'), jump: $('tc-jump'), use: $('tc-use'), drop: $('tc-drop'), upgrade: $('tc-up'),
     };
-    for (const act of ['fire', 'jump', 'use', 'drop']) this.holds[act] = { ids: new Set(), t0: 0, timer: 0, el: this.el[act] };
+    for (const act of ['fire', 'jump', 'use', 'drop', 'upgrade']) this.holds[act] = { ids: new Set(), t0: 0, timer: 0, el: this.el[act] };
 
     const opts = { passive: false };
     ui.addEventListener('touchstart', (e) => this._onStart(e), opts);
@@ -137,14 +141,31 @@ export class TouchControls {
     ui.addEventListener('touchcancel', (e) => this._onEnd(e), opts);
     ui.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // seed cards double as the plant buttons (they already show cost + whether you can afford it)
-    for (const n of [1, 2]) {
-      const card = $('seed' + n);
-      if (!card) continue;
-      card.addEventListener('touchstart', (e) => {
-        stop(e);
-        if (this._live()) this.input._plant(n);
-      }, opts);
+    // seed cards double as the plant buttons (they already show cost + whether you can afford it). The bar scrolls
+    // sideways, so a card plants on touchend when the finger barely moved; a drag just scrolls.
+    const bar = $('seedcards');
+    if (bar) {
+      let tap = null;
+      bar.addEventListener('touchstart', (e) => {
+        const t = e.changedTouches[0];
+        const card = t && t.target && t.target.closest ? t.target.closest('.seed') : null;
+        tap = card ? { id: t.identifier, n: Number(card.dataset.n), x: t.clientX, y: t.clientY, t0: performance.now(), moved: false } : null;
+      }, { passive: true });
+      bar.addEventListener('touchmove', (e) => {
+        if (!tap) return;
+        for (const t of e.changedTouches) if (t.identifier === tap.id && Math.hypot(t.clientX - tap.x, t.clientY - tap.y) > SEED_TAP_SLOP) tap.moved = true;
+      }, { passive: true });
+      bar.addEventListener('touchend', (e) => {
+        for (const t of e.changedTouches) {
+          if (!tap || t.identifier !== tap.id) continue;
+          const ok = !tap.moved && performance.now() - tap.t0 < SEED_TAP_MS;
+          const n = tap.n;
+          tap = null;
+          stop(e); // no synthetic mouse events / zoom after a tap
+          if (ok && n >= 1 && this._live()) this.input._plant(n);
+        }
+      }, { passive: false });
+      bar.addEventListener('touchcancel', () => { tap = null; }, { passive: true });
     }
 
     // rotate hint (portrait)
@@ -171,7 +192,7 @@ export class TouchControls {
   _bindPage() {
     document.addEventListener('touchmove', (e) => {
       const t = e.target;
-      if (t && t.closest && t.closest('#lobby, #settings, #rotate-hint')) return; // those scroll normally
+      if (t && t.closest && t.closest('#lobby, #settings, #rotate-hint, #seedcards')) return; // those scroll normally
       stop(e);
     }, { passive: false });
     for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, stop);
@@ -270,6 +291,13 @@ export class TouchControls {
     if (this._shown.attn !== attn) {
       this._shown.attn = attn;
       this.el.use.classList.toggle('attn', attn);
+    }
+    // plant kids: the UPGRADE button shows while the prompt offers an affordable level-up ("Press U to upgrade ...")
+    const wantsUp = own.team === 'plant' && /\bPress U\b/.test(this.prompt);
+    this._toggle('up', this.el.upgrade, wantsUp);
+    if (this._shown.upattn !== wantsUp) {
+      this._shown.upattn = wantsUp;
+      this.el.upgrade.classList.toggle('attn', wantsUp);
     }
   }
 
@@ -394,6 +422,7 @@ export class TouchControls {
     else if (act === 'jump') inp.keys.jump = v;
     else if (act === 'use') inp.use = v;
     else if (act === 'drop') inp.drop = v;
+    else if (act === 'upgrade') inp.upgrade = v;
   }
 
   _press(act, t) {

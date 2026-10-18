@@ -57,6 +57,9 @@ test('mobilize: keyboard hints become touch hints', () => {
   assert.equal(mobilize('Press 1 to plant a Peashooter!'), 'Tap \u{1F331} to plant a Peashooter!');
   assert.equal(mobilize('press 2 to plant a Cactus!'), 'tap \u{1F335} to plant a Cactus!');
   assert.equal(mobilize('stand by a spot and press 1 or 2 to plant.'), 'stand by a spot and tap a seed card to plant.');
+  assert.equal(mobilize('Press 1-5 to plant here!'), 'Tap a seed card to plant here!');
+  assert.equal(mobilize('Press 3 to plant a Repeater!'), 'Tap \u{1F33F} to plant a Repeater!');
+  assert.equal(mobilize('Press U to upgrade Cactus \u2605\u2605 \u2014 75\u2600\uFE0F'), 'Tap UPGRADE to upgrade Cactus \u2605\u2605 \u2014 75\u2600\uFE0F');
   assert.equal(mobilize('Easy peasy: Eat Even Eggs'), 'Easy peasy: Eat Even Eggs', 'only a lone E/Q is a key');
   assert.equal(mobilize(''), '');
   assert.equal(mobilize(undefined), undefined);

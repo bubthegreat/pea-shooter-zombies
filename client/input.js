@@ -4,7 +4,7 @@
 //   W A S / arrows  move      Space  jump      mouse  look      left click  fire
 //   E  use (hold: start the mower; tap: grab garage equipment / hop off the mower)
 //   Q  put the equipment you are holding down (sent as `drop`; the server edge-detects it)
-//   1 / 2  plant peashooter / cactus
+//   1-9  plant the nth unlocked plant (seed bar)     U  upgrade the garden plant you are next to (sent as `upgrade`)
 //   M  mute     H  help     O  look settings (invert, mouse speed)
 
 import { settings } from './settings.js';
@@ -74,8 +74,10 @@ export class Input {
     this.fire = false;
     this.use = false;
     this.drop = false;
+    this.upgrade = false;
     this._usePending = false; // a tap shorter than one send interval still reaches the server as one message
     this._dropPending = false;
+    this._upgradePending = false;
     this.planter = new PlantSender();
     this.seq = 0;
     this.onToggleMute = null;
@@ -153,7 +155,8 @@ export class Input {
     this.fire = false;
     this.use = false;
     this.drop = false;
-    this._usePending = this._dropPending = false;
+    this.upgrade = false;
+    this._usePending = this._dropPending = this._upgradePending = false;
   }
 
   _key(e, down) {
@@ -174,9 +177,13 @@ export class Input {
       case 'Space': k.jump = down; break;
       case 'KeyE': this.use = down; if (down) this._usePending = true; break;
       case 'KeyQ': this.drop = down; if (down) this._dropPending = true; break;
-      case 'Digit1': case 'Numpad1': if (down && !e.repeat) this._plant(1); break;
-      case 'Digit2': case 'Numpad2': if (down && !e.repeat) this._plant(2); break;
-      default: handled = false;
+      case 'KeyU': this.upgrade = down; if (down) this._upgradePending = true; break;
+      default: {
+        const m = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+        if (m) {
+          if (down && !e.repeat) this._plant(Number(m[1]));
+        } else handled = false;
+      }
     }
     if (handled) e.preventDefault();
   }
@@ -198,6 +205,7 @@ export class Input {
       fire: this.fire,
       use: this.use || this._usePending,
       drop: this.drop || this._dropPending,
+      upgrade: this.upgrade || this._upgradePending,
       ...this.planter.fields(),
     };
   }
@@ -211,6 +219,7 @@ export class Input {
         this.planter.commit(m);
         if (!this.use) this._usePending = false;
         if (!this.drop) this._dropPending = false;
+        if (!this.upgrade) this._upgradePending = false;
       }
     }, 1000 / 30);
   }

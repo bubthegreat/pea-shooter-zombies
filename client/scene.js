@@ -550,9 +550,8 @@ export class World {
       for (let c = 0; c < g.columns; c++) {
         this._P(P, G.sphere, mound, g.startX + c * g.stepX, 0.1, row.z, { sx: 0.6, sy: 0.07, sz: 0.6 }, false, true);
       }
-      // sign at the left end showing which plant lives in the row
-      const isPea = row.kind === 'peashooter';
-      const tex = emojiTexture(isPea ? '\u{1F331}' : '\u{1F335}', isPea ? '#d9f5b5' : '#ffe9b0');
+      // little sunflower sign at the left end (any plant can go in any row)
+      const tex = emojiTexture('\u{1F33B}', '#fff3b0');
       const signMat = new THREE.MeshToonMaterial({ map: tex, gradientMap });
       this._P(P, G.cyl, wood, x0 - 1.6, 0.5, row.z, { sx: 0.06, sy: 1.0, sz: 0.06 });
       this._P(P, G.box, signMat, x0 - 1.6, 1.15, row.z, { sx: 0.12, sy: 0.9, sz: 0.9 }, true, false).rotation.y = 0;

@@ -46,6 +46,7 @@ export function plantAt(game, idx, kind) {
     kind: 'garden',
     team: 'plant',
     plantKind: kind,
+    label: type.name ?? kind, // kill-feed name (not sent in snapshots)
     level: 1,
     x: slot.x,
     y: 0,
