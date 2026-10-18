@@ -198,15 +198,8 @@ function leafMesh(parent, mat, x, y, z, len, wid, rx, ry, rz) {
 /* ------------------------------------------------------------------ */
 
 export const WEAPONS = {
-  // plant ladder
+  // plant kids keep one gun all round (the plants themselves are what level up)
   pea_blaster: { name: 'Pea Blaster', rate: 4, proj: 'pea', team: 'plant' },
-  double_pea: { name: 'Double Pea', rate: 5, proj: 'pea', team: 'plant' },
-  pea_rifle: { name: 'Pea Rifle', rate: 9, proj: 'pea', team: 'plant' },
-  snow_pea: { name: 'Snow Pea', rate: 3.5, proj: 'snow', team: 'plant' },
-  spike_shotgun: { name: 'Spike Shotgun', rate: 1.3, proj: 'spike', team: 'plant' },
-  repeater: { name: 'Repeater', rate: 14, proj: 'pea', team: 'plant' },
-  melon_lobber: { name: 'Melon Lobber', rate: 0.8, proj: 'melon', team: 'plant' },
-  house_gun: { name: 'House Gun', rate: 1.5, proj: 'housepea', team: 'plant' },
   // zombie ladder
   goo_blaster: { name: 'Goo Blaster', rate: 3, proj: 'bullet', team: 'zombie' },
   slime_pistol: { name: 'Slime Pistol', rate: 2.5, proj: 'slime', team: 'zombie' },
@@ -308,69 +301,20 @@ export function makeGun(id, team) {
   g.add(muzzle);
   const cyl = (parent, mat, x, y, z, r, len) =>
     add(parent, G.cyl, mat, x, y, z, { sx: r, sy: len, sz: r, rx: PI / 2 });
+  // The one plant gun. Also what any unknown plant-team id falls back to.
+  const peaBlaster = () => {
+    const pod = toon(0x7ed957), pea = toon(0xb9f57d), barrel = toon(0x2e7d32), grip = toon(0x8d5a2b);
+    add(g, G.sphereLo, pod, 0, 0, -0.16, { sx: 0.085, sy: 0.085, sz: 0.3 });
+    for (let i = 0; i < 3; i++) add(g, G.sphereXS, pea, 0, 0.085, -0.04 - i * 0.12, { s: 0.052 });
+    cyl(g, barrel, 0, 0, -0.44, 0.04, 0.26);
+    add(g, G.torus, toon(0xffe066), 0, 0, -0.57, { s: 0.055 });
+    add(g, G.box, grip, 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
+    muzzle.position.set(0, 0, -0.6);
+  };
   switch (id) {
-    case 'pea_blaster': {
-      const pod = toon(0x7ed957), pea = toon(0xb9f57d), barrel = toon(0x2e7d32), grip = toon(0x8d5a2b);
-      add(g, G.sphereLo, pod, 0, 0, -0.16, { sx: 0.085, sy: 0.085, sz: 0.3 });
-      for (let i = 0; i < 3; i++) add(g, G.sphereXS, pea, 0, 0.085, -0.04 - i * 0.12, { s: 0.052 });
-      cyl(g, barrel, 0, 0, -0.44, 0.04, 0.26);
-      add(g, G.torus, toon(0xffe066), 0, 0, -0.57, { s: 0.055 });
-      add(g, G.box, grip, 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      muzzle.position.set(0, 0, -0.6);
+    case 'pea_blaster':
+      peaBlaster();
       break;
-    }
-    case 'pea_rifle': {
-      const body = toon(0x43a047), pea = toon(0xb9f57d), barrel = toon(0x1b5e20), grip = toon(0x8d5a2b);
-      add(g, G.sphereLo, body, 0, 0, -0.2, { sx: 0.075, sy: 0.085, sz: 0.4 });
-      for (let i = 0; i < 4; i++) {
-        add(g, G.sphereXS, pea, 0.075, 0, -0.06 - i * 0.12, { s: 0.048 });
-        add(g, G.sphereXS, pea, -0.075, 0, -0.06 - i * 0.12, { s: 0.048 });
-      }
-      cyl(g, barrel, 0, 0, -0.62, 0.035, 0.45);
-      cyl(g, toon(0xffd54f), 0, 0.12, -0.2, 0.035, 0.24); // scope
-      add(g, G.sphereXS, toon(0x4fc3f7), 0, 0.12, -0.33, { s: 0.04 });
-      add(g, G.torus, toon(0xffe066), 0, 0, -0.84, { s: 0.05 });
-      add(g, G.box, grip, 0, -0.11, 0.0, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      add(g, G.box, grip, 0, -0.02, 0.26, { sx: 0.06, sy: 0.12, sz: 0.2 }); // stock
-      muzzle.position.set(0, 0, -0.88);
-      break;
-    }
-    case 'spike_shotgun': {
-      const cactus = toon(0x2fa05a), spike = toon(0xfff3c4), pink = toon(0xff6fa8);
-      cyl(g, cactus, 0, 0, -0.3, 0.085, 0.7);
-      const rnd = mulberry(7);
-      for (let i = 0; i < 12; i++) {
-        const a = rnd() * PI * 2, z = -0.05 - rnd() * 0.55;
-        const c = add(g, G.coneLo, spike, Math.cos(a) * 0.085, Math.sin(a) * 0.085, z, { sx: 0.014, sy: 0.07, sz: 0.014 });
-        c.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
-      }
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * PI * 2;
-        add(g, G.sphereXS, pink, Math.cos(a) * 0.05, 0.1 + Math.sin(a) * 0.05, 0.02, { s: 0.035 });
-      }
-      add(g, G.sphereXS, toon(0xffeb3b), 0, 0.1, 0.02, { s: 0.03 });
-      add(g, G.torus, toon(0x1b7a3c), 0, 0, -0.66, { s: 0.1 });
-      add(g, G.sphereLo, cactus, 0, -0.1, -0.35, { sx: 0.06, sy: 0.05, sz: 0.14 }); // pump
-      add(g, G.box, toon(0x8d5a2b), 0, -0.12, 0.05, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      muzzle.position.set(0, 0, -0.7);
-      break;
-    }
-    case 'house_gun': {
-      const wall = toon(0xffe9a8), roof = toon(0xe53935), barrel = toon(0xff9800), door = toon(0x6d4c41);
-      add(g, G.box, wall, 0, 0.02, 0.1, { sx: 0.2, sy: 0.18, sz: 0.3 });
-      add(g, G.box, roof, 0.075, 0.15, 0.1, { sx: 0.14, sy: 0.02, sz: 0.34, rz: -0.65 });
-      add(g, G.box, roof, -0.075, 0.15, 0.1, { sx: 0.14, sy: 0.02, sz: 0.34, rz: 0.65 });
-      add(g, G.box, toon(0xb0463a), 0.07, 0.21, 0.2, { sx: 0.05, sy: 0.1, sz: 0.05 }); // chimney
-      add(g, G.box, door, 0, -0.03, 0.255, { sx: 0.06, sy: 0.1, sz: 0.01 });
-      add(g, G.box, toon(0x81d4fa), 0.07, 0.04, 0.255, { sx: 0.05, sy: 0.05, sz: 0.01 });
-      add(g, G.box, toon(0x81d4fa), -0.07, 0.04, 0.255, { sx: 0.05, sy: 0.05, sz: 0.01 });
-      cyl(g, barrel, 0, 0.02, -0.38, 0.1, 0.62);
-      add(g, G.torus, roof, 0, 0.02, -0.7, { s: 0.115 });
-      add(g, G.torus, roof, 0, 0.02, -0.1, { s: 0.105 });
-      add(g, G.box, toon(0x8d5a2b), 0, -0.13, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      muzzle.position.set(0, 0.02, -0.74);
-      break;
-    }
     case 'zombie_rifle': {
       const body = toon(0x8a9a72), band = toon(0x7e57c2), bandage = toon(0xf1ecd6);
       add(g, G.sphereLo, body, 0, 0, -0.2, { sx: 0.075, sy: 0.09, sz: 0.4 });
@@ -417,75 +361,6 @@ export function makeGun(id, team) {
       }
       add(g, G.box, toon(0x5d4037), 0, -0.12, 0.1, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
       muzzle.position.set(0, 0, -0.9);
-      break;
-    }
-    case 'double_pea': {
-      const pod = toon(0x9be15d), pea = toon(0xd4ff8a), barrel = toon(0x2e7d32), grip = toon(0x8d5a2b), gold = toon(0xffe066);
-      for (const s of [-1, 1]) {
-        add(g, G.sphereLo, pod, s * 0.068, 0, -0.17, { sx: 0.066, sy: 0.08, sz: 0.3 });
-        for (let i = 0; i < 3; i++) add(g, G.sphereXS, pea, s * 0.068, 0.078, -0.06 - i * 0.12, { s: 0.044 });
-        cyl(g, barrel, s * 0.068, 0, -0.47, 0.036, 0.28);
-        add(g, G.torus, gold, s * 0.068, 0, -0.61, { s: 0.05 });
-      }
-      add(g, G.box, gold, 0, 0, -0.3, { sx: 0.22, sy: 0.03, sz: 0.045 });
-      add(g, G.box, gold, 0, 0, -0.08, { sx: 0.22, sy: 0.03, sz: 0.045 });
-      add(g, G.box, grip, 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      muzzle.position.set(0, 0, -0.64);
-      break;
-    }
-    case 'snow_pea': {
-      const ice = toon(0x7cc8f5), blue = toon(0x2f86d0), pale = toon(0xd4f2ff), white = toon(WHITE), grip = toon(0x5d6b7a);
-      add(g, G.sphereLo, ice, 0, 0, -0.17, { sx: 0.09, sy: 0.09, sz: 0.3 });
-      for (let i = 0; i < 3; i++) add(g, G.sphereXS, pale, 0, 0.09, -0.04 - i * 0.12, { s: 0.05 });
-      cyl(g, blue, 0, 0, -0.46, 0.042, 0.28);
-      const rnd = mulberry(11);
-      const up = new THREE.Vector3(0, 1, 0);
-      for (let i = 0; i < 9; i++) {
-        // frost crystals bristling from the pod
-        const a = -0.9 + rnd() * 1.8;
-        const dir = new THREE.Vector3(Math.sin(a), Math.cos(a), 0).normalize();
-        const c = add(g, G.coneLo, i % 3 ? white : toon(0x9ae6ff), dir.x * 0.095, dir.y * 0.095, -0.02 - rnd() * 0.3, { sx: 0.02, sy: 0.09 + rnd() * 0.06, sz: 0.02 });
-        c.quaternion.setFromUnitVectors(up, dir);
-      }
-      // snowflake at the muzzle
-      for (let i = 0; i < 3; i++) add(g, G.box, white, 0, 0, -0.62, { sx: 0.15, sy: 0.018, sz: 0.018, rz: (i * PI) / 3 });
-      add(g, G.sphereXS, basic(0x9ae6ff), 0, 0, -0.62, { s: 0.035 });
-      add(g, G.box, grip, 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      muzzle.position.set(0, 0, -0.66);
-      break;
-    }
-    case 'repeater': {
-      const body = toon(0x2e7d32), drum = toon(0xff8f00), pea = toon(0xb9f57d), dark = toon(0x1b5e20), gold = toon(0xffe066);
-      add(g, G.box, body, 0, 0, -0.12, { sx: 0.11, sy: 0.14, sz: 0.42 });
-      cyl(g, dark, 0, 0.04, -0.56, 0.032, 0.4);
-      cyl(g, dark, 0, -0.035, -0.56, 0.032, 0.4);
-      add(g, G.torus, gold, 0, 0.04, -0.76, { s: 0.05 });
-      add(g, G.torus, gold, 0, -0.035, -0.76, { s: 0.05 });
-      // big round pea magazine on top
-      add(g, G.cyl, drum, 0, 0.15, -0.14, { sx: 0.085, sy: 0.14, sz: 0.085, rz: PI / 2 });
-      add(g, G.cyl, gold, 0, 0.15, -0.14, { sx: 0.035, sy: 0.18, sz: 0.035, rz: PI / 2 });
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * PI * 2;
-        for (const sx of [-1, 1]) add(g, G.sphereXS, pea, sx * 0.074, 0.15 + Math.sin(a) * 0.075, -0.14 + Math.cos(a) * 0.075, { s: 0.03 });
-      }
-      add(g, G.torus, drum, 0, 0.1, -0.3, { s: 0.05 }).rotation.y = PI / 2;
-      add(g, G.box, toon(0x8d5a2b), 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      add(g, G.box, toon(0x8d5a2b), 0, -0.02, 0.26, { sx: 0.06, sy: 0.12, sz: 0.2 });
-      muzzle.position.set(0, 0, -0.8);
-      break;
-    }
-    case 'melon_lobber': {
-      const rind = toon(0x2f8f3a), stripe = toon(0x1b5e20), flesh = toon(0xff6f91), gold = toon(0xffe066);
-      cyl(g, rind, 0, 0, -0.24, 0.12, 0.42);
-      for (const z of [-0.08, -0.24]) add(g, G.torus, stripe, 0, 0, z, { s: 0.128 });
-      add(g, G.torus, flesh, 0, 0, -0.45, { s: 0.14 });
-      add(g, G.torus, gold, 0, 0, -0.47, { s: 0.15 });
-      add(g, G.sphere, melonMaterial(), 0, 0.02, -0.62, { sx: 0.2, sy: 0.19, sz: 0.21 });
-      add(g, G.sphereLo, rind, 0, -0.1, -0.3, { sx: 0.07, sy: 0.05, sz: 0.12 }); // pump
-      for (let i = 0; i < 5; i++) add(g, G.sphereXS, basic(0x222222), 0.115, 0.04 - i * 0.025, -0.1 - i * 0.07, { sx: 0.012, sy: 0.02, sz: 0.012 }); // seeds
-      add(g, G.box, toon(0x8d5a2b), 0, -0.13, 0.04, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
-      add(g, G.box, rind, 0, -0.02, 0.1, { sx: 0.1, sy: 0.12, sz: 0.14 });
-      muzzle.position.set(0, 0.02, -0.84);
       break;
     }
     case 'slime_pistol': {
@@ -565,14 +440,14 @@ export function makeGun(id, team) {
     }
     case 'goo_blaster':
     default: {
-      const isPlant = team === 'plant';
-      const body = toon(isPlant ? 0x7ed957 : 0x7e57c2);
-      const goo = basic(isPlant ? 0xb9f57d : 0x9cff57);
+      if (team === 'plant') { peaBlaster(); break; }
+      const body = toon(0x7e57c2);
+      const goo = basic(0x9cff57);
       add(g, G.sphereLo, body, 0, 0, -0.14, { sx: 0.09, sy: 0.09, sz: 0.26 });
       const jar = add(g, G.sphereXS, goo, 0, 0.1, -0.1, { s: 0.065 });
-      jar.material = basic(isPlant ? 0xb9f57d : 0x9cff57, { transparent: true, opacity: 0.9 });
-      cyl(g, toon(isPlant ? 0x2e7d32 : 0x4a3470), 0, 0, -0.36, 0.05, 0.22);
-      add(g, G.cyl, toon(isPlant ? 0x2e7d32 : 0x4a3470), 0, 0, -0.5, { sx: 0.075, sy: 0.05, sz: 0.075, rx: PI / 2 });
+      jar.material = basic(0x9cff57, { transparent: true, opacity: 0.9 });
+      cyl(g, toon(0x4a3470), 0, 0, -0.36, 0.05, 0.22);
+      add(g, G.cyl, toon(0x4a3470), 0, 0, -0.5, { sx: 0.075, sy: 0.05, sz: 0.075, rx: PI / 2 });
       add(g, G.sphereXS, goo, 0.02, -0.06, -0.52, { s: 0.022 }); // drip
       add(g, G.sphereXS, goo, -0.015, -0.09, -0.5, { s: 0.015 });
       add(g, G.box, toon(0x5d4037), 0, -0.11, 0.02, { sx: 0.05, sy: 0.15, sz: 0.06, rx: 0.25 });
@@ -1145,6 +1020,7 @@ function buildPeashooter(e) {
     root,
     ownYaw: true,
     tagY: 1.95,
+    top: 1.6,
     kick() { kickT = 1; },
     update(c) {
       kickT = Math.max(0, kickT - c.dt * 8);
@@ -1217,6 +1093,7 @@ function buildCactus(e) {
     root,
     ownYaw: true,
     tagY: 1.95,
+    top: 1.45,
     kick() { kickT = 1; },
     update(c) {
       kickT = Math.max(0, kickT - c.dt * 8);
@@ -1227,6 +1104,669 @@ function buildCactus(e) {
       fl.rotation.y = c.t * 0.8;
     },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* the rest of the garden: repeater ... house plant                    */
+/* ------------------------------------------------------------------ */
+
+/** Every plant type the garden can hold, in unlock order. */
+export const PLANT_KINDS = ['peashooter', 'cactus', 'repeater', 'snowpea', 'spikesquash', 'melonpult', 'wallnut', 'gatling', 'houseplant'];
+
+const torusLo = new THREE.TorusGeometry(1, 0.16, 5, 12);
+const _up = new THREE.Vector3(0, 1, 0);
+const _front = new THREE.Vector3(0, 0, -1);
+const _zax = new THREE.Vector3(0, 0, 1);
+const _nv = new THREE.Vector3();
+const _qa = new THREE.Quaternion();
+
+/** z of the front (-z) surface of an ellipsoid with radii rx,ry,rz at offset (x,y) from its centre. */
+function zOn(rx, ry, rz, x, y) {
+  return -rz * Math.sqrt(Math.max(0.04, 1 - (x / rx) ** 2 - (y / ry) ** 2));
+}
+
+/**
+ * Stick a mesh onto the front of an ellipsoid (radii R, centre C) at the front-view offset (x, y); its local -z
+ * points along the surface normal. out = how far it pokes out, roll = spin about the normal.
+ */
+function stick(parent, geo, mat, R, C, x, y, o = null, out = 0, roll = 0) {
+  const z = zOn(R[0], R[1], R[2], x, y);
+  _nv.set(x / (R[0] * R[0]), y / (R[1] * R[1]), z / (R[2] * R[2])).normalize();
+  const m = add(parent, geo, mat, C[0] + x + _nv.x * out, C[1] + y + _nv.y * out, C[2] + z + _nv.z * out, o);
+  m.quaternion.setFromUnitVectors(_front, _nv);
+  if (roll) m.quaternion.multiply(_qa.setFromAxisAngle(_zax, roll));
+  return m;
+}
+
+/** Cone spike standing on a surface point `dist` from (cx,cy,cz) along unit vector `dir`. */
+function spikeOut(parent, mat, cx, cy, cz, dir, dist, len, r) {
+  const c = add(parent, G.coneLo, mat, cx + dir.x * dist + dir.x * len * 0.35, cy + dir.y * dist + dir.y * len * 0.35, cz + dir.z * dist + dir.z * len * 0.35, { sx: r, sy: len, sz: r });
+  c.quaternion.setFromUnitVectors(_up, dir);
+  return c;
+}
+
+function cheeks(parent, R, C, x, y, w = 0.06) {
+  const m = toon(0xff8a80);
+  for (const s of [-1, 1]) stick(parent, G.sphereXS, m, R, C, s * x, y, { sx: w, sy: w * 0.58, sz: w * 0.25 }, 0.0);
+}
+
+/** Eyebrows: tilt > 0 = determined / grumpy (inner ends down), tilt < 0 = worried (inner ends up). */
+function brows(parent, R, C, x, y, len, tilt, mat, th = 0.03) {
+  for (const s of [-1, 1]) stick(parent, G.box, mat, R, C, s * x, y, { sx: len, sy: th, sz: 0.02 }, 0.0, s * tilt);
+}
+
+/** A pair of eyes stuck to an ellipsoid front. */
+function eyesOn(parent, R, C, x, y, r, look = 0) {
+  const white = toon(WHITE), dark = basic(DARK);
+  for (const s of [-1, 1]) {
+    stick(parent, G.sphereXS, white, R, C, s * x, y, { s: r }, 0.0);
+    stick(parent, G.sphereXS, dark, R, C, s * x + look * r * 0.3, y, { s: r * 0.55 }, r * 0.72);
+  }
+}
+
+/** The ring of base leaves the pea family stands in. */
+function peaLeaves(root, mat, n = 3, size = 0.3, len = 0.3) {
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * PI * 2 + 0.5;
+    leafMesh(root, mat, Math.cos(a) * size, 0.12, Math.sin(a) * size, len, 0.14, 0, 0, 0).rotation.set(1.2 * Math.sin(a), 0, -1.2 * Math.cos(a));
+  }
+}
+
+function headGroup(parent, y) {
+  const h = bgroup(parent, 0, y, 0);
+  h.rotation.order = 'YXZ';
+  return h;
+}
+
+/** Same bob / aim / recoil as the peashooter's head. */
+function aimHead(head, baseY, c, seed, kickT, recoil = 0.07) {
+  const yaw = c.yaw || 0;
+  head.rotation.set(c.pitch || 0, yaw, Math.sin(c.t * 1.8 + seed) * 0.04);
+  head.position.set(kickT * recoil * Math.sin(yaw), baseY + Math.sin(c.t * 2.4 + seed) * 0.025 - kickT * 0.03, kickT * recoil * Math.cos(yaw));
+  const sq = 1 + kickT * 0.1;
+  head.scale.set(1 / sq, sq, 1 / sq);
+}
+
+const seedOf = (e) => (hash(e.id) % 628) / 100;
+
+/* ---- repeater: two mouths, darker green, determined brows ---- */
+
+function buildRepeater(e) {
+  const seed = seedOf(e);
+  const green = toon(0x46a328), greenD = toon(0x276f22), greenL = toon(0x86d146), rim = toon(0xc9ef5a), hole = basic(0x14471a);
+  const root = new THREE.Group();
+  root.userData.bake = true;
+  peaLeaves(root, greenD);
+  add(root, G.cyl, greenD, 0, 0.4, 0, { sx: 0.1, sy: 0.8, sz: 0.1 });
+  const head = headGroup(root, 1.0);
+  const R = [0.43, 0.38, 0.42], C = [0, 0, 0];
+  add(head, G.sphere, green, 0, 0, 0, { sx: R[0], sy: R[1], sz: R[2] });
+  // twin mouths side by side
+  for (const s of [-1, 1]) {
+    add(head, G.cyl, greenL, s * 0.165, -0.1, -0.42, { sx: 0.13, sy: 0.32, sz: 0.13, rx: PI / 2 });
+    add(head, G.cyl, hole, s * 0.165, -0.1, -0.583, { sx: 0.1, sy: 0.02, sz: 0.1, rx: PI / 2 });
+    add(head, G.torus, rim, s * 0.165, -0.1, -0.58, { s: 0.135 });
+  }
+  eyesOn(head, R, C, 0.16, 0.17, 0.085);
+  brows(head, R, C, 0.15, 0.3, 0.17, 0.5, basic(0x153d10), 0.04);
+  cheeks(head, R, C, 0.31, -0.02);
+  // a taller, spikier crest than the plain peashooter
+  for (let i = 0; i < 4; i++) {
+    leafMesh(head, greenD, (i - 1.5) * 0.1, 0.38, 0.05 + (i % 2) * 0.03, 0.22 + (i % 2) * 0.05, 0.07, -0.2, 0, (i - 1.5) * -0.45);
+  }
+  leafMesh(head, greenD, 0, 0.0, 0.4, 0.17, 0.09, 1.2, 0, 0);
+  // small stacked pea pods on the back of the head: a second helping of ammo
+  for (const s of [-1, 1]) add(head, G.sphereLo, greenL, s * 0.2, 0.12, 0.38, { sx: 0.1, sy: 0.1, sz: 0.1 });
+
+  let kickT = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 2.0,
+    top: 1.68,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 8);
+      aimHead(head, 1.0, c, seed, kickT);
+    },
+  };
+}
+
+/* ---- snow pea: icy blue, frost crystals, ice-cube leaves, cold breath ---- */
+
+function buildSnowPea(e) {
+  const seed = seedOf(e);
+  const ice = toon(0x6ec3f0), iceL = toon(0xbfeaff), frost = toon(0xeefaff), crystal = toon(0xd2f2ff, { emissive: 0x2a6f9a });
+  const deepBlue = toon(0x3a8fd2), stem = toon(0x3aa6a3), hole = basic(0x1f5fa8);
+  const root = new THREE.Group();
+  root.userData.bake = true;
+  // ice-cube "leaves" around the foot
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * PI * 2 + 0.5;
+    const cube = add(root, G.box, crystal, Math.cos(a) * 0.34, 0.14, Math.sin(a) * 0.34, { s: 0.25 });
+    cube.rotation.set(0.5 + i * 0.7, a, 0.4 - i * 0.3);
+  }
+  for (let i = 0; i < 2; i++) {
+    const a = 1.6 + i * 3.1;
+    leafMesh(root, stem, Math.cos(a) * 0.22, 0.12, Math.sin(a) * 0.22, 0.26, 0.12, 0, 0, 0).rotation.set(1.2 * Math.sin(a), 0, -1.2 * Math.cos(a));
+  }
+  add(root, G.cyl, stem, 0, 0.4, 0, { sx: 0.09, sy: 0.8, sz: 0.09 });
+  const head = headGroup(root, 1.0);
+  const R = [0.4, 0.37, 0.4], C = [0, 0, 0];
+  add(head, G.sphere, ice, 0, 0, 0, { sx: R[0], sy: R[1], sz: R[2] });
+  // frosty mouth tube
+  add(head, G.cyl, iceL, 0, -0.04, -0.4, { sx: 0.17, sy: 0.3, sz: 0.17, rx: PI / 2 });
+  add(head, G.cyl, hole, 0, -0.04, -0.552, { sx: 0.125, sy: 0.02, sz: 0.125, rx: PI / 2 });
+  add(head, G.torus, frost, 0, -0.04, -0.55, { s: 0.16 });
+  eyesOn(head, R, C, 0.15, 0.14, 0.085);
+  cheeks(head, R, C, 0.29, -0.04);
+  // crown of ice crystals + frost spikes round the back of the head
+  for (let i = 0; i < 5; i++) {
+    const k = i - 2;
+    const cone = add(head, G.coneLo, i % 2 ? frost : iceL, k * 0.1, 0.38 + (2 - Math.abs(k)) * 0.03, 0.04, { sx: 0.055, sy: 0.2 + (2 - Math.abs(k)) * 0.06, sz: 0.055 });
+    cone.rotation.z = k * -0.3;
+  }
+  for (const th of [-1.3, 0, 1.3]) {
+    const dir = new THREE.Vector3(Math.sin(th) * 0.95, 0.35, Math.cos(th) * 0.95).normalize();
+    spikeOut(head, th > 0 ? frost : iceL, 0, 0, 0, dir, 0.36, 0.17, 0.05);
+  }
+  // icicles under the chin
+  for (const x of [-0.13, 0, 0.13]) {
+    const ic = add(head, G.coneLo, frost, x, -0.38, -0.12, { sx: 0.035, sy: 0.12, sz: 0.035 });
+    ic.rotation.x = PI;
+  }
+  // snowflake on the forehead
+  const flake = bgroup(head, 0, 0.3, zOn(R[0], R[1], R[2], 0, 0.3) - 0.01);
+  for (let i = 0; i < 3; i++) add(flake, G.box, frost, 0, 0, 0, { sx: 0.16, sy: 0.022, sz: 0.012, rz: (i * PI) / 3 });
+  leafMesh(head, deepBlue, 0, 0.0, 0.4, 0.17, 0.09, 1.2, 0, 0);
+
+  // cold breath puffs drifting out of the mouth
+  const breath = kgroup(head, 0, -0.04, -0.58);
+  const puffMat = basic(0xeaf8ff, { transparent: true, opacity: 0.75, depthWrite: false });
+  const puffs = [0, 1, 2].map(() => add(breath, G.sphereXS, puffMat, 0, 0, 0, { s: 0.01 }));
+
+  let kickT = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 2.0,
+    top: 1.62,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 8);
+      aimHead(head, 1.0, c, seed, kickT);
+      for (let i = 0; i < 3; i++) {
+        const p = (c.t * 0.7 + i / 3 + seed) % 1;
+        const s = 0.13 * p * (1 - p * p) * 1.6;
+        puffs[i].position.set(Math.sin(c.t * 3 + i * 2) * 0.03, p * 0.14 + 0.02, -p * 0.5);
+        puffs[i].scale.setScalar(Math.max(0.001, s));
+      }
+    },
+  };
+}
+
+/* ---- spike squash: squat grumpy gourd covered in spikes, short wide muzzle ---- */
+
+const flareGeo = new THREE.CylinderGeometry(1, 0.7, 1, 14);
+
+function buildSpikeSquash(e) {
+  const seed = seedOf(e);
+  const orangeA = toon(0xffa22a), orangeB = toon(0xf98412), flare = toon(0xc85a0a), cream = toon(0xfff3cc), vine = toon(0x5f8f2a);
+  const root = new THREE.Group();
+  root.userData.bake = true;
+  // a few leaves around the foot
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * PI * 2 + 0.3;
+    leafMesh(root, vine, Math.cos(a) * 0.42, 0.1, Math.sin(a) * 0.42, 0.3, 0.14, 0, 0, 0).rotation.set(1.25 * Math.sin(a), 0, -1.25 * Math.cos(a));
+  }
+  const head = headGroup(root, 0.52);
+  const R = [0.5, 0.36, 0.5], C = [0, 0, 0];
+  add(head, G.sphere, orangeA, 0, 0, 0, { sx: 0.44, sy: 0.34, sz: 0.45 });
+  // gourd lobes
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * PI * 2;
+    add(head, G.sphereLo, i % 2 ? orangeA : orangeB, Math.sin(a) * 0.25, 0, Math.cos(a) * 0.25, { sx: 0.25, sy: 0.36, sz: 0.25 });
+  }
+  // stem + curly vine on top
+  add(head, G.cylLo, vine, 0, 0.36, 0.02, { sx: 0.055, sy: 0.16, sz: 0.055 });
+  leafMesh(head, vine, 0.12, 0.42, 0.04, 0.16, 0.09, 0, 0, -1.0);
+  // grumpy face
+  eyesOn(head, R, C, 0.19, 0.15, 0.095);
+  brows(head, R, C, 0.19, 0.27, 0.24, 0.6, basic(0x4a2200), 0.055);
+  cheeks(head, R, C, 0.35, 0.0, 0.055);
+  // wide, short flared muzzle (a blunderbuss)
+  add(head, flareGeo, flare, 0, -0.12, -0.5, { sx: 0.22, sy: 0.24, sz: 0.22, rx: -PI / 2 });
+  add(head, G.cyl, basic(0x3b1a0a), 0, -0.12, -0.625, { sx: 0.185, sy: 0.02, sz: 0.185, rx: PI / 2 });
+  add(head, G.torus, toon(0xffe0a3), 0, -0.12, -0.62, { s: 0.22 });
+  // spikes everywhere but the face
+  const rnd = mulberry(41);
+  for (let i = 0, n = 0; i < 200 && n < 26; i++) {
+    const a = rnd() * PI * 2, el = Math.asin(rnd() * 2 - 1);
+    const dir = new THREE.Vector3(Math.sin(a) * Math.cos(el), Math.sin(el), Math.cos(a) * Math.cos(el));
+    if (dir.z < -0.3 && dir.y > -0.55 && dir.y < 0.65) continue; // keep the face clear
+    n++;
+    const len = 0.2 + rnd() * 0.14;
+    const rr = 1 / Math.sqrt((dir.x / 0.5) ** 2 + (dir.y / 0.34) ** 2 + (dir.z / 0.5) ** 2);
+    spikeOut(head, cream, 0, 0, 0, dir, rr * 0.92, len, 0.06);
+  }
+
+  let kickT = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 1.6,
+    top: 1.15,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 7);
+      const yaw = c.yaw || 0;
+      head.rotation.set(c.pitch || 0, yaw, Math.sin(c.t * 1.6 + seed) * 0.03);
+      head.position.set(kickT * 0.12 * Math.sin(yaw), 0.52 + Math.sin(c.t * 2.2 + seed) * 0.015 - kickT * 0.04, kickT * 0.12 * Math.cos(yaw));
+      const sq = 1 - kickT * 0.14;
+      head.scale.set(1 / Math.sqrt(sq), sq, 1 / Math.sqrt(sq));
+    },
+  };
+}
+
+/* ---- melon-pult: a bulb with a vine catapult arm and a striped melon in the bowl ---- */
+
+function buildMelonPult(e) {
+  const seed = seedOf(e);
+  const bulb = toon(0x62bf45), bulbD = toon(0x3f9a37), leafD = toon(0x2f8a32), vine = toon(0x6e9a2c), bowlM = toon(0x8bc34a), rimM = toon(0x4f8a2a);
+  const root = new THREE.Group();
+  const turret = group(root);
+  const body = bgroup(turret);
+  const R = [0.45, 0.43, 0.44], C = [0, 0.5, 0.05];
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * PI * 2 + 0.9;
+    leafMesh(body, leafD, Math.cos(a) * 0.42, 0.12, Math.sin(a) * 0.42, 0.3, 0.15, 0, 0, 0).rotation.set(1.2 * Math.sin(a), 0, -1.2 * Math.cos(a));
+  }
+  add(body, G.sphere, bulb, C[0], C[1], C[2], { sx: R[0], sy: R[1], sz: R[2] });
+  add(body, torusLo, bulbD, 0, 0.18, 0.05, { s: 0.38 }).rotation.x = PI / 2; // belt of darker green
+  for (const s of [-1, 1]) leafMesh(body, leafD, s * 0.5, 0.62, 0.08, 0.34, 0.17, 0.2, 0, s * -1.15);
+  eyesOn(body, R, C, 0.16, 0.1, 0.085);
+  stick(body, G.smile, basic(DARK), R, C, 0, -0.1, { s: 0.1 }, 0.0, PI);
+  cheeks(body, R, C, 0.3, -0.04);
+  add(body, G.cylLo, bulbD, 0, 0.84, 0.28, { sx: 0.1, sy: 0.14, sz: 0.1 }); // knuckle the arm pivots on
+  // the catapult arm
+  const REST = 0.72;
+  const arm = bgroup(turret, 0, 0.9, 0.3);
+  arm.rotation.x = REST;
+  add(arm, G.sphereLo, vine, 0, 0, 0, { s: 0.11 });
+  add(arm, G.cyl, vine, 0, 0, -0.34, { sx: 0.07, sy: 0.84, sz: 0.07, rx: PI / 2 });
+  add(arm, G.sphereLo, bulbD, 0, 0, 0.12, { sx: 0.13, sy: 0.12, sz: 0.16 }); // counterweight
+  for (const s of [-1, 1]) leafMesh(arm, leafD, s * 0.06, 0.0, -0.22, 0.22, 0.09, 0, 0, 0).rotation.set(-PI / 2, 0, s * 0.55);
+  const bowlG = kgroup(arm, 0, 0.02, -0.78);
+  const bowlBake = bgroup(bowlG);
+  add(bowlBake, G.sphereLo, bowlM, 0, 0, 0, { sx: 0.37, sy: 0.14, sz: 0.37 });
+  add(bowlBake, torusLo, rimM, 0, 0.08, 0, { s: 0.35 }).rotation.x = PI / 2;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * PI * 2 + 0.4;
+    leafMesh(bowlBake, rimM, Math.cos(a) * 0.35, 0.1, Math.sin(a) * 0.35, 0.13, 0.07, 0, 0, 0).rotation.set(0.8 * Math.sin(a), 0, -0.8 * Math.cos(a));
+  }
+  const melonBase = [0.31, 0.29, 0.32];
+  const melon = add(bowlG, G.sphere, melonMaterial(), 0, 0.22, 0, { sx: melonBase[0], sy: melonBase[1], sz: melonBase[2] });
+  const melonNub = add(bowlG, G.sphereXS, toon(0x5d4037), 0, 0.22 + melonBase[1] * 0.95, 0, { s: 0.04 });
+
+  let kickT = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 2.3,
+    top: 1.85,
+    ringR: 1.0,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 1.4);
+      turret.rotation.y = c.yaw || 0;
+      body.rotation.z = Math.sin(c.t * 1.5 + seed) * 0.03;
+      const u = 1 - kickT;
+      let off = 0;
+      if (kickT > 0) off = u < 0.12 ? u / 0.12 : Math.pow(1 - (u - 0.12) / 0.88, 2) * (1 + 0.2 * Math.cos((u - 0.12) * 16));
+      arm.rotation.x = REST + Math.sin(c.t * 1.3 + seed) * 0.03 + off * 0.95;
+      bowlG.rotation.x = -arm.rotation.x + 0.02;
+      const m = kickT <= 0 ? 1 : u < 0.4 ? 0.001 : easeOutBack(clamp01((u - 0.4) / 0.6));
+      melon.scale.set(melonBase[0] * m, melonBase[1] * m, melonBase[2] * m);
+      melon.position.y = 0.22 + Math.sin(c.t * 2 + seed) * 0.012;
+      melonNub.visible = m > 0.5;
+      melonNub.position.y = melon.position.y + melonBase[1] * 0.95 * m;
+    },
+  };
+}
+
+/* ---- wall-nut: big worried walnut, no attack ---- */
+
+function buildWallNut(e) {
+  const seed = seedOf(e);
+  const shell = toon(0xd9a85b), shellD = toon(0xb98840), shellL = toon(0xf0cd8c), crack = basic(0x6b4623), brow = toon(0x7a5230);
+  const root = new THREE.Group();
+  const body = bgroup(root);
+  const R = [0.8, 0.74, 0.74], C = [0, 0.75, 0];
+  add(body, G.sphere, shell, C[0], C[1], C[2], { sx: R[0], sy: R[1], sz: R[2] });
+  // the seam of the shell, wrinkles and bumps
+  const rnd = mulberry(77);
+  for (let i = 0, n = 0; i < 80 && n < 16; i++) {
+    const a = rnd() * PI * 2, el = Math.asin(rnd() * 2 - 1);
+    const dir = new THREE.Vector3(Math.sin(a) * Math.cos(el), Math.sin(el), Math.cos(a) * Math.cos(el));
+    if (dir.z < -0.15 && dir.y > -0.55) continue; // the face side stays smooth
+    n++;
+    add(body, G.sphereXS, i % 3 ? shellD : shellL, C[0] + dir.x * R[0] * 0.97, C[1] + dir.y * R[1] * 0.97, C[2] + dir.z * R[2] * 0.97, { sx: 0.08, sy: 0.055, sz: 0.08 + rnd() * 0.04 });
+  }
+  // a shiny highlight, a crack and a tiny sprout
+  stick(body, G.sphereLo, shellL, R, C, 0.36, 0.5, { sx: 0.09, sy: 0.19, sz: 0.03 }, 0.0, -0.45);
+  stick(body, G.sphereLo, shellL, R, C, 0.5, 0.28, { sx: 0.035, sy: 0.05, sz: 0.02 }, 0.0, -0.45);
+  const zig = [[-0.44, 0.58], [-0.36, 0.5], [-0.42, 0.42], [-0.32, 0.35]];
+  for (let i = 0; i < zig.length - 1; i++) {
+    const [x0, y0] = zig[i], [x1, y1] = zig[i + 1];
+    stick(body, G.box, crack, R, C, (x0 + x1) / 2, (y0 + y1) / 2, { sx: Math.hypot(x1 - x0, y1 - y0) * 1.05, sy: 0.022, sz: 0.012 }, 0.0, Math.atan2(y1 - y0, x1 - x0));
+  }
+  add(body, G.cylLo, toon(0x4c9a3a), 0, C[1] + R[1] - 0.02, 0.0, { sx: 0.035, sy: 0.14, sz: 0.035 });
+  leafMesh(body, toon(0x66bb6a), -0.11, C[1] + R[1] + 0.13, 0, 0.14, 0.08, 0, 0, 0.9);
+  leafMesh(body, toon(0x7ed35d), 0.11, C[1] + R[1] + 0.15, 0, 0.14, 0.08, 0, 0, -0.9);
+  // big worried googly eyes
+  const white = toon(WHITE), dark = basic(DARK);
+  const er = 0.21;
+  const lids = kgroup(body);
+  const lidMeshes = [];
+  for (const s of [-1, 1]) {
+    const ex = s * 0.3, ey = 0.1;
+    stick(body, G.sphereLo, dark, R, C, ex, ey, { s: er * 1.1 }, -er * 0.2);
+    stick(body, G.sphereLo, white, R, C, ex, ey, { s: er }, 0.0);
+    stick(body, G.sphereXS, dark, R, C, ex + s * -0.025, ey + 0.045, { s: er * 0.38 }, er * 0.86);
+    stick(body, G.sphereXS, basic(WHITE), R, C, ex + s * -0.045, ey + 0.085, { s: er * 0.12 }, er * 1.14);
+    const lid = stick(lids, G.sphereLo, shell, R, C, ex, ey, { s: 0.001 }, er * 0.1);
+    lidMeshes.push(lid);
+  }
+  brows(body, R, C, 0.3, 0.38, 0.27, -0.42, brow, 0.055);
+  cheeks(body, R, C, 0.5, -0.16, 0.08);
+  stick(body, G.smile, basic(DARK), R, C, 0, -0.2, { sx: 0.12, sy: 0.08, sz: 0.12 }, 0.01);
+
+  let kickT = 0, blinkIn = 1.5 + (seed % 2), blink = 1;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 1.95,
+    top: 1.78,
+    ringR: 1.2,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 6);
+      const hpf = c.e && c.e.maxHp > 0 && Number.isFinite(c.e.hp) ? clamp01(c.e.hp / c.e.maxHp) : 1;
+      const shiver = (1 - hpf) * 0.03; // more nervous the more battered it is
+      body.rotation.z = Math.sin(c.t * 1.3 + seed) * 0.035 + Math.sin(c.t * 31 + seed) * shiver;
+      body.rotation.x = Math.sin(c.t * 0.9 + seed * 2) * 0.02;
+      const sq = 1 - kickT * 0.14, w = 1 + kickT * 0.1;
+      body.scale.set(w, sq, w);
+      blinkIn -= c.dt;
+      if (blinkIn <= 0 && blink >= 1) { blink = 0; blinkIn = 2.2 + Math.random() * 3; }
+      if (blink < 1) blink = Math.min(1, blink + c.dt / 0.2);
+      const lk = blink < 1 ? Math.sin(blink * PI) : 0;
+      for (const l of lidMeshes) l.scale.setScalar(Math.max(0.001, er * 1.13 * Math.min(1, lk * 1.6)));
+    },
+  };
+}
+
+/* ---- gatling pea: four spinning barrels and an army helmet ---- */
+
+const starShape = (() => {
+  const s = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? 0.46 : 1;
+    const a = PI / 2 + (i * PI) / 5;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (i) s.lineTo(x, y); else s.moveTo(x, y);
+  }
+  s.closePath();
+  return s;
+})();
+/** Chunky five-point star, radius 1, facing +-z. Shared by the level stars and the helmet badge. */
+const starGeo = (() => {
+  const g = new THREE.ExtrudeGeometry(starShape, { depth: 0.26, bevelEnabled: true, bevelThickness: 0.09, bevelSize: 0.07, bevelSegments: 1, steps: 1 });
+  g.translate(0, 0, -0.13);
+  return g;
+})();
+
+function buildGatling(e) {
+  const seed = seedOf(e);
+  const green = toon(0x5aa02c), greenD = toon(0x2f6f25), metal = toon(0x66727a), metalD = toon(0x3d474d), hole = basic(0x10171a);
+  const helmet = toon(0x66742c), helmetD = toon(0x434f1d), helmetL = toon(0x8a9a3c), gold = toon(0xffd54f);
+  const root = new THREE.Group();
+  root.userData.bake = true;
+  peaLeaves(root, greenD);
+  add(root, G.cyl, greenD, 0, 0.4, 0, { sx: 0.1, sy: 0.8, sz: 0.1 });
+  const head = headGroup(root, 1.0);
+  const R = [0.42, 0.4, 0.41], C = [0, 0, 0];
+  add(head, G.sphere, green, 0, 0, 0, { sx: R[0], sy: R[1], sz: R[2] });
+  // the four-barrel bundle
+  const bundle = bgroup(head, 0, -0.14, 0);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * PI * 2 + PI / 4;
+    const bx = Math.cos(a) * 0.1, by = Math.sin(a) * 0.1;
+    add(bundle, G.cyl, metal, bx, by, -0.56, { sx: 0.07, sy: 0.5, sz: 0.07, rx: PI / 2 });
+    add(bundle, G.cyl, hole, bx, by, -0.812, { sx: 0.05, sy: 0.02, sz: 0.05, rx: PI / 2 });
+  }
+  add(bundle, G.cyl, metalD, 0, 0, -0.55, { sx: 0.06, sy: 0.5, sz: 0.06, rx: PI / 2 });
+  add(bundle, torusLo, gold, 0, 0, -0.5, { s: 0.2 });
+  add(bundle, torusLo, gold, 0, 0, -0.7, { s: 0.2 });
+  add(bundle, G.cyl, metalD, 0, 0, -0.38, { sx: 0.17, sy: 0.08, sz: 0.17, rx: PI / 2 });
+  eyesOn(head, R, C, 0.16, 0.1, 0.085);
+  brows(head, R, C, 0.15, 0.2, 0.15, 0.35, basic(0x1d3a10), 0.035);
+  cheeks(head, R, C, 0.33, -0.08);
+  // helmet: dome, brim band, camo patches, gold star, a leaf poking out the top
+  add(head, G.sphere, helmet, 0, 0.3, 0.02, { sx: 0.44, sy: 0.23, sz: 0.44 });
+  add(head, torusLo, helmetD, 0, 0.22, 0.02, { s: 0.4 }).rotation.x = PI / 2;
+  for (const [x, y, z, sx, sy] of [[-0.2, 0.43, -0.12, 0.1, 0.05], [0.18, 0.44, -0.05, 0.12, 0.05], [0.0, 0.46, 0.14, 0.11, 0.05], [-0.3, 0.38, 0.1, 0.08, 0.05]]) {
+    add(head, G.sphereXS, x < 0 ? helmetD : helmetL, x, y, z, { sx, sy, sz: 0.09 });
+  }
+  add(head, starGeo, gold, 0, 0.37, -0.405, { s: 0.07, rx: 0.4 });
+  leafMesh(head, toon(0x6fc23a), 0.05, 0.56, 0.0, 0.2, 0.07, -0.1, 0, -0.35);
+  leafMesh(head, toon(0x4caf32), -0.07, 0.55, 0.02, 0.16, 0.06, 0.1, 0, 0.5);
+
+  let kickT = 0, spin = 0, spinV = 2, recent = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 2.05,
+    top: 1.75,
+    kick() { kickT = 1; recent = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 10);
+      recent = Math.max(0, recent - c.dt * 1.2);
+      aimHead(head, 1.0, c, seed, kickT, 0.05);
+      spinV += ((1.5 + 26 * recent) - spinV) * clamp01(c.dt * 7);
+      spin += spinV * c.dt;
+      bundle.rotation.z = spin;
+    },
+  };
+}
+
+/* ---- house plant: the boss. A cottage with a monstera head growing out of the roof, one big mouth cannon ---- */
+
+/** A big monstera leaf (long axis +y before rotation) with split slits cut through it. */
+function monstera(parent, mat, slit, x, y, z, len, wid, rx, ry, rz) {
+  const g = group(parent, x, y, z);
+  g.rotation.set(rx || 0, ry || 0, rz || 0);
+  add(g, G.petal, mat, 0, len * 0.5, 0, { sx: wid, sy: len * 0.5, sz: wid * 0.16 });
+  for (let i = 0; i < 3; i++) {
+    const yy = len * (0.28 + i * 0.22), xx = wid * (0.66 - i * 0.14);
+    for (const s of [-1, 1]) add(g, G.box, slit, s * xx, yy, 0, { sx: wid * 0.4, sy: len * 0.04, sz: wid * 0.2 }).rotation.z = s * -0.55;
+  }
+  return g;
+}
+
+function buildHousePlant(e) {
+  const seed = seedOf(e);
+  const wall = toon(0xf5dfae), wallD = toon(0xe0c488), stone = toon(0x9a8478), roof = toon(0xd8452a), roofD = toon(0xa83420), door = toon(0x7a4a2b);
+  const glass = toon(0x8fd6f5, { emissive: 0x2a5a7a }), frame = toon(WHITE), brick = toon(0xb0553a);
+  const leafA = toon(0x35a043), leafB = toon(0x4cbf58), leafC = toon(0x2a8a39), headM = toon(0x58b947), cannon = toon(0x9be048), rim = toon(0xd7f56a), slit = basic(0x113d17);
+  const root = new THREE.Group();
+  root.userData.bake = true;
+  // the cottage
+  add(root, G.cyl, stone, 0, 0.12, 0, { sx: 1.04, sy: 0.24, sz: 1.04 });
+  add(root, G.cyl, wall, 0, 0.62, 0, { sx: 0.94, sy: 0.8, sz: 0.94 });
+  add(root, G.cyl, wallD, 0, 0.5, 0, { sx: 0.955, sy: 0.07, sz: 0.955 });
+  // door
+  add(root, G.box, door, 0, 0.5, -0.93, { sx: 0.42, sy: 0.56, sz: 0.1 });
+  add(root, G.cylLo, door, 0, 0.78, -0.93, { sx: 0.21, sy: 0.1, sz: 0.21, rx: PI / 2 });
+  add(root, G.sphereXS, toon(0xffd54f), 0.12, 0.52, -0.99, { s: 0.04 });
+  add(root, G.box, frame, 0, 0.23, -1.0, { sx: 0.6, sy: 0.05, sz: 0.2 }); // step
+  // round windows with flower boxes
+  for (const th of [-0.95, 0.95]) {
+    const wx = Math.sin(th) * 0.9, wz = -Math.cos(th) * 0.9;
+    const w = add(root, G.box, glass, wx, 0.64, wz, { sx: 0.32, sy: 0.32, sz: 0.08 });
+    w.rotation.y = -th;
+    const f = add(root, G.box, frame, wx, 0.64, wz, { sx: 0.4, sy: 0.4, sz: 0.06 });
+    f.rotation.y = -th;
+    const bx = add(root, G.box, door, Math.sin(th) * 0.98, 0.43, -Math.cos(th) * 0.98, { sx: 0.4, sy: 0.1, sz: 0.14 });
+    bx.rotation.y = -th;
+    for (let i = -1; i <= 1; i++) {
+      const fx = Math.sin(th) * 1.0 + Math.cos(th) * i * 0.13, fz = -Math.cos(th) * 1.0 + Math.sin(th) * i * 0.13;
+      add(root, G.sphereXS, i % 2 ? toon(0xffd93b) : toon(0xff6fa8), fx, 0.53, fz, { s: 0.06 });
+    }
+  }
+  // roof
+  add(root, G.cone, roof, 0, 1.45, 0, { sx: 1.14, sy: 0.9, sz: 1.14 });
+  add(root, G.torus, roofD, 0, 1.03, 0, { s: 1.1 }).rotation.x = PI / 2;
+  add(root, G.box, brick, 0.62, 1.5, 0.28, { sx: 0.24, sy: 0.5, sz: 0.24 }); // chimney
+  add(root, G.box, stone, 0.62, 1.78, 0.28, { sx: 0.3, sy: 0.07, sz: 0.3 });
+  // the plant growing out of the roof
+  add(root, G.cyl, leafC, 0, 1.9, 0, { sx: 0.2, sy: 0.9, sz: 0.2 });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * PI * 2 + 0.3;
+    monstera(root, i % 2 ? leafA : leafB, slit, Math.cos(a) * 0.12, 1.55, Math.sin(a) * 0.12, 0.85, 0.36, Math.sin(a) * 1.15, 0, -Math.cos(a) * 1.15);
+  }
+  const hy = 2.15;
+  const head = headGroup(root, hy);
+  const R = [0.72, 0.66, 0.7], C = [0, 0, 0];
+  add(head, G.sphere, headM, 0, 0, 0, { sx: R[0], sy: R[1], sz: R[2] });
+  // one big mouth cannon
+  add(head, G.cyl, cannon, 0, -0.2, -0.82, { sx: 0.3, sy: 0.6, sz: 0.3, rx: PI / 2 });
+  add(head, G.cyl, basic(0x14471a), 0, -0.2, -1.12, { sx: 0.23, sy: 0.02, sz: 0.23, rx: PI / 2 });
+  add(head, G.torus, rim, 0, -0.2, -1.11, { s: 0.32 });
+  add(head, G.torus, rim, 0, -0.2, -0.62, { s: 0.33 });
+  eyesOn(head, R, C, 0.3, 0.26, 0.16);
+  brows(head, R, C, 0.3, 0.5, 0.3, 0.3, basic(0x153d10), 0.06);
+  cheeks(head, R, C, 0.55, -0.0, 0.1);
+  // giant monstera mane around the back of the head
+  const fan = [
+    [0, 0.45, 0.25, 0.7, 0.45, 0.55, 0, 0], [-0.35, 0.4, 0.2, 0.7, 0.4, 0.4, 0, 0.55], [0.35, 0.4, 0.2, 0.7, 0.4, 0.4, 0, -0.55],
+    [-0.6, 0.1, 0.15, 0.7, 0.38, 0.2, 0, 1.15], [0.6, 0.1, 0.15, 0.7, 0.38, 0.2, 0, -1.15],
+    [-0.35, -0.15, 0.5, 0.6, 0.36, 0.9, 0, 0.7], [0.35, -0.15, 0.5, 0.6, 0.36, 0.9, 0, -0.7],
+  ];
+  fan.forEach(([x, y, z, len, wid, rx, ry, rz], i) => monstera(head, i % 3 === 0 ? leafC : i % 3 === 1 ? leafA : leafB, slit, x, y, z, len, wid, rx, ry, rz));
+
+  let kickT = 0;
+  return {
+    root,
+    ownYaw: true,
+    tagY: 3.7,
+    top: 3.15,
+    ringR: 1.35,
+    kick() { kickT = 1; },
+    update(c) {
+      kickT = Math.max(0, kickT - c.dt * 5);
+      aimHead(head, hy, c, seed, kickT, 0.14);
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* plant levels: grow a little, wear gold stars                        */
+/* ------------------------------------------------------------------ */
+
+const LEVEL_SCALE = [1, 1.15, 1.3];
+const levelOf = (e) => {
+  const n = Math.round(Number(e && e.level));
+  return n >= 3 ? 3 : n >= 2 ? 2 : 1;
+};
+const starMat = toon(0xffc928, { emissive: 0xc57a00 });
+const glowRingGeo = new THREE.RingGeometry(0.84, 1, 40).rotateX(-PI / 2);
+const glowDiscGeo = new THREE.CircleGeometry(1, 32).rotateX(-PI / 2);
+const glowRingMat = new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.55, depthWrite: false });
+const glowDiscMat = new THREE.MeshBasicMaterial({ color: 0xffe28a, transparent: true, opacity: 0.16, depthWrite: false });
+
+/**
+ * Wrap a garden plant model: level 1/2/3 => scale 1 / 1.15 / 1.3 (with a bouncy pop when it goes up), no stars / 2 stars /
+ * 3 stars floating above the head, and a faint gold glow ring on the ground at level 3.
+ */
+function withLevel(m) {
+  const wrap = new THREE.Group();
+  wrap.add(m.root);
+  const top = m.top !== undefined ? m.top : m.tagY - 0.4;
+  const ringR = m.ringR || 0.95;
+  const starS = top > 2.5 ? 0.32 : 0.17;
+  let row = null, stars = null, glow = null, ring = null;
+  let lvl = 0, cur = 1, from = 1, to = 1, popT = 1;
+  const out = {
+    root: wrap,
+    ownYaw: m.ownYaw,
+    tagY: m.tagY,
+    kick() { m.kick(); },
+    update(c) {
+      const L = levelOf(c.e);
+      if (L !== lvl) {
+        to = LEVEL_SCALE[L - 1];
+        if (lvl === 0) { cur = from = to; popT = 1; } else { from = cur; popT = 0; }
+        lvl = L;
+        if (L >= 2 && !row) {
+          row = new THREE.Group();
+          stars = [0, 1, 2].map((i) => {
+            const s = new THREE.Mesh(starGeo, starMat);
+            row.add(s);
+            return s;
+          });
+          wrap.add(row);
+        }
+        if (L >= 3 && !glow) {
+          glow = new THREE.Group();
+          ring = new THREE.Mesh(glowRingGeo, glowRingMat);
+          glow.add(ring, new THREE.Mesh(glowDiscGeo, glowDiscMat));
+          glow.scale.set(ringR, 1, ringR);
+          wrap.add(glow);
+        }
+        if (row) {
+          const n = L === 2 ? 2 : 3;
+          row.visible = L >= 2;
+          for (let i = 0; i < 3; i++) stars[i].visible = i < n;
+        }
+        if (glow) glow.visible = L >= 3;
+      }
+      let wob = 0;
+      if (popT < 1) {
+        popT = Math.min(1, popT + c.dt / 0.7);
+        const k = popT;
+        const ease = 1 - (1 - k) * (1 - k) * (1 - k);
+        cur = from + (to - from) * ease + 0.2 * Math.sin(PI * k) * (1 - k) * to;
+        wob = 0.1 * Math.sin(PI * 2 * k) * (1 - k);
+      } else {
+        cur = to;
+      }
+      wrap.scale.set(cur, cur * (1 + wob), cur);
+      m.update(c);
+      out.tagY = m.tagY * cur + (lvl >= 2 ? 0.28 : 0);
+      if (row && lvl >= 2) {
+        const fy = Number.isFinite(c.faceYaw) ? c.faceYaw : 0;
+        row.rotation.y = fy;
+        row.position.y = top + (top > 2.5 ? 0.45 : 0.3);
+        const three = lvl >= 3;
+        for (let i = 0; i < (three ? 3 : 2); i++) {
+          const s = stars[i];
+          const x = three ? (i - 1) * 0.38 * (starS / 0.17) : (i - 0.5) * 0.44 * (starS / 0.17);
+          const arc = three ? (i === 1 ? 0.1 : -0.02) * (starS / 0.17) : 0;
+          s.position.set(x, arc + Math.sin(c.t * 2.2 + i * 2.1) * 0.04, 0);
+          s.rotation.set(0, Math.sin(c.t * 1.1 + i) * 0.5, c.t * (i % 2 ? -1.3 : 1.3) + i);
+          s.scale.setScalar(starS * (i === 1 && three ? 1.2 : 1) * (1 + Math.sin(c.t * 3.1 + i * 1.7) * 0.08));
+        }
+      }
+      if (glow && lvl >= 3) {
+        glow.position.y = 0.2 / cur;
+        const p = 1 + Math.sin(c.t * 2.4) * 0.035;
+        glow.scale.set(ringR * p, 1, ringR * p);
+        glowRingMat.opacity = 0.5 + Math.sin(c.t * 2.4) * 0.12;
+      }
+    },
+  };
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1592,7 +2132,7 @@ export function modelKey(e) {
   if ((k === 'player' || k === 'bot') && e.state === 'sprout') return 'sprout';
   if (k === 'player' || k === 'bot') return 'char:' + (e.team === 'plant' ? (k === 'bot' ? 'plant:gardener' : 'plant') : 'zombie');
   if (k === 'rack_item') return 'rack:' + rackItemId(e);
-  if (k === 'garden') return 'garden:' + (e.plantKind === 'cactus' ? 'cactus' : 'peashooter');
+  if (k === 'garden') return 'garden:' + (PLANT_KINDS.includes(e.plantKind) ? e.plantKind : 'peashooter');
   if (k === 'projectile') return 'proj:' + (e.projKind || 'pea');
   if (k === 'mower') return e.state === 'destroyed' ? null : 'mower'; // a wrecked mower vanishes until it respawns
   if (k === 'sun') return 'sun';
@@ -1612,8 +2152,15 @@ function buildModelRaw(e) {
     case 'sprout': return buildSprout(e);
     case 'char:plant': case 'char:plant:gardener': return buildSoldier(e);
     case 'char:zombie': return buildZombie(e);
-    case 'garden:cactus': return buildCactus(e);
-    case 'garden:peashooter': return buildPeashooter(e);
+    case 'garden:peashooter': return withLevel(buildPeashooter(e));
+    case 'garden:cactus': return withLevel(buildCactus(e));
+    case 'garden:repeater': return withLevel(buildRepeater(e));
+    case 'garden:snowpea': return withLevel(buildSnowPea(e));
+    case 'garden:spikesquash': return withLevel(buildSpikeSquash(e));
+    case 'garden:melonpult': return withLevel(buildMelonPult(e));
+    case 'garden:wallnut': return withLevel(buildWallNut(e));
+    case 'garden:gatling': return withLevel(buildGatling(e));
+    case 'garden:houseplant': return withLevel(buildHousePlant(e));
     case 'mower': return buildMower(e);
     case 'sun': return buildSun(e);
     default:
