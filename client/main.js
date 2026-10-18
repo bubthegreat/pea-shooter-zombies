@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { Net } from './net.js';
 import { Input } from './input.js';
 import { World, EntityLayer, LAYOUT, gardenSlots } from './scene.js';
-import { makeGun, weaponInfo, setWeaponTable, toon, G, add, getGlowTex } from './models.js';
+import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex } from './models.js';
 import { Fx } from './fx.js';
 import { Sound } from './audio.js';
 import { HUD } from './hud.js';
@@ -12,6 +12,7 @@ import { Options } from './options.js';
 import { TouchControls, isTouch } from './touch.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const rnd = (a, b) => a + Math.random() * (b - a);
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const PI = Math.PI;
 
@@ -54,6 +55,21 @@ hud.setMuted(sound.muted);
 /* first-person view model                                             */
 /* ------------------------------------------------------------------ */
 
+// First-person pose of a held tool when it is not simply "a gun-shaped thing in the right hand" (wheelbarrow: both
+// hands on its handles, the barrow ahead at the bottom of the screen). pos is in rig space, hands in holder space.
+const ITEM_POSE = {
+  wheelbarrow: {
+    pos: [-0.2, -0.47, -0.05], s: 0.4,
+    hands: [[-0.32, -0.07, -0.04, 0.15, -0.4, 0.9], [-0.08, -0.07, -0.04, -0.15, -0.4, 0.9]],
+  },
+};
+const TOOL_POSE = { s: 0.6, pos: [0, 0.0, -0.1], rotX: -0.16 }; // hand tools: a little smaller and tipped down so the business end reads
+const GUN_HANDS = [
+  [0.0, -0.1, 0.03, 0.25, -0.5, 0.8], // right hand on the grip
+  [-0.01, -0.07, -0.36, -0.6, -0.35, 0.7], // left hand under the barrel
+];
+const VM_GUN_SCALE = { house_gun: 0.62, melon_lobber: 0.6, brain_cannon: 0.58, sludge_sprayer: 0.66, repeater: 0.68 };
+
 class ViewModel {
   constructor(scene) {
     this.root = new THREE.Group();
@@ -66,12 +82,16 @@ class ViewModel {
     this.gunId = null;
     this.team = null;
     this.hands = null;
+    this.heldId = null; // garage tool in hand (replaces the gun)
+    this.tool = null;
+    this.tools = {};
     this.kick = 0;
     this.swap = 0;
     this.flashT = 0;
     this.phase = 0;
     this.swayX = 0;
     this.swayY = 0;
+    this.useK = 0;
     const tex = getGlowTex();
     this.flash = new THREE.Group();
     if (tex) {
@@ -87,23 +107,17 @@ class ViewModel {
     if (this.team === team) return;
     this.team = team;
     if (this.hands) this.holder.remove(this.hands);
-    const h = new THREE.Group();
-    const skin = team === 'zombie' ? toon(0x9ccc65) : toon(0x7ed957);
-    const sleeve = team === 'zombie' ? toon(0xff8a65) : toon(0x43a047);
-    const up = new THREE.Vector3(0, 1, 0);
-    const arm = (hx, hy, hz, dx, dy, dz) => {
-      add(h, G.sphere, skin, hx, hy, hz, { s: 0.048 });
-      const dir = new THREE.Vector3(dx, dy, dz).normalize();
-      const len = 0.55;
-      const sleeveMesh = add(h, G.cyl, sleeve, hx + dir.x * len * 0.62, hy + dir.y * len * 0.62, hz + dir.z * len * 0.62, { sx: 0.05, sy: len * 0.7, sz: 0.05 });
-      sleeveMesh.quaternion.setFromUnitVectors(up, dir);
-      const wrist = add(h, G.cyl, skin, hx + dir.x * 0.1, hy + dir.y * 0.1, hz + dir.z * 0.1, { sx: 0.04, sy: 0.2, sz: 0.04 });
-      wrist.quaternion.setFromUnitVectors(up, dir);
-    };
-    arm(0.0, -0.1, 0.03, 0.25, -0.5, 0.8); // right hand on the grip
-    arm(-0.01, -0.07, -0.36, -0.6, -0.35, 0.7); // left hand under the barrel
-    this.hands = h;
-    this.holder.add(h);
+    // tool hands are tinted per team: forget the cached tools
+    for (const t of Object.values(this.tools)) {
+      this.holder.remove(t.group);
+      if (t.hands) this.holder.remove(t.hands);
+    }
+    this.tools = {};
+    this.tool = null;
+    this.heldId = null;
+    this.hands = makeHands(team, GUN_HANDS);
+    this.holder.add(this.hands);
+    if (this.gun) this.gun.visible = true;
   }
 
   setWeapon(id, team) {
@@ -113,11 +127,55 @@ class ViewModel {
     this.gunId = id;
     if (this.gun) this.holder.remove(this.gun);
     this.gun = makeGun(id, team);
-    this.gun.scale.setScalar(id === 'house_gun' ? 0.62 : 0.72);
+    this.gun.scale.setScalar(VM_GUN_SCALE[id] || 0.72);
+    this.gun.visible = !this.heldId;
     this.holder.add(this.gun);
     const muzzle = this.gun.userData.muzzle;
     if (muzzle) muzzle.add(this.flash);
     if (!first) this.swap = 1;
+  }
+
+  /** Hold a garage tool (id) instead of the gun, or put it down (null). */
+  setHeld(id) {
+    id = id || null;
+    if (id === this.heldId) return;
+    if (this.tool) {
+      this.tool.group.visible = false;
+      if (this.tool.hands) this.tool.hands.visible = false;
+    }
+    this.heldId = id;
+    this.tool = null;
+    this.swap = 1;
+    if (!id) {
+      if (this.gun) this.gun.visible = true;
+      if (this.hands) this.hands.visible = true;
+      return;
+    }
+    let t = this.tools[id];
+    if (!t) {
+      const model = makeItem(id);
+      const group = new THREE.Group();
+      group.add(model.root);
+      const pose = ITEM_POSE[id];
+      let hands = null;
+      if (pose) {
+        group.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+        group.scale.setScalar(pose.s);
+        hands = makeHands(this.team, pose.hands);
+        this.holder.add(hands);
+      } else {
+        group.scale.setScalar(TOOL_POSE.s);
+        group.position.set(TOOL_POSE.pos[0], TOOL_POSE.pos[1], TOOL_POSE.pos[2]);
+        group.rotation.x = TOOL_POSE.rotX;
+      }
+      this.holder.add(group);
+      t = this.tools[id] = { model, group, hands };
+    }
+    t.group.visible = true;
+    if (t.hands) t.hands.visible = true;
+    this.tool = t;
+    if (this.gun) this.gun.visible = false;
+    if (this.hands) this.hands.visible = !t.hands;
   }
 
   fire() {
@@ -125,7 +183,7 @@ class ViewModel {
     this.flashT = 0.06;
   }
 
-  update(dt, t, speed, dYaw, dPitch, show) {
+  update(dt, t, speed, dYaw, dPitch, show, using = false) {
     this.root.visible = show;
     if (!show) return;
     const w = clamp(speed / 6, 0, 1);
@@ -143,8 +201,18 @@ class ViewModel {
     this.swap = Math.max(0, this.swap - dt * 3.5);
     const sw = this.swap * this.swap;
     this.flashT = Math.max(0, this.flashT - dt);
-    this.flash.visible = this.flashT > 0;
-    this.rig.position.set(0.2 + bx + this.swayX, -0.2 + by + this.swayY - sw * 0.45, -0.5 + this.kick * 0.07);
+    this.flash.visible = this.flashT > 0 && !this.heldId;
+    this.useK += ((using ? 1 : 0) - this.useK) * Math.min(1, dt * 14);
+    let jx = 0, jy = 0, jz = 0;
+    if (this.tool) {
+      this.tool.model.update({ t, dt, using, speed });
+      // tools shake harder in use; the barrow bobs as it is pushed
+      const u = this.useK;
+      jx = Math.sin(t * 85) * 0.004 * u;
+      jy = Math.cos(t * 71) * 0.005 * u;
+      jz = this.heldId === 'wheelbarrow' ? Math.sin(this.phase * 2) * 0.006 * w : Math.sin(t * 50) * 0.01 * u;
+    }
+    this.rig.position.set(0.2 + bx + this.swayX + jx, -0.2 + by + this.swayY - sw * 0.45 + jy, -0.5 + this.kick * 0.07 + jz);
     this.rig.rotation.set(this.kick * 0.16 - sw * 0.5, -this.swayX * 1.2 + 0.03, 0);
   }
 }
@@ -179,6 +247,9 @@ const S = {
   introShown: false,
   nearSlot: null,
   sfxLast: new Map(),
+  hitAt: new Map(), // per-target throttle for hit sounds / sparks (melee tools hit ~10x per second)
+  wasDriving: 0, // performance.now() of the last frame we were driving the mower
+  fxAcc: 0,
 };
 let SLOTS = gardenSlots();
 const CID = Math.random().toString(36).slice(2, 12) + performance.now().toString(36).replace('.', ''); // names this page to the server
@@ -191,6 +262,10 @@ function sfx(name, pos, vol = 1, gap = 0) {
   S.sfxLast.set(name, now);
   sound.play(name, pos, vol);
 }
+
+// which procedural sound goes with each projectile kind (enemy shots reuse the ones for their own kind)
+const FIRE_SOUND = { spike: 'spike', housepea: 'housepea', bullet: 'goo', snow: 'snow', melon: 'melon', slime: 'slime', bone: 'bone', sludge: 'sludge', brain: 'brain' };
+const fireSound = (proj) => FIRE_SOUND[proj] || 'pea';
 
 /* ------------------------------------------------------------------ */
 /* lobby / networking                                                  */
@@ -222,6 +297,7 @@ net.on('close', () => {
 net.on('welcome', (msg) => {
   S.config = msg.config || {};
   setWeaponTable(S.config.weapons);
+  setEquipmentTable(S.config.equipment);
   if (Array.isArray(S.config.gardenSlots) && S.config.gardenSlots.length) {
     SLOTS = S.config.gardenSlots.filter((s) => s && Number.isFinite(s.x) && Number.isFinite(s.z) && typeof s.kind === 'string');
   }
@@ -252,6 +328,7 @@ lobby.onPlay = (choice) => {
   S.introShown = false;
   S.gotCam = false;
   S.eyeY = 1.6;
+  S.wasDriving = 0;
   vm.gunId = null;
   net.send({ t: 'join', name: choice.name, team: choice.team, mode: choice.mode, difficulty: choice.difficulty, cid: CID });
   hud.show();
@@ -305,8 +382,18 @@ function onSnap(snap) {
     // things about me react instantly
     if (ev.type === 'hit' && me !== null) {
       if (ev.by !== null && ev.by !== undefined && String(ev.by) === me && String(ev.id) !== me) {
-        hud.hit();
-        sfx('tick', null, 1, 40);
+        // melee tools hit ~10x a second per target: one tick (and one hit-marker flash) per target per 150 ms
+        const key = 's' + ev.id;
+        if (ev.head || now - (S.hitAt.get(key) || 0) >= 150) {
+          S.hitAt.set(key, now);
+          hud.hit(!!ev.head);
+          if (ev.head) {
+            hud.headshot();
+            sfx('headshot', null, 1, 150);
+          } else {
+            sfx('tick', null, 1, 40);
+          }
+        }
       }
       if (String(ev.id) === me) sfx('hurt', null, 0.8, 120);
     } else if (ev.type === 'upgrade' && me !== null && String(ev.id) === me) {
@@ -322,6 +409,8 @@ function onSnap(snap) {
 }
 
 function recPos(id) {
+  if (id === undefined || id === null) return null;
+  if (String(id) === myId()) return { x: camera.position.x, y: Math.max(0, camera.position.y - S.eyeY), z: camera.position.z };
   const r = layer.recs.get(String(id));
   return r ? { x: r.x, y: r.y, z: r.z } : null;
 }
@@ -333,11 +422,75 @@ function runEvent(ev) {
   const pos = have ? { x, y, z } : recPos(ev.id);
   switch (ev.type) {
     case 'hit':
-      if (have) fx.hit(x, y, z);
+      if (have) {
+        // melee tools hit ~10x a second per target: one spark per target per 100 ms
+        const key = 'f' + ev.id;
+        const now = performance.now();
+        if (ev.head || now - (S.hitAt.get(key) || 0) >= 100) {
+          S.hitAt.set(key, now);
+          if (ev.head) fx.headHit(x, y, z);
+          else fx.hit(x, y, z);
+        }
+      }
       break;
     case 'convert':
-      if (pos) fx.convert(pos.x, pos.y + 0.9, pos.z);
-      sfx('boing', pos, 1, 80);
+      if (ev.human === false) {
+        // a computer plant turned into sunshine: flower poof (the sun pickup itself comes from the server)
+        if (pos) fx.flowerPoof(pos.x, pos.y + 0.7, pos.z);
+        sfx('bloom', pos, 1, 80);
+      } else {
+        if (pos) fx.convert(pos.x, pos.y + 0.9, pos.z);
+        sfx('boing', pos, 1, 80);
+      }
+      break;
+    case 'explode':
+      if (have) fx.explode(x, y, z, num(ev.radius, 3), typeof ev.projKind === 'string' ? ev.projKind : '');
+      sfx(ev.projKind === 'brain' ? 'squish' : 'splat', pos, 1, 60);
+      break;
+    case 'deflect':
+      if (have) fx.deflect(x, y, z);
+      sfx('deflect', pos, 0.8, 70);
+      break;
+    case 'block':
+      if (have) fx.splinters(x, y, z);
+      sfx('thunk', pos, 1, 60);
+      break;
+    case 'item_take': {
+      const p = recPos(ev.id);
+      if (p) fx.sparkle(p.x, p.y + 1.1, p.z, 0xffe082, 8, 1.0);
+      sfx('pickup', p, 1, 80);
+      break;
+    }
+    case 'item_drop': {
+      const reason = ev.reason;
+      if (reason === 'destroyed') {
+        if (pos) fx.splinters(pos.x, 0.7, pos.z, true);
+        sfx('crunch', pos, 0.8, 100);
+      } else if (reason === 'converted') {
+        if (pos) fx.sparkle(pos.x, 0.8, pos.z, 0xffe082, 6, 1.0);
+        sfx('drop', pos, 0.7, 100);
+      } else if (reason === 'returned') {
+        if (pos) fx.sparkle(pos.x, 1.2, pos.z, 0xffe082, 6, 0.8);
+        sfx('pickup', pos, 0.6, 100);
+      } else {
+        sfx('drop', pos, reason === 'left' ? 0.4 : 0.8, 100);
+      }
+      break;
+    }
+    case 'item_respawn': {
+      const p = recPos('rack_' + ev.itemId);
+      if (p) fx.sparkle(p.x, 1.4, p.z, 0xfff59d, 10, 1.0);
+      sfx('respawn', p, 0.7, 150);
+      break;
+    }
+    case 'mower_respawn':
+      if (have) fx.sparkle(x, y + 1, z, 0xfff59d, 12, 1.4);
+      sfx('respawn', pos, 0.8, 200);
+      break;
+    case 'mower_destroyed':
+      if (have) fx.mowerBoom(x, y, z);
+      sfx('mower_break', pos, 1, 200);
+      if (performance.now() - S.wasDriving < 1500) hud.toast('Your mower broke down! \u{1F527}', 2600);
       break;
     case 'wilt':
       if (!pos) break;
@@ -438,14 +591,16 @@ function demoEntities(t, cam) {
   const m = new Map();
   const face = (x, z) => Math.atan2(-(cam.x - x), -(cam.z - z));
   const put = (e) => { e.yaw = face(e.x, e.z); m.set(e.id, e); };
-  put({ id: 'demo-z1', kind: 'bot', team: 'zombie', x: -4.2, y: 0, z: 3.4, hp: 5, maxHp: 5, weapon: 'zombie_shotgun', state: 'alive' });
-  put({ id: 'demo-z2', kind: 'bot', team: 'zombie', x: -6.6, y: 0, z: 1.6, hp: 5, maxHp: 5, weapon: 'goo_blaster', state: 'alive' });
-  put({ id: 'demo-p1', kind: 'bot', team: 'plant', x: -1.4, y: 0, z: 3.8, hp: 100, maxHp: 100, weapon: 'house_gun', state: 'alive' });
-  put({ id: 'demo-g1', kind: 'garden', team: 'plant', plantKind: 'peashooter', x: 1.6, y: 0, z: 3.6, hp: 60, maxHp: 60, pitch: 0.15 });
-  put({ id: 'demo-g2', kind: 'garden', team: 'plant', plantKind: 'cactus', x: 4.2, y: 0, z: 3.0, hp: 60, maxHp: 60 });
-  put({ id: 'demo-p2', kind: 'bot', team: 'plant', x: 6.6, y: 0, z: 1.6, hp: 100, maxHp: 100, weapon: 'spike_shotgun', state: 'alive' });
+  if (!dbg.noDemo) {
+    put({ id: 'demo-z1', kind: 'bot', team: 'zombie', x: -4.2, y: 0, z: 3.4, hp: 5, maxHp: 5, weapon: 'zombie_shotgun', state: 'alive' });
+    put({ id: 'demo-z2', kind: 'bot', team: 'zombie', x: -6.6, y: 0, z: 1.6, hp: 5, maxHp: 5, weapon: 'goo_blaster', state: 'alive' });
+    put({ id: 'demo-p1', kind: 'bot', team: 'plant', name: 'Gardener', x: -1.4, y: 0, z: 3.8, hp: 100, maxHp: 100, weapon: 'pea_blaster', state: 'alive' });
+    put({ id: 'demo-g1', kind: 'garden', team: 'plant', plantKind: 'peashooter', x: 1.6, y: 0, z: 3.6, hp: 60, maxHp: 60, pitch: 0.15 });
+    put({ id: 'demo-g2', kind: 'garden', team: 'plant', plantKind: 'cactus', x: 4.2, y: 0, z: 3.0, hp: 60, maxHp: 60 });
+    put({ id: 'demo-p2', kind: 'player', team: 'plant', name: 'Sunny', x: 6.6, y: 0, z: 1.6, hp: 100, maxHp: 100, weapon: 'spike_shotgun', state: 'alive' });
+  }
   if (dbg.demo) for (const e of dbg.demo(t)) m.set(e.id, e);
-  m.set('demo-s', { id: 'demo-s', kind: 'sun', team: 'plant', x: 0, y: 2.2 + Math.sin(t) * 0.2, z: 6.5, yaw: 0, hp: 1, maxHp: 1, state: 'alive' });
+  if (!dbg.noDemo) m.set('demo-s', { id: 'demo-s', kind: 'sun', team: 'plant', x: 0, y: 2.2 + Math.sin(t) * 0.2, z: 6.5, yaw: 0, hp: 1, maxHp: 1, state: 'alive' });
   return m;
 }
 
@@ -556,6 +711,7 @@ function frame() {
     skyT = clamp(num(snap.roundTime, 0) / rl, 0, 1);
     if (snap.phase === 'ended' && snap.winner === 'plant') skyT = 1;
   }
+  if (dbg.skyT !== undefined) skyT = dbg.skyT;
   world.setTime(skyT, dt);
   world.update(dt, camera, nowMs);
 
@@ -566,6 +722,7 @@ function frame() {
   else {
     hud.update({ own: null, snap: null, config: S.config, now: nowMs, locked: false, nearSlot: null });
     sound.engineLevel(0);
+    for (const k of ['weed', 'blower', 'trimmer', 'squeak']) sound.loopLevel(k, 0);
   }
 
   // join timeout
@@ -577,11 +734,20 @@ function frame() {
 
   // ---- view model (own gun)
   let alive = inRound && own.state !== 'wilted' && own.state !== 'sprout';
-  if (dbg.vm && !inRound) { vm.setWeapon(dbg.vm.weapon, dbg.vm.team); alive = true; }
-  if (inRound) vm.setWeapon(own.weapon || (own.team === 'zombie' ? 'goo_blaster' : 'pea_blaster'), own.team === 'zombie' ? 'zombie' : 'plant');
+  let vmUsing = inRound && !!S.usingSelf;
+  if (dbg.vm && !inRound) {
+    vm.setWeapon(dbg.vm.weapon || 'pea_blaster', dbg.vm.team || 'plant');
+    vm.setHeld(dbg.vm.item || null);
+    vmUsing = !!dbg.vm.using;
+    alive = true;
+  }
+  if (inRound) {
+    vm.setWeapon(own.weapon || (own.team === 'zombie' ? 'goo_blaster' : 'pea_blaster'), own.team === 'zombie' ? 'zombie' : 'plant');
+    vm.setHeld(typeof own.item === 'string' && own.item ? own.item : null);
+  }
   const dYaw = input.yaw - S.lastYaw, dPitch = input.pitch - S.lastPitch;
   S.lastYaw = input.yaw; S.lastPitch = input.pitch;
-  vm.update(dt, t, S.speed, Math.abs(dYaw) > PI ? 0 : dYaw, dPitch, alive);
+  vm.update(dt, t, S.speed, Math.abs(dYaw) > PI ? 0 : dYaw, dPitch, alive, vmUsing);
   // light the gun consistently with the world
   qInv.copy(camera.quaternion).invert();
   vmDir.set(0.5, 1, 0.8).applyQuaternion(qInv);
@@ -604,8 +770,7 @@ function handleLayerChanges() {
       if (rec.id.startsWith('demo-')) continue;
       if (rec.model.projectile) {
         const d = Math.hypot(rec.x - camera.position.x, rec.y - camera.position.y, rec.z - camera.position.z);
-        const pk = rec.e.projKind;
-        const name = pk === 'spike' ? 'spike' : pk === 'housepea' ? 'housepea' : pk === 'bullet' ? 'goo' : 'pea';
+        const name = fireSound(rec.e.projKind);
         if (d > 4) sfx(name, { x: rec.x, y: rec.y, z: rec.z }, 0.7, 45);
         layer.kickNear(rec.x, rec.z, 1.4);
       }
@@ -653,36 +818,84 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
     S.introShown = true;
     hud.toast(team === 'plant'
       ? 'Shoot the zombies! Stand by an empty garden spot and press 1 or 2 to plant.'
-      : 'Sneak to the garage on the right, hold E by the mower, then squash the garden!', 6000);
+      : 'Head for the garage on the right: hold E by the mower, or press E at the rack to grab a tool!', 6000);
   }
+
+  const held = alive && typeof own.item === 'string' && own.item ? own.item : null;
+  const playing = !!(snap && snap.phase === 'playing');
 
   // local gun feedback (the server does the real shooting)
   S.fireCd -= dt;
-  const canShoot = alive && snap && snap.phase === 'playing' && input.fire && input.locked;
-  if (canShoot && S.fireCd <= 0) {
+  const canShoot = alive && playing && input.fire && input.locked;
+  if (canShoot && !held && S.fireCd <= 0) {
     const wi = weaponInfo(own.weapon, team);
     S.fireCd = 1 / Math.max(0.5, wi.rate);
     vm.fire();
-    const name = wi.proj === 'spike' ? 'spike' : wi.proj === 'housepea' ? 'housepea' : wi.proj === 'bullet' ? 'goo' : 'pea';
-    sound.play(name, null, wi.rate > 8 ? 0.55 : 0.9);
-  } else if (!canShoot && S.fireCd < 0) {
+    sound.play(fireSound(wi.proj), null, wi.rate > 8 ? 0.55 : 0.9);
+  } else if (!(canShoot && !held) && S.fireCd < 0) {
     S.fireCd = 0;
   }
+  // holding a tool: the trigger runs it (the server confirms with `using`; react to the click right away)
+  const usingSelf = !!(held && held !== 'wheelbarrow' && (own.using || (canShoot && input.fire)));
+  S.usingSelf = usingSelf;
 
   // ---- prompts, slot ring
   let prompt = '';
   let nearSlotInfo = null;
   let mower = null;
-  for (const e of entities.values()) if (e.kind === 'mower') { mower = e; break; }
+  let rackNear = null, rackNearD = Infinity, rackWait = null, rackWaitD = Infinity;
+  const rackRange = num(S.config.rackUseRange, 2);
+  for (const e of entities.values()) {
+    if (e.kind === 'mower') mower = e;
+    else if (e.kind === 'rack_item' && team === 'zombie') {
+      const d = Math.hypot(e.x - own.x, e.z - own.z);
+      if (e.available !== false) { if (d < rackNearD) { rackNearD = d; rackNear = e; } }
+      else if (d < rackWaitD) { rackWaitD = d; rackWait = e; }
+    }
+  }
+  let mowerHud = null;
   world.hideSlot();
-  if (alive && snap && snap.phase === 'playing') {
-    if (team === 'zombie' && mower) {
-      const d = Math.hypot(mower.x - own.x, mower.z - own.z);
-      // `driver` is the entity id at the controls (null when idle); older servers omit it.
-      const mine = mower.driver === undefined ? d < 3.4 : mower.driver !== null && String(mower.driver) === String(myId());
-      if (mower.state === 'idle' && d < 3.4) prompt = 'Hold E to start the mower! \u{1F69C}';
-      else if (mower.state === 'starting' && mine) prompt = `Engine starting… keep holding E! ${Math.round(num(mower.progress, 0) * 100)}%`;
-      else if (mower.state === 'driving' && mine) prompt = "You're driving the mower — squash the plants! Press E to hop off";
+  if (alive && playing) {
+    if (team === 'zombie') {
+      const heldName = held ? itemInfo(held).name : '';
+      let mowerPrompt = '';
+      let drivingMine = false;
+      let dm = Infinity;
+      if (mower) {
+        dm = Math.hypot(mower.x - own.x, mower.z - own.z);
+        // `driver` is the entity id at the controls (null when idle); older servers omit it.
+        const mine = mower.driver === undefined ? dm < 3.4 : mower.driver !== null && String(mower.driver) === String(myId());
+        if (mower.state === 'idle' && dm < 3.4) mowerPrompt = held ? `Put the ${heldName} down (Q) before starting the mower` : 'Hold E to start the mower! \u{1F69C}';
+        else if (mower.state === 'starting' && mine) { mowerPrompt = `Engine starting… keep holding E! ${Math.round(num(mower.progress, 0) * 100)}%`; drivingMine = true; }
+        else if (mower.state === 'driving' && mine) { mowerPrompt = "You're driving the mower — squash the plants! Press E to hop off"; drivingMine = true; }
+        else if (mower.state === 'destroyed' && dm < 9) mowerPrompt = `The mower is broken! Fixed in ${Math.max(1, Math.ceil(num(mower.respawnIn, 0)))} s`;
+        if (mine && mower.state === 'driving') {
+          S.wasDriving = nowMs;
+          mowerHud = { hp: num(mower.hp, 0), maxHp: num(mower.maxHp, 40) };
+        }
+      }
+      if (drivingMine) prompt = mowerPrompt;
+      else if (held) {
+        if (mowerPrompt && mower.state === 'idle') prompt = mowerPrompt;
+        else {
+          // E at its own rack hangs the tool back up
+          const home = entities.get('rack_' + held);
+          const atRack = home && Math.hypot(home.x - own.x, home.z - own.z) <= rackRange;
+          if (held === 'wheelbarrow') prompt = `${heldName} — a rolling shield! HP ${Math.ceil(num(own.itemHp, 0))}. Press Q to drop`;
+          else prompt = `${heldName} — hold fire to use. Press Q to drop`;
+          if (atRack) prompt += ', E to hang it back up';
+        }
+      } else if (rackNear && rackNearD <= rackRange + 1 && !(mowerPrompt && mower.state === 'idle' && dm < rackNearD)) {
+        const info = itemInfo(rackNear.itemId);
+        prompt = `Press E for the ${info.name}${info.blurb ? ' — ' + info.blurb : ''}`;
+      } else if (mowerPrompt) {
+        prompt = mowerPrompt;
+      } else if (rackWait && rackWaitD <= rackRange + 1) {
+        const info = itemInfo(rackWait.itemId);
+        prompt = rackWait.respawnIn !== undefined && rackWait.respawnIn !== null
+          ? `The ${info.name} is coming back in ${Math.max(1, Math.ceil(num(rackWait.respawnIn, 0)))} s`
+          : `Someone else has the ${info.name}!`;
+      }
     }
     if (team === 'plant' && !prompt) {
       const s = nearestEmptySlot(entities, own.x, own.z, null);
@@ -700,23 +913,86 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   hud.setPrompt(prompt);
   S.nearSlot = nearSlotInfo;
 
-  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked || input.menuOpen, nearSlot: nearSlotInfo });
+  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked || input.menuOpen, nearSlot: nearSlotInfo, mower: mowerHud });
 
-  // ---- mowers: engine hum + exhaust smoke
+  entityEffects(dt, nowMs, entities, own, usingSelf);
+}
+
+// Per-frame effects and sound loops that come from what fighters are holding / doing and from the mower.
+const loopLv = { weed: 0, blower: 0, trimmer: 0, squeak: 0 };
+
+function entityEffects(dt, nowMs, entities, own, usingSelf) {
+  const me = myId();
   let engine = 0;
+  loopLv.weed = loopLv.blower = loopLv.trimmer = loopLv.squeak = 0;
+  if (S.hitAt.size > 400) S.hitAt.clear();
+  const cx = camera.position.x, cz = camera.position.z;
   for (const e of entities.values()) {
-    if (e.kind !== 'mower' || (e.state !== 'driving' && e.state !== 'starting')) continue;
-    const d = Math.hypot(e.x - camera.position.x, e.z - camera.position.z);
-    engine = Math.max(engine, clamp(1 - d / 70, 0, 1) * (e.state === 'starting' ? 0.7 : 1));
-    S.smokeAcc += dt * (e.state === 'driving' ? 22 : 12);
-    while (S.smokeAcc >= 1) {
-      S.smokeAcc -= 1;
-      const c = Math.cos(num(e.yaw, 0)), s = Math.sin(num(e.yaw, 0));
-      // exhaust pipe sits at (0.32, 1.1, 0.2) in mower space
-      fx.smoke(e.x + 0.32 * c + 0.2 * s, num(e.y, 0) + 1.15, e.z - 0.32 * s + 0.2 * c);
+    if (e.kind === 'mower') {
+      const active = e.state === 'driving' || e.state === 'starting';
+      if (active) {
+        const d = Math.hypot(e.x - cx, e.z - cz);
+        engine = Math.max(engine, clamp(1 - d / 70, 0, 1) * (e.state === 'starting' ? 0.7 : 1));
+        S.smokeAcc += dt * (e.state === 'driving' ? 22 : 12);
+        while (S.smokeAcc >= 1) {
+          S.smokeAcc -= 1;
+          const c = Math.cos(num(e.yaw, 0)), s = Math.sin(num(e.yaw, 0));
+          // exhaust pipe sits at (0.32, 1.1, 0.2) in mower space
+          fx.smoke(e.x + 0.32 * c + 0.2 * s, num(e.y, 0) + 1.15, e.z - 0.32 * s + 0.2 * c);
+        }
+      }
+      // a battered mower coughs dark smoke
+      if (e.state !== 'destroyed' && num(e.maxHp, 0) > 0 && num(e.hp, 0) / e.maxHp < 0.5 && Math.random() < dt * (0.5 - num(e.hp, 0) / e.maxHp) * 24) {
+        fx.mowerSputter(e.x + rnd(-0.3, 0.3), num(e.y, 0) + 0.9, e.z + rnd(-0.3, 0.3));
+      }
+      continue;
+    }
+    if ((e.kind !== 'player' && e.kind !== 'bot') || e.state === 'wilted' || e.state === 'sprout') continue;
+    const isMe = me !== null && String(e.id) === me;
+    const d = isMe ? 0 : Math.hypot(e.x - cx, e.z - cz);
+    // icy glitter on slowed fighters
+    if (e.slowed && Math.random() < dt * 9) fx.ice(e.x, num(e.y, 0), e.z);
+    const item = typeof e.item === 'string' ? e.item : null;
+    if (!item || d > 60) continue;
+    const using = isMe ? usingSelf : !!e.using;
+    const att = isMe ? 1 : 1 / (1 + d / 9);
+    if (item === 'wheelbarrow') {
+      const rec = isMe ? null : layer.recs.get(String(e.id));
+      const sp = isMe ? S.speed : rec ? rec.speed : 0;
+      loopLv.squeak = Math.max(loopLv.squeak, clamp(sp / 4, 0, 1) * att);
+      continue;
+    }
+    if (!using) continue;
+    // where the business end is, and which way it points
+    const yaw = isMe ? input.yaw : num(e.yaw, 0);
+    const pitch = isMe ? input.pitch : 0;
+    const fx0 = -Math.sin(yaw), fz0 = -Math.cos(yaw);
+    const ox = isMe ? cx : e.x, oz = isMe ? cz : e.z;
+    const oy = isMe ? camera.position.y - 0.4 : num(e.y, 0) + 1.0;
+    if (item === 'leaf_blower') {
+      loopLv.blower = Math.max(loopLv.blower, att);
+      S.fxAcc += dt * 45;
+      while (S.fxAcc >= 1) {
+        S.fxAcc -= 1;
+        const a = yaw + (Math.random() - 0.5) * 0.7;
+        const dx = -Math.sin(a), dz = -Math.cos(a);
+        const dy = Math.sin(pitch) * 0.6 - 0.04 + (Math.random() - 0.5) * 0.12;
+        const r = 0.8 + Math.random() * 0.4;
+        fx.wind(ox + dx * r, oy + dy * r, oz + dz * r, dx, dy, dz);
+      }
+    } else if (item === 'weed_eater') {
+      loopLv.weed = Math.max(loopLv.weed, att);
+      if (Math.random() < dt * 14) fx.leafBurst(ox + fx0 * 1.3, num(e.y, 0) + 0.3, oz + fz0 * 1.3, 1, [0x66bb6a, 0x8bd450, 0xa5e84f], 3, 2);
+    } else if (item === 'hedge_trimmer') {
+      loopLv.trimmer = Math.max(loopLv.trimmer, att);
+      if (Math.random() < dt * 9) fx.leafBurst(ox + fx0 * 1.4, num(e.y, 0) + 0.8, oz + fz0 * 1.4, 1, [0x43a047, 0x66bb6a], 2.5, 2);
     }
   }
   sound.engineLevel(engine);
+  sound.loopLevel('weed', loopLv.weed);
+  sound.loopLevel('blower', loopLv.blower);
+  sound.loopLevel('trimmer', loopLv.trimmer);
+  sound.loopLevel('squeak', loopLv.squeak);
 }
 
 requestAnimationFrame(frame);
