@@ -6,5 +6,5 @@ resources:
   - httproute.yaml
 images:
   - name: pea-shooter
-    newName: bubthegreat/pea-shooter
+    newName: ghcr.io/bubthegreat/pea-shooter
     newTag: "0.1.0"

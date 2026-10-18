@@ -1,5 +1,5 @@
 PORT ?= 8080
-IMAGE ?= bubthegreat/pea-shooter
+IMAGE ?= ghcr.io/bubthegreat/pea-shooter
 
 .PHONY: run build test stop docker-build docker-run
 

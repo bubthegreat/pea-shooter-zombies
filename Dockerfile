@@ -6,6 +6,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 FROM node:24-slim
+# Links the GHCR package to this repo (and inherits its visibility/access).
+LABEL org.opencontainers.image.source="https://github.com/bubthegreat/pea-shooter-zombies"
 ENV NODE_ENV=production
 WORKDIR /app
 # package.json carries "type": "module"; node needs it next to server/ to load the ESM entrypoint.
