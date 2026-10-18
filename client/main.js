@@ -8,6 +8,7 @@ import { Fx } from './fx.js';
 import { Sound } from './audio.js';
 import { HUD } from './hud.js';
 import { Lobby } from './lobby.js';
+import { Options } from './options.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -270,6 +271,13 @@ hud.el.mute.addEventListener('click', () => toggleMute());
 input.onToggleMute = toggleMute;
 input.onToggleHelp = () => hud.toggleHelp();
 input.onPlantKey = (n) => onPlantKey(n);
+
+const options = new Options();
+options.onOpen = () => input.setMenuOpen(true);
+options.onClose = (relock) => {
+  input.setMenuOpen(false);
+  if (relock && input.enabled && S.joined) input.requestLock();
+};
 
 function toggleMute() {
   sound.unlock();
@@ -683,7 +691,7 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   hud.setPrompt(prompt);
   S.nearSlot = nearSlotInfo;
 
-  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked, nearSlot: nearSlotInfo });
+  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked || input.menuOpen, nearSlot: nearSlotInfo });
 
   // ---- mowers: engine hum + exhaust smoke
   let engine = 0;

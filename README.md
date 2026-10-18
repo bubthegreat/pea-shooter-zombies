@@ -29,6 +29,7 @@ Open http://localhost:8080 (or `http://<this-computer's-LAN-IP>:8080` from anoth
 | 1 / 2 | Plant Peashooter (50 sun) / Cactus (100 sun) |
 | E (hold) | Start the lawnmower (zombies) |
 | M / H | Mute / help |
+| O | Look settings: invert up/down, invert left/right, mouse speed (0.25x-3x). Also the gear button, or "Look settings" in the lobby. Saved in your browser. |
 
 ## Develop
 

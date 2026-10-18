@@ -62,11 +62,13 @@
     <div class="zombieonly">Hold <b>E</b> near the mower to start it!</div>
     <div class="plantonly">Shoot zombies 5 times to turn them into plants!</div>
     <div class="zombieonly">Reach the garden and squash every plant!</div>
+    <div><b>O</b> look settings (invert, speed)</div>
     <div class="dim"><b>H</b> hide this &nbsp; <b>M</b> sound &nbsp; <b>Esc</b> free mouse</div>
   </div>
 
-  <div id="pausehint" class="hidden">Click to keep playing!</div>
+  <div id="pausehint" class="hidden">Click to keep playing!<small>Press O for settings</small></div>
   <div id="mutebtn" title="Sound on/off (M)">&#128266;</div>
+  <div id="optbtn" title="Settings (O)" role="button" aria-label="Settings">&#9881;&#65039;</div>
 
   <div id="endscreen" class="hidden">
     <div id="endtitle"></div>
@@ -110,7 +112,35 @@
 
     <button id="play" type="button" disabled>Play!</button>
     <div id="status">Connecting&hellip;</div>
+    <button id="lobbyopt" type="button" class="linkbtn">&#9881;&#65039; Look settings <kbd>O</kbd></button>
     <div class="fine">The first player to join picks Co-op / Versus and the bots. Press Esc to free your mouse.</div>
+  </div>
+</div>
+
+<!-- ============ look settings (lobby + in-game) ============ -->
+<div id="settings" class="hidden" role="dialog" aria-modal="true" aria-labelledby="settingstitle">
+  <div class="card settings-card">
+    <h2 id="settingstitle">&#9881;&#65039; Look settings</h2>
+
+    <div class="setrow">
+      <div class="setname">Invert look up/down<span class="setds">Move the mouse up to look down</span></div>
+      <button type="button" id="set-invy" class="switch" role="switch" aria-checked="false" aria-label="Invert look up/down"><i></i></button>
+    </div>
+    <div class="setrow">
+      <div class="setname">Invert look left/right<span class="setds">Move the mouse right to turn left</span></div>
+      <button type="button" id="set-invx" class="switch" role="switch" aria-checked="false" aria-label="Invert look left/right"><i></i></button>
+    </div>
+    <div class="setrow slider">
+      <div class="setname">Mouse speed<span class="setds">Slower is steadier, faster turns quicker</span></div>
+      <b id="set-sensval" class="setval">1x</b>
+      <input type="range" id="set-sens" min="0.25" max="3" step="0.05" value="1" aria-label="Mouse speed">
+    </div>
+
+    <div class="row setbtns">
+      <button type="button" id="set-reset" class="choice"><span class="nm">Reset</span></button>
+      <button type="button" id="set-done">Done</button>
+    </div>
+    <div class="fine">Press O to open or close this. Changes happen right away and are saved on this computer.</div>
   </div>
 </div>
 

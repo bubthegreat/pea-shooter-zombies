@@ -3,16 +3,34 @@
 //
 //   W A S / arrows  move      Space  jump      mouse  look      left click  fire
 //   E  use (hold, mower)      1 / 2  plant peashooter / cactus
-//   M  mute     H  help
+//   M  mute     H  help     O  look settings (invert, mouse speed)
+
+import { settings } from './settings.js';
 
 const SENS = 0.0023;
 const PITCH_LIMIT = 1.4;
+
+/**
+ * Apply one mouse movement (dx, dy in pixels) to the look angles. `look` is the settings
+ * object: invertX flips left/right, invertY flips up/down, sens scales the speed.
+ * Pitch stays clamped; yaw wraps to [-PI, PI].
+ */
+export function applyLook(yaw, pitch, dx, dy, look) {
+  const k = SENS * look.sens;
+  yaw -= (look.invertX ? -dx : dx) * k; // default: mouse right -> turn right (negative yaw)
+  pitch -= (look.invertY ? -dy : dy) * k; // default: mouse up -> look up
+  pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, pitch));
+  if (yaw > Math.PI) yaw -= Math.PI * 2;
+  else if (yaw < -Math.PI) yaw += Math.PI * 2;
+  return { yaw, pitch };
+}
 
 export class Input {
   constructor(canvas) {
     this.canvas = canvas;
     this.enabled = false; // true while in a round (so typing in the lobby isn't captured)
     this.locked = false;
+    this.menuOpen = false; // settings panel is up: ignore game keys
     this.yaw = 0;
     this.pitch = 0;
     this.keys = { f: false, b: false, l: false, r: false, jump: false };
@@ -37,11 +55,9 @@ export class Input {
       if (!this.locked) return;
       const dx = e.movementX || 0, dy = e.movementY || 0;
       if (Math.abs(dx) > 600 || Math.abs(dy) > 600) return; // browsers occasionally glitch
-      this.yaw -= dx * SENS; // mouse right -> turn right (negative yaw)
-      this.pitch -= dy * SENS;
-      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
-      if (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
-      else if (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
+      const a = applyLook(this.yaw, this.pitch, dx, dy, settings.values);
+      this.yaw = a.yaw;
+      this.pitch = a.pitch;
       this.lookMoved = true;
     });
     canvas.addEventListener('mousedown', (e) => {
@@ -73,6 +89,15 @@ export class Input {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
+  /** The settings panel needs the real mouse and shouldn't leak keys into the game. */
+  setMenuOpen(open) {
+    this.menuOpen = open;
+    if (open) {
+      this._releaseAll();
+      this.exitLock();
+    }
+  }
+
   _releaseAll() {
     const k = this.keys;
     k.f = k.b = k.l = k.r = k.jump = false;
@@ -85,10 +110,10 @@ export class Input {
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' && e.code === 'Space') return;
     if (down && !e.repeat) {
       if (e.code === 'KeyM' && this.onToggleMute) this.onToggleMute();
-      if (e.code === 'KeyH' && this.onToggleHelp && this.enabled) this.onToggleHelp();
-      if (e.code === 'KeyT' && this.onChangeTeam && this.enabled) this.onChangeTeam();
+      if (e.code === 'KeyH' && this.onToggleHelp && this.enabled && !this.menuOpen) this.onToggleHelp();
+      if (e.code === 'KeyT' && this.onChangeTeam && this.enabled && !this.menuOpen) this.onChangeTeam();
     }
-    if (!this.enabled) return;
+    if (!this.enabled || this.menuOpen) return;
     const k = this.keys;
     let handled = true;
     switch (e.code) {
