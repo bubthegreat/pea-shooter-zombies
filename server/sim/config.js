@@ -45,10 +45,30 @@ export const DEFAULT_CONFIG = {
   tierThresholds: [0, 3, 7, 12], // cumulative kills needed for tier 0..3
   streakBonus: 10, // kills in a row without being hurt => jump one extra tier
 
-  // Garden plants (stationary turrets)
+  // Garden plants (stationary turrets) and sunshine
   gardenPlantHp: 60,
   gardenPlantRadius: 0.6,
   gardenPlantHeight: 1.2,
+  plantTypes: {
+    // range in m, rate in shots/s, speed in m/s, aimError = random cone half-angle (rad)
+    peashooter: { cost: 50, range: 25, rate: 1.5, damage: 1, speed: 50, projKind: 'pea', aimError: 0.06 },
+    cactus: { cost: 100, range: 50, rate: 0.8, damage: 2, speed: 60, projKind: 'spike', aimError: 0.04 },
+  },
+  turretMuzzleHeight: 1.0,
+  turretAimHeight: 0.6, // fraction of target height to aim at
+  plantRange: 4, // a plant can be placed in an empty slot this close to the player
+  startSunshine: 100,
+  sunPerConversion: 25,
+  sunValue: 25,
+  sunDropInterval: 8,
+  sunLifetime: 30,
+  sunPickupRadius: 1.5,
+  sunFallSpeed: 4,
+  sunDropHeight: 12,
+  sunRestHeight: 1,
+  sunDropX: [-28, 28],
+  sunDropZ: [-30, 20],
+  sunMaxActive: 6,
 };
 
 /** Config subset sent to clients in the welcome message. */

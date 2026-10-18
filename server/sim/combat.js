@@ -151,7 +151,7 @@ function convertZombie(game, target, attacker) {
     target.ai = null;
     game.clearInput(target);
   }
-  creditKill(game, attacker, target);
+  creditKill(game, attacker, c.sunPerConversion);
 }
 
 function wiltPlantFighter(game, target, attacker) {
@@ -165,17 +165,18 @@ function wiltPlantFighter(game, target, attacker) {
     target.state = 'dead';
     game.entities.delete(target.id);
   }
-  creditKill(game, attacker, target);
+  creditKill(game, attacker);
 }
 
 function destroyGardenPlant(game, target, attacker) {
   game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null, plantKind: target.plantKind });
   game.removeEntity(target);
-  creditKill(game, attacker, target);
+  creditKill(game, attacker);
 }
 
-/** Progress toward the next gun for human attackers. */
-export function creditKill(game, attacker, victim) {
+/** Progress toward the next gun for human attackers, plus optional sunshine for plant humans. */
+export function creditKill(game, attacker, sunshine = 0) {
   if (!attacker || attacker.kind !== 'player') return;
   recordKill(game, attacker);
+  if (attacker.team === 'plant') attacker.sunshine += sunshine;
 }

@@ -4,6 +4,7 @@ import { WORLD, clampToWorld } from './world.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
+import { emptySlots, initGarden, stepGarden, stepSun, tryPlant } from './garden.js';
 
 const TEAMS = new Set(['plant', 'zombie']);
 const MODES = new Set(['coop', 'versus']);
@@ -25,6 +26,8 @@ export class Game {
     this.events = [];
     this.time = 0; // monotonically increasing sim clock (seconds)
     this._ids = {};
+    this.slots = emptySlots();
+    this.sunTimer = config.sunDropInterval;
     this._resetToLobby();
   }
 
@@ -39,6 +42,7 @@ export class Game {
     this.winner = null;
     this.roundTime = 0;
     this.wave = 0;
+    this.slots = emptySlots();
   }
 
   humans() {
@@ -71,6 +75,9 @@ export class Game {
     this.winner = null;
     this.roundTime = 0;
     this.wave = 0;
+    this.slots = emptySlots();
+    this.sunTimer = this.config.sunDropInterval;
+    if (this.config.features.initialGarden) initGarden(this);
     for (const p of this.humans()) this._resetPlayer(p);
   }
 
@@ -165,6 +172,7 @@ export class Game {
   removeEntity(e) {
     e.state = 'dead';
     this.entities.delete(e.id);
+    if (e.kind === 'garden' && this.slots[e.slot]?.plantId === e.id) this.slots[e.slot].plantId = null;
   }
 
   clearInput(e) {
@@ -200,6 +208,7 @@ export class Game {
     p.streak = 0;
     p.weapon = weaponFor(p.team, 0).id;
     p.cooldown = 0;
+    p.sunshine = p.team === 'plant' ? this.config.startSunshine : undefined;
     this.clearInput(p);
     this.respawn(p);
   }
@@ -244,7 +253,11 @@ export class Game {
     if (this.phase === 'lobby') return;
     if (this.phase === 'playing') this.roundTime += dt;
     this._stepActors(dt);
-    if (this.phase === 'playing') stepProjectiles(this, dt);
+    if (this.phase === 'playing') {
+      stepGarden(this, dt);
+      stepProjectiles(this, dt);
+      stepSun(this, dt);
+    }
   }
 
   _stepActors(dt) {
@@ -258,6 +271,10 @@ export class Game {
       if (e.state !== 'alive') continue;
       this._moveActor(e, dt);
       this._stepWeapon(e, dt);
+      if (e.plantPending) {
+        if (this.phase === 'playing') tryPlant(this, e, e.plantPending === 1 ? 'peashooter' : 'cactus');
+        e.plantPending = 0;
+      }
     }
   }
 
