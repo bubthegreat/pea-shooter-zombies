@@ -22,7 +22,9 @@
 <!-- ============ in-game HUD ============ -->
 <div id="hud" class="hidden">
   <div id="vignette"></div>
+  <div id="frost"></div>
   <div id="crosshair"><i class="ch-dot"></i><i class="ch-ring"></i><i id="hitmark"></i></div>
+  <div id="headshot">HEADSHOT!</div>
 
   <div id="topbar">
     <div id="wavetext">Wave 0</div>
@@ -38,6 +40,11 @@
     <div class="seed" id="seed2"><span class="key">2</span><span class="ico">&#127797;</span><span class="nm">Cactus</span><span class="cost">&#9728;&#65039; <b>100</b></span></div>
   </div>
 
+  <div id="mowerbox" class="hidden">
+    <div id="mowerico">&#128668;</div>
+    <div class="hp-track"><div id="mowerfill"></div><span id="mowertext">Mower 40</span></div>
+  </div>
+
   <div id="hpbox">
     <div id="hpico">&#127803;</div>
     <div class="hp-track"><div id="hpfill"></div><span id="hptext">100</span></div>
@@ -45,9 +52,10 @@
 
   <div id="weaponbox">
     <div id="weaponname">Pea Blaster</div>
-    <div id="pips"><i></i><i></i><i></i><i></i></div>
+    <div id="itemhp" class="hidden"><div id="itemhpfill"></div><span id="itemhptext">Barrow 30</span></div>
+    <div id="pips"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
     <div id="upgtrack"><div id="upgfill"></div></div>
-    <div id="upgtext">Next gun: 0 / 3</div>
+    <div id="upgtext">Next gun: 0 / 2</div>
     <div id="streak">&#128293; Streak <b id="streaknum">0</b> / 10</div>
   </div>
 
@@ -65,9 +73,11 @@
     <div><b>W A S D</b> move &nbsp; <b>Space</b> jump</div>
     <div><b>Mouse</b> look &nbsp; <b>Click</b> shoot</div>
     <div class="plantonly"><b>1</b> plant Peashooter &nbsp; <b>2</b> plant Cactus</div>
-    <div class="zombieonly">Hold <b>E</b> near the mower to start it!</div>
-    <div class="plantonly">Shoot zombies 5 times to turn them into plants!</div>
-    <div class="zombieonly">Reach the garden and squash every plant!</div>
+    <div class="plantonly">Shoot zombies to turn them into plants &mdash; kills unlock better guns!</div>
+    <div class="plantonly">Aim at the head for a <b>HEADSHOT!</b></div>
+    <div class="zombieonly"><b>E</b> grab a garage tool / start the mower / hop off</div>
+    <div class="zombieonly"><b>Q</b> put the tool down</div>
+    <div class="zombieonly">Squash or shred every plant. Dodge the glowing shots!</div>
     <div><b>O</b> look settings (invert, speed)</div>
     <div class="dim"><b>H</b> hide this &nbsp; <b>M</b> sound &nbsp; <b>Esc</b> free mouse</div>
   </div>
@@ -97,10 +107,10 @@
     <div class="label">Pick your team</div>
     <div class="row" id="teamrow">
       <button type="button" class="choice team plant selected" data-team="plant">
-        <span class="big">&#127803;</span><span class="nm">Plants</span><span class="ds">Shoot zombies to turn them into plants!</span>
+        <span class="big">&#127803;</span><span class="nm">Plants</span><span class="ds">Shoot zombies, plant turrets, grow better guns!</span>
       </button>
       <button type="button" class="choice team zombie" data-team="zombie">
-        <span class="big">&#129503;</span><span class="nm">Zombies</span><span class="ds">Grab the mower and squash the garden!</span>
+        <span class="big">&#129503;</span><span class="nm">Zombies</span><span class="ds">Drive the mower or grab a garage tool and wreck the garden!</span>
       </button>
     </div>
 

@@ -1,5 +1,7 @@
 // DOM heads-up display. Everything is driven from the latest snapshot's own entity.
-import { weaponInfo } from './models.js';
+import { weaponInfo, itemInfo } from './models.js';
+
+const DEFAULT_TIERS = [0, 2, 4, 7, 10, 14, 18, 23];
 
 const $ = (id) => document.getElementById(id);
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -17,7 +19,10 @@ export class HUD {
       garden: $('gardencount'), sunBox: $('sunbox'), sunCount: $('suncount'),
       seeds: $('seedcards'), seed1: $('seed1'), seed2: $('seed2'),
       hpIco: $('hpico'), hpFill: $('hpfill'), hpText: $('hptext'),
-      weapon: $('weaponname'), pips: [...$('pips').children], upgFill: $('upgfill'), upgText: $('upgtext'),
+      weapon: $('weaponname'), pipsBox: $('pips'), pips: [...$('pips').children], upgFill: $('upgfill'), upgText: $('upgtext'),
+      itemHp: $('itemhp'), itemHpFill: $('itemhpfill'), itemHpText: $('itemhptext'),
+      mowerBox: $('mowerbox'), mowerFill: $('mowerfill'), mowerText: $('mowertext'),
+      headshot: $('headshot'), frost: $('frost'),
       streakBox: $('streak'), streak: $('streaknum'),
       banner: $('banner'), bannerTitle: $('bannertitle'), bannerSub: $('bannersub'),
       toast: $('toast'), down: $('downoverlay'), downTitle: $('downtitle'), downCount: $('downcount'), downSub: $('downsub'),
@@ -86,11 +91,20 @@ export class HUD {
 
   setPrompt(text) { this.promptText = text || ''; }
 
-  hit() {
+  hit(head = false) {
     const h = this.el.hitmark;
+    h.classList.toggle('head', !!head);
     h.classList.add('on');
     clearTimeout(this._hitTimer);
-    this._hitTimer = setTimeout(() => h.classList.remove('on'), 90);
+    this._hitTimer = setTimeout(() => h.classList.remove('on'), head ? 160 : 90);
+  }
+
+  /** Big kid-style HEADSHOT! pop beside the crosshair (restarts if it is already showing). */
+  headshot() {
+    const el = this.el.headshot;
+    el.classList.remove('pop');
+    void el.offsetWidth; // restart animation
+    el.classList.add('pop');
   }
 
   damage() {
@@ -106,6 +120,16 @@ export class HUD {
     el.classList.add('pressed');
   }
 
+  /** One pip per gun tier (the server sends 8 thresholds; follow whatever it says). */
+  _ensurePips(n) {
+    if (this.el.pips.length === n) return;
+    const box = this.el.pipsBox;
+    while (box.children.length < n) box.appendChild(document.createElement('i'));
+    while (box.children.length > n) box.removeChild(box.lastChild);
+    this.el.pips = [...box.children];
+    for (const k of Object.keys(this._cache)) if (k.startsWith('pip')) delete this._cache[k];
+  }
+
   _set(key, el, prop, val) {
     // avoid layout churn: only touch the DOM when a value changes
     if (this._cache[key] !== val) {
@@ -118,7 +142,7 @@ export class HUD {
   }
 
   /**
-   * ctx: { own, snap, config, now, locked, nearSlot: {kind}|null }
+   * ctx: { own, snap, config, now, locked, nearSlot: {kind}|null, mower: {hp, maxHp}|null (only while we drive it) }
    */
   update(ctx) {
     const { own, snap, config, now } = ctx;
@@ -159,24 +183,42 @@ export class HUD {
 
       // ---- weapon & upgrades
       const wi = weaponInfo(own.weapon, own.team);
-      this._set('wn', e.weapon, 'text', wi.name);
-      const tier = Math.max(0, Math.min(3, num(own.tier, 0) | 0));
+      const held = typeof own.item === 'string' && own.item ? own.item : null;
+      this._set('wn', e.weapon, 'text', held ? itemInfo(held).name : wi.name);
+      const th = Array.isArray(config && config.tierThresholds) && config.tierThresholds.length ? config.tierThresholds : DEFAULT_TIERS;
+      const top = th.length - 1;
+      this._ensurePips(th.length);
+      const tier = Math.max(0, Math.min(top, num(own.tier, 0) | 0));
       for (let i = 0; i < e.pips.length; i++) {
         const on = i <= tier;
         if (this._cache['pip' + i] !== on) { this._cache['pip' + i] = on; e.pips[i].classList.toggle('on', on); }
       }
-      const th = Array.isArray(config && config.tierThresholds) ? config.tierThresholds : [0, 3, 7, 12];
       const progress = num(own.progress, 0);
-      if (tier >= 3 || th[tier + 1] === undefined) {
+      if (tier >= top || th[tier + 1] === undefined) {
         this._set('uw', e.upgFill, 'width', '100%');
         this._set('uc', e.upgFill, 'class', 'max');
         this._set('ut', e.upgText, 'text', 'Top gun! ⭐');
       } else {
         const next = th[tier + 1];
-        this._set('uw', e.upgFill, 'width', Math.max(0, Math.min(100, (progress / next) * 100)).toFixed(0) + '%');
+        const base = th[tier] || 0;
+        const f2 = Math.max(0, Math.min(1, (progress - base) / Math.max(1, next - base)));
+        this._set('uw', e.upgFill, 'width', (f2 * 100).toFixed(0) + '%');
         this._set('uc', e.upgFill, 'class', '');
         this._set('ut', e.upgText, 'text', `Next gun: ${Math.min(progress, next)} / ${next}`);
       }
+      // wheelbarrow hit points
+      const showBarrow = held === 'wheelbarrow';
+      if (this._cache.ihv !== showBarrow) { this._cache.ihv = showBarrow; e.itemHp.classList.toggle('hidden', !showBarrow); }
+      if (showBarrow) {
+        const eq = config && config.equipment && config.equipment.wheelbarrow;
+        const max = Math.max(1, num(eq && eq.hp, 30));
+        const ihp = Math.max(0, num(own.itemHp, max));
+        this._set('ihw', e.itemHpFill, 'width', Math.min(100, (ihp / max) * 100).toFixed(0) + '%');
+        this._set('iht', e.itemHpText, 'text', `Barrow ${Math.ceil(ihp)}`);
+      }
+      // icy frost on the screen edges while a Snow Pea has slowed us
+      const frosty = !!own.slowed;
+      if (this._cache.frost !== frosty) { this._cache.frost = frosty; e.frost.classList.toggle('on', frosty); }
       const streak = num(own.streak, 0) | 0;
       const sb = num(config && config.streakBonus, 10);
       this._set('st', e.streak, 'text', String(streak));
@@ -196,6 +238,17 @@ export class HUD {
         const near = ctx.nearSlot ? ctx.nearSlot.kind : null;
         this._set('s1', e.seed1, 'class', 'seed' + (sun < c1 ? ' no' : '') + (near === 'peashooter' ? ' near' : ''));
         this._set('s2', e.seed2, 'class', 'seed' + (sun < c2 ? ' no' : '') + (near === 'cactus' ? ' near' : ''));
+      }
+
+      // ---- the mower's own hit points while we drive it
+      const mw = ctx.mower || null;
+      const showMw = !!mw;
+      if (this._cache.mwv !== showMw) { this._cache.mwv = showMw; e.mowerBox.classList.toggle('hidden', !showMw); }
+      if (mw) {
+        const mf = Math.max(0, Math.min(1, num(mw.hp, 0) / Math.max(1, num(mw.maxHp, 40))));
+        this._set('mwf', e.mowerFill, 'width', (mf * 100).toFixed(0) + '%');
+        this._set('mwc', e.mowerFill, 'class', mf < 0.3 ? 'low' : mf < 0.6 ? 'mid' : '');
+        this._set('mwt', e.mowerText, 'text', `Mower ${Math.ceil(num(mw.hp, 0))}`);
       }
 
       // ---- wilted / sprout countdown

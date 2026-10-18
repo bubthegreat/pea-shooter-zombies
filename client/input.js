@@ -2,7 +2,9 @@
 // server just receives them 30 times a second.
 //
 //   W A S / arrows  move      Space  jump      mouse  look      left click  fire
-//   E  use (hold, mower)      1 / 2  plant peashooter / cactus
+//   E  use (hold: start the mower; tap: grab garage equipment / hop off the mower)
+//   Q  put the equipment you are holding down (sent as `drop`; the server edge-detects it)
+//   1 / 2  plant peashooter / cactus
 //   M  mute     H  help     O  look settings (invert, mouse speed)
 
 import { settings } from './settings.js';
@@ -71,6 +73,9 @@ export class Input {
     this.keys = { f: false, b: false, l: false, r: false, jump: false };
     this.fire = false;
     this.use = false;
+    this.drop = false;
+    this._usePending = false; // a tap shorter than one send interval still reaches the server as one message
+    this._dropPending = false;
     this.planter = new PlantSender();
     this.seq = 0;
     this.onToggleMute = null;
@@ -148,6 +153,8 @@ export class Input {
     k.f = k.b = k.l = k.r = k.jump = false;
     this.fire = false;
     this.use = false;
+    this.drop = false;
+    this._usePending = this._dropPending = false;
   }
 
   _key(e, down) {
@@ -167,7 +174,8 @@ export class Input {
       case 'KeyA': case 'ArrowLeft': k.l = down; break;
       case 'KeyD': case 'ArrowRight': k.r = down; break;
       case 'Space': k.jump = down; break;
-      case 'KeyE': this.use = down; break;
+      case 'KeyE': this.use = down; if (down) this._usePending = true; break;
+      case 'KeyQ': this.drop = down; if (down) this._dropPending = true; break;
       case 'Digit1': case 'Numpad1': if (down && !e.repeat) this._plant(1); break;
       case 'Digit2': case 'Numpad2': if (down && !e.repeat) this._plant(2); break;
       default: handled = false;
@@ -190,7 +198,8 @@ export class Input {
       yaw: this.yaw,
       pitch: this.pitch,
       fire: this.fire,
-      use: this.use,
+      use: this.use || this._usePending,
+      drop: this.drop || this._dropPending,
       ...this.planter.fields(),
     };
   }
@@ -200,7 +209,11 @@ export class Input {
     this.stopSending();
     this._sendTimer = setInterval(() => {
       const m = this.message();
-      if (send(m) !== false) this.planter.commit(m);
+      if (send(m) !== false) {
+        this.planter.commit(m);
+        if (!this.use) this._usePending = false;
+        if (!this.drop) this._dropPending = false;
+      }
     }, 1000 / 30);
   }
 

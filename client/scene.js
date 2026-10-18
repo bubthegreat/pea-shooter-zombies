@@ -2,7 +2,7 @@
 // server entities into animated models.
 import * as THREE from 'three';
 import {
-  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap,
+  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo,
 } from './models.js';
 
 const PI = Math.PI;
@@ -1122,7 +1122,14 @@ export class EntityLayer {
   }
 
   _updateTag(rec, e, ctx) {
-    const hasName = (e.kind === 'player') && typeof e.name === 'string' && e.name;
+    let label = '';
+    if ((e.kind === 'player' || e.kind === 'bot') && typeof e.name === 'string') label = e.name; // kids and the Gardener
+    else if (e.kind === 'rack_item' && e.available !== false) {
+      // tool labels on the garage rack: visible from across the garage, hidden up close (the prompt takes over)
+      const dc = Math.hypot(ctx.camera.position.x - rec.x, ctx.camera.position.z - rec.z);
+      if (dc > 3.5 && dc < 32) label = itemInfo(e.itemId || String(e.id).replace(/^rack_/, '')).name;
+    }
+    const hasName = label !== '';
     const hurt = Number.isFinite(e.hp) && Number.isFinite(e.maxHp) && e.maxHp > 0 && e.hp < e.maxHp && e.hp > 0;
     const show = (hasName || hurt) && rec.model.tagY > 0 && e.state !== 'wilted' && e.state !== 'sprout';
     if (!show) {
@@ -1157,14 +1164,21 @@ export class EntityLayer {
       fill.position.x = -0.5 * (1 - f);
     }
     if (hasName && !rec.tagName) {
-      const sp = new THREE.Sprite(nameSprite(e.name, e.team));
+      const sp = new THREE.Sprite(nameSprite(label, e.team));
       sp.scale.set(2.2, 0.55, 1);
       sp.position.y = 0.45;
       sp.renderOrder = 12;
       rec.tag.add(sp);
       rec.tagName = sp;
+      rec.tagLabel = label;
+    } else if (hasName && rec.tagLabel !== label) {
+      rec.tagName.material = nameSprite(label, e.team);
+      rec.tagLabel = label;
     }
-    if (rec.tagName) rec.tagName.position.y = hurt ? 0.5 : 0.1;
+    if (rec.tagName) {
+      rec.tagName.visible = hasName;
+      rec.tagName.position.y = hurt ? 0.5 : 0.1;
+    }
   }
 
   /** Make nearby shooters recoil when a shot appears. */
