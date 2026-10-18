@@ -166,7 +166,7 @@ export const DEFAULT_CONFIG = {
   botAimRerollInterval: 0.3,
   zombieBotShootRange: 20,
   zombieBotStopDistance: 8, // zombies stop this far from the plant they are attacking
-  mowerBotChance: 0, // share of zombie bots that go for the mower
+  mowerBotChance: 0.25, // share of zombie bots that go for the mower once all three parts are in
   mowerBotStopDistance: 1.2,
 
   // Doors: HP of each (a zombie shot does 8). Plants walk and shoot through their own doors; zombies must break them.

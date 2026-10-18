@@ -49,6 +49,7 @@ One map: a made-up **backyard**.
 - Zombies can also damage and destroy planted plants.
 
 ### How the Zombies win
+*(Replaced by the Fridge Meter in Map v2, see `2026-10-18-map-v2-design.md`: zombies now win by raiding the fridge. The mower still exists but needs three parts and is only a weapon.)*
 Get into the garage, grab the lawnmower, and **mow down the whole garden** (every planted plant).
 - Starting the mower takes a few seconds, which gives plants a last chance to stop it.
 - A zombie driving the mower can be shot. If that zombie is converted, the mower stops and stays where it is for another zombie to grab.
