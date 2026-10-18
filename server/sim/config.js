@@ -7,7 +7,6 @@ export const DEFAULT_CONFIG = {
   tickRate: 30,
   snapRate: 20,
   maxDt: 0.1, // clamp for one tick() call
-  maxPlayers: 2,
   roundLength: 480, // seconds from night to sunrise
 
   // Feature switches (tests and debugging turn individual subsystems off).
@@ -123,7 +122,8 @@ export const DEFAULT_CONFIG = {
 
   // Rounds, waves and win rules
   roundLength: 480,
-  endedTime: 10, // result screen before an automatic restart
+  endedTime: 10, // result screen before the next round (or the waiting room)
+  autoRestart: true, // after the result screen start the next round at once; lobbies set false and go back to their waiting room
   waveFirst: 5, // seconds into the round
   waveInterval: 45,
   lastWaveLead: 60, // final wave arrives this many seconds before sunrise
@@ -169,7 +169,6 @@ export function publicConfig(config = DEFAULT_CONFIG) {
   return {
     tickRate: c.tickRate,
     snapRate: c.snapRate,
-    maxPlayers: c.maxPlayers,
     // Player and movement. Entity y is the feet position; the camera sits eyeHeight above it.
     moveSpeed: c.moveSpeed,
     jumpSpeed: c.jumpSpeed,

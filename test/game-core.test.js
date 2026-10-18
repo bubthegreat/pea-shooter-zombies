@@ -36,12 +36,10 @@ test('second player joins mid-round on chosen team; mode unchanged', () => {
   assert.ok(game.time > 0, 'running game was not restarted');
 });
 
-test('a third human is rejected', () => {
+test('the sim has no human cap (lobbies enforce their own safety cap)', () => {
   const game = makeGame();
-  assert.ok(game.addPlayer('a', { team: 'plant' }));
-  assert.ok(game.addPlayer('b', { team: 'plant' }));
-  assert.equal(game.addPlayer('c', { team: 'zombie' }), null);
-  assert.equal(game.entities.has('c'), false);
+  for (let i = 0; i < 12; i++) assert.ok(game.addPlayer(`p${i}`, { team: i % 2 ? 'zombie' : 'plant' }), `player ${i}`);
+  assert.equal(game.humans().length, 12);
 });
 
 test('addPlayer sanitizes name, team, mode and ignores duplicate ids', () => {

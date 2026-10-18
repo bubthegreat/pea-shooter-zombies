@@ -165,7 +165,7 @@ test('malformed and oversized messages are ignored and the server keeps working'
   await sleep(100);
 });
 
-test('disconnect removes the entity; last human out resets to lobby; third player is told the game is full', async () => {
+test('disconnect removes the entity; last human out resets to lobby; a third player is no longer turned away', async () => {
   const a = await connect();
   const b = await connect();
   const c = await connect();
@@ -174,13 +174,13 @@ test('disconnect removes the entity; last human out resets to lobby; third playe
   b.send(JSON.stringify({ t: 'join', name: 'B', team: 'zombie' }));
   const wb = await waitFor(b, (m) => m.t === 'welcome');
   c.send(JSON.stringify({ t: 'join', name: 'C', team: 'zombie' }));
-  const err = await waitFor(c, (m) => m.t === 'error');
-  assert.equal(err.reason, 'full');
+  await waitFor(c, (m) => m.t === 'welcome');
   await waitFor(a, (m) => m.t === 'snap' && m.entities.some((e) => e.id === wb.id));
 
   b.close();
   await waitFor(a, (m) => m.t === 'snap' && m.entities.some((e) => e.id === wa.id) && !m.entities.some((e) => e.id === wb.id));
   assert.equal(srv.game.phase, 'playing');
+  c.close();
   a.close();
   const start = Date.now();
   while (srv.game.phase !== 'lobby' && Date.now() - start < 2000) await sleep(20);

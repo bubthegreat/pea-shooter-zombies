@@ -58,7 +58,10 @@ export function stepRules(game, dt) {
   const c = game.config;
   if (game.phase === 'ended') {
     game.endTimer -= dt;
-    if (game.endTimer <= 0) game.startRound();
+    if (game.endTimer <= 0) {
+      if (c.autoRestart) game.startRound();
+      else game.endMatch();
+    }
     return;
   }
   if (game.phase !== 'playing') return;

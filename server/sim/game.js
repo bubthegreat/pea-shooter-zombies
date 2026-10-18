@@ -106,11 +106,28 @@ export class Game {
     for (const p of this.humans()) this._resetPlayer(p);
   }
 
+  /** Waiting room -> round: set mode and difficulty, seat everyone, begin. players: [{ id, name, team }]. */
+  startMatch({ mode, difficulty, players = [] } = {}) {
+    this._resetToLobby();
+    this.mode = MODES.has(mode) ? mode : this.config.defaultMode;
+    this.difficulty = DIFFICULTIES.has(difficulty) ? difficulty : this.config.defaultDifficulty;
+    for (const p of players) {
+      if (!p || typeof p.id !== 'string' || p.id === '' || this.entities.has(p.id)) continue;
+      const name = sanitizeName(p.name, this.config.defaultName, this.config.nameMaxLength);
+      this.entities.set(p.id, this._makePlayer(p.id, name, TEAMS.has(p.team) ? p.team : 'plant'));
+    }
+    this.startRound();
+  }
+
+  /** The result screen is over and nobody restarts the round: back to the empty waiting-room state. */
+  endMatch() {
+    this._resetToLobby();
+  }
+
   addPlayer(id, opts = {}) {
     if (typeof id !== 'string' || id === '') return null;
     const existing = this.entities.get(id);
     if (existing) return existing;
-    if (this.humans().length >= this.config.maxPlayers) return null;
     const o = opts && typeof opts === 'object' ? opts : {};
     const team = TEAMS.has(o.team) ? o.team : 'plant';
     const first = this.phase === 'lobby' || this.humans().length === 0;

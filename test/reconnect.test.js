@@ -46,7 +46,7 @@ test('the default heartbeat gives a worst case of ~6 s for a dead socket', () =>
   assert.ok(HEARTBEAT_MS * 2 <= 6000, `heartbeat ${HEARTBEAT_MS} ms`);
 });
 
-test('rejoining with the same client token replaces the ghost instead of hitting "full"', async () => {
+test('rejoining with the same client token replaces the ghost instead of adding a duplicate', async () => {
   const srv = await startServer({ port: 0, host: '127.0.0.1' });
   try {
     const a = await connect(srv);
@@ -67,11 +67,11 @@ test('rejoining with the same client token replaces the ghost instead of hitting
     const names = srv.game.humans().map((h) => h.name).sort();
     assert.deepEqual(names, ['Kid', 'Other']);
 
-    // a different token is still told the game is full
+    // a different token is a new player: there is no cap any more
     const c = await connect(srv);
     c.send(JSON.stringify({ t: 'join', name: 'Third', team: 'plant', cid: 'tok-3' }));
-    await until(() => c.messages.some((m) => m.t === 'error'));
-    assert.equal(c.messages.find((m) => m.t === 'error').reason, 'full');
+    await until(() => c.messages.some((m) => m.t === 'welcome'));
+    assert.equal(srv.game.humans().length, 3);
     for (const w of [b, other, c]) w.close();
     await sleep(50);
   } finally {
