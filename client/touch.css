@@ -111,11 +111,11 @@ html.touch .kf { padding: 1px 9px 2px; font-size: 13px; border-width: 2px; borde
 /* with up to nine unlocked the bar scrolls sideways (a drag scrolls, a tap plants) */
 html.touch #seedcards {
   bottom: 8px; gap: 8px; pointer-events: auto; z-index: 4; max-width: min(46vw, 420px); padding: 9px 4px 4px;
-  overflow-x: auto; overflow-y: hidden; touch-action: pan-x; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  flex-wrap: nowrap; justify-content: flex-start; left: 50%; overflow-x: auto; overflow-y: hidden; touch-action: pan-x; -webkit-overflow-scrolling: touch; scrollbar-width: none;
 }
 html.touch #seedcards::-webkit-scrollbar { display: none; }
 html.touch .seed, html.touch #seedcards.compact .seed { flex: 0 0 auto; width: clamp(58px, 9vw, 80px); padding: 2px 3px 3px; border-width: 3px; border-radius: 14px; }
-html.touch .seed .key, html.touch .seed .nm { display: none; }
+html.touch .seed .key, html.touch .seed .nm, html.touch #seedcards.compact .seed .nm { display: none; }
 html.touch .seed .ico, html.touch #seedcards.compact .seed .ico { font-size: 26px; }
 html.touch .seed .cost, html.touch #seedcards.compact .seed .cost { font-size: 14px; }
 
