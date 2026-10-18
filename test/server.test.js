@@ -126,6 +126,20 @@ test('join gets welcome with config and snapshots containing the player entity',
   await sleep(100);
 });
 
+test('setName renames the player mid-game, sanitized', async () => {
+  const ws = await connect();
+  ws.send(JSON.stringify({ t: 'join', name: 'Before', team: 'plant', mode: 'coop' }));
+  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
+  const nameCtl = String.fromCharCode(0, 7);
+  ws.send(JSON.stringify({ t: 'setName', name: `  ${nameCtl}After${'x'.repeat(30)}` }));
+  const snap = await waitFor(ws, (m) => m.t === 'snap' && m.entities.find((e) => e.id === welcome.id)?.name === `After${'x'.repeat(11)}`);
+  assert.ok(snap);
+  ws.send(JSON.stringify({ t: 'setName', name: 42 }));
+  await waitFor(ws, (m) => m.t === 'snap' && m.entities.find((e) => e.id === welcome.id)?.name === 'Player');
+  ws.close();
+  await sleep(100);
+});
+
 test('malformed and oversized messages are ignored and the server keeps working', async () => {
   const ws = await connect();
   ws.send('not json');

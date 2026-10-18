@@ -209,6 +209,8 @@ export function startServer(opts = {}) {
           client.lastInputAt = performance.now();
           send(ws, { t: 'welcome', id: client.id, config: publicConfig(game.config) });
           log(`player ${client.id} (${p.name}) joined as ${p.team}`);
+        } else if (msg.t === 'setName') {
+          if (client.joined) game.renamePlayer(client.id, msg.name);
         } else if (msg.t === 'input') {
           if (!client.joined) return;
           client.lastInputAt = performance.now();

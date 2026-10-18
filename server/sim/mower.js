@@ -1,7 +1,7 @@
 // The lawnmower: zombies fetch it from the garage, spend a few seconds starting it, then mow the garden.
 import { WORLD } from './world.js';
 import { dist2D } from './vec.js';
-import { creditKill } from './combat.js';
+import { creditKill, feedInfo } from './combat.js';
 
 export function createMower(game) {
   const h = WORLD.mowerHome;
@@ -45,7 +45,7 @@ function release(m) {
 export function destroyMower(game, attacker) {
   const m = game.mower;
   const c = game.config;
-  game.emit('mower_destroyed', { x: m.x, y: m.y, z: m.z, by: attacker?.id ?? null });
+  game.emit('mower_destroyed', { x: m.x, y: m.y, z: m.z, ...feedInfo(attacker, m) });
   creditKill(game, attacker);
   m.state = 'destroyed';
   m.driver = null;
@@ -129,7 +129,7 @@ export function stepMower(game, dt) {
   m.yaw = driver.yaw;
   for (const g of [...game.entities.values()]) {
     if (g.kind !== 'garden' || dist2D(g.x, g.z, m.x, m.z) > c.mowerKillRadius) continue;
-    game.emit('mow', { id: g.id, plantKind: g.plantKind, x: g.x, z: g.z, by: driver.id });
+    game.emit('mow', { id: g.id, plantKind: g.plantKind, x: g.x, z: g.z, ...feedInfo(driver, g) });
     game.removeEntity(g);
     creditKill(game, driver);
   }

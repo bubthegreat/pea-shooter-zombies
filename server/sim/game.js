@@ -9,6 +9,7 @@ import { createMower, stepMower } from './mower.js';
 import { createRack, stepEquipment } from './equipment.js';
 import { planWaves, stepRules } from './rules.js';
 import { stepBots } from './bots.js';
+import { sanitizeName } from './names.js';
 
 const TEAMS = new Set(['plant', 'zombie']);
 const MODES = new Set(['coop', 'versus']);
@@ -117,13 +118,20 @@ export class Game {
       this.mode = MODES.has(o.mode) ? o.mode : this.config.defaultMode;
       this.difficulty = DIFFICULTIES.has(o.difficulty) ? o.difficulty : this.config.defaultDifficulty;
     }
-    let name = typeof o.name === 'string' ? o.name.trim().slice(0, this.config.nameMaxLength) : '';
-    if (name === '') name = this.config.defaultName;
+    const name = sanitizeName(o.name, this.config.defaultName, this.config.nameMaxLength);
     const p = this._makePlayer(id, name, team);
     this.entities.set(id, p);
     if (first) this.startRound();
     else this._resetPlayer(p);
     return p;
+  }
+
+  /** Change a human's display name (sanitized). Returns the new name, or null for an unknown player. */
+  renamePlayer(id, raw) {
+    const e = this.entities.get(id);
+    if (!e || e.kind !== 'player') return null;
+    e.name = sanitizeName(raw, this.config.defaultName, this.config.nameMaxLength);
+    return e.name;
   }
 
   removePlayer(id) {

@@ -200,16 +200,38 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
   target.hp = 0;
   if (target.kind === 'mower') destroyMower(game, attacker);
   else if (target.kind === 'garden') destroyGardenPlant(game, target, attacker);
-  else if (target.team === 'zombie') convertZombie(game, target, attacker);
-  else wiltPlantFighter(game, target, attacker);
+  else if (target.team === 'zombie') convertZombie(game, target, attacker, head);
+  else wiltPlantFighter(game, target, attacker, head);
   return true;
 }
 
-function convertZombie(game, target, attacker) {
+/** Display name for the kill feed: kids by their name, bots and turrets by what they are. */
+export function nameOf(e) {
+  if (!e) return null;
+  if (typeof e.name === 'string' && e.name !== '') return e.name;
+  if (e.kind === 'garden') return e.plantKind ? e.plantKind[0].toUpperCase() + e.plantKind.slice(1) : 'Plant';
+  if (e.kind === 'bot') return e.team === 'zombie' ? 'Zombie' : 'Plant';
+  return null;
+}
+
+/** Who did it and to whom, for events the client turns into kill-feed lines. */
+export function feedInfo(attacker, target, head = false) {
+  const info = {
+    by: attacker?.id ?? null,
+    byName: nameOf(attacker),
+    byKind: attacker?.kind ?? null,
+    targetName: nameOf(target),
+    targetKind: target?.kind ?? null,
+  };
+  if (head) info.head = true;
+  return info;
+}
+
+function convertZombie(game, target, attacker, head = false) {
   const c = game.config;
   const human = target.kind === 'player';
   dropOnConvert(game, target);
-  game.emit('convert', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null, human });
+  game.emit('convert', { id: target.id, x: target.x, y: target.y, z: target.z, human, ...feedInfo(attacker, target, head) });
   if (human) {
     // A converted kid becomes a little sprout, then digs back up as a zombie at the gate.
     target.state = 'sprout';
@@ -224,9 +246,9 @@ function convertZombie(game, target, attacker) {
   }
 }
 
-function wiltPlantFighter(game, target, attacker) {
+function wiltPlantFighter(game, target, attacker, head = false) {
   const c = game.config;
-  game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null });
+  game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, ...feedInfo(attacker, target, head) });
   if (target.kind === 'player') {
     target.state = 'wilted';
     target.timer = c.wiltRespawn;
@@ -240,7 +262,7 @@ function wiltPlantFighter(game, target, attacker) {
 }
 
 function destroyGardenPlant(game, target, attacker) {
-  game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null, plantKind: target.plantKind });
+  game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, plantKind: target.plantKind, ...feedInfo(attacker, target) });
   game.removeEntity(target);
   creditKill(game, attacker);
 }
