@@ -2,6 +2,7 @@
 import { distPointSegment, forwardVec } from './vec.js';
 import { WORLD, insideSolid } from './world.js';
 import { getWeapon, weaponFor } from './weapons.js';
+import { recordHurt, recordKill } from './upgrades.js';
 
 /** Create a projectile entity. `dir` is a unit vector. */
 export function spawnProjectile(game, { team, owner, projKind, damage, speed, x, y, z, dir }) {
@@ -122,6 +123,7 @@ export function applyDamage(game, target, amount, attacker) {
     dmg: amount,
     hp: Math.max(0, target.hp),
   });
+  recordHurt(target);
   if (target.hp > 0) return true;
   target.hp = 0;
   if (target.kind === 'garden') destroyGardenPlant(game, target, attacker);
@@ -149,6 +151,7 @@ function convertZombie(game, target, attacker) {
     target.ai = null;
     game.clearInput(target);
   }
+  creditKill(game, attacker, target);
 }
 
 function wiltPlantFighter(game, target, attacker) {
@@ -162,9 +165,17 @@ function wiltPlantFighter(game, target, attacker) {
     target.state = 'dead';
     game.entities.delete(target.id);
   }
+  creditKill(game, attacker, target);
 }
 
 function destroyGardenPlant(game, target, attacker) {
   game.emit('wilt', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null, plantKind: target.plantKind });
   game.removeEntity(target);
+  creditKill(game, attacker, target);
+}
+
+/** Progress toward the next gun for human attackers. */
+export function creditKill(game, attacker, victim) {
+  if (!attacker || attacker.kind !== 'player') return;
+  recordKill(game, attacker);
 }

@@ -41,6 +41,10 @@ export const DEFAULT_CONFIG = {
   muzzleForward: 0.6, // projectiles spawn this far in front of the eye
   projectileRadius: { pea: 0.12, spike: 0.12, housepea: 0.3, bullet: 0.15 },
 
+  // Upgrades
+  tierThresholds: [0, 3, 7, 12], // cumulative kills needed for tier 0..3
+  streakBonus: 10, // kills in a row without being hurt => jump one extra tier
+
   // Garden plants (stationary turrets)
   gardenPlantHp: 60,
   gardenPlantRadius: 0.6,
