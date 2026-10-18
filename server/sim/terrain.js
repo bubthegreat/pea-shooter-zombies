@@ -88,14 +88,16 @@ function flatMask(x, z) {
   return m;
 }
 
+const edge = (x, z) => Math.min(x - B.minX, B.maxX - x, z - B.minZ, B.maxZ - z);
+
 /** Natural height before the pit overrides. */
 function natural(x, z) {
   let hgt = (noise(x / 12 + 7.3, z / 12 + 1.9) - 0.5) * 1.4 + (noise(x / 5 + 3.1, z / 5 + 8.7) - 0.5) * 0.45;
   for (const m of MOUNDS) hgt += m.h * (1 - smooth(0, m.r, Math.hypot(x - m.x, z - m.z)));
-  hgt *= 1 - flatMask(x, z);
+  hgt *= (1 - flatMask(x, z)) * smooth(0, 5, edge(x, z)); // flat at the fence, so the meadow outside lines up
   const c = WORLD.creek;
   const d = distPolyline(c.points, x, z);
-  const w = 1 - smooth(c.half, c.half + c.bank, d);
+  const w = (1 - smooth(c.half, c.half + c.bank, d)) * smooth(0, 3.5, edge(x, z));
   if (w > 0) hgt = hgt * (1 - w) - c.depth * w;
   return hgt;
 }

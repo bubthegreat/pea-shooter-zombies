@@ -2,9 +2,11 @@
 import * as THREE from 'three';
 import { Net } from './net.js';
 import { Input } from './input.js';
-import { World, EntityLayer, LAYOUT, gardenSlots } from './scene.js';
+import { World, EntityLayer } from './scene.js';
+import { MapData } from './map.js';
 import { plantList, unlockedPlants, pickUpgradeTarget, upgradePrompt, stars } from './plants.js';
-import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex } from './models.js';
+import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex, PART_INFO } from './models.js';
+import { ruleText } from './lobbyview.js';
 import { Fx } from './fx.js';
 import { Sound } from './audio.js';
 import { HUD } from './hud.js';
@@ -45,6 +47,7 @@ world.scene.add(camera);
 const viewCamera = new THREE.PerspectiveCamera(58, 1, 0.02, 20);
 
 const fx = new Fx(world.scene);
+fx.groundAt = (x, z) => world.groundAt(x, z);
 const layer = new EntityLayer(world.scene);
 const sound = new Sound();
 const hud = new HUD();
@@ -236,6 +239,13 @@ const S = {
   eyeY: 1.6,
   needYawSync: false,
   lastPhase: null,
+  map: null,
+  mapKey: '',
+  round: null,
+  joinedAt: 0,
+  lastHs: 0,
+  buildFailAt: 0,
+  alarmLevel: 0,
   lastWeapon: null,
   lastSun: null,
   lastOwnState: null,
@@ -254,7 +264,7 @@ const S = {
   wasDriving: 0, // performance.now() of the last frame we were driving the mower
   fxAcc: 0,
 };
-let SLOTS = gardenSlots();
+let SLOTS = [];
 const CID = Math.random().toString(36).slice(2, 12) + performance.now().toString(36).replace('.', ''); // names this page to the server
 const myId = () => (net.id === null || net.id === undefined ? null : String(net.id));
 
@@ -282,6 +292,9 @@ function leaveGameView() {
   input.exitLock();
   hud.hide();
   hud.clearFeed();
+  hud.hideLoading();
+  S.loading = false;
+  buildCancel();
   layer.clear();
   world.hideSlot();
   sound.engineLevel(0);
@@ -289,6 +302,25 @@ function leaveGameView() {
 }
 
 const R = { room: null, you: null }; // the lobby we are in, from the latest lobbyState
+
+/** The welcome message carries the static map; build the level once and reset it at the start of every round. */
+function loadMap(state) {
+  const m = S.config.map;
+  if (!m || !m.terrain) return;
+  const key = `${m.terrain.data.length}:${m.terrain.data.slice(0, 48)}:${m.statics.length}:${(m.cover || []).length}`;
+  if (!S.map || S.mapKey !== key) {
+    S.mapKey = key;
+    S.map = new MapData(m, S.config.builds, null);
+    S.map.slots = S.config.gardenSlots || [];
+    world.setMap(S.map);
+    renderer.shadowMap.needsUpdate = true;
+  }
+  S.map.reset(state || null);
+  S.round = state && typeof state.round === 'number' ? state.round : null;
+  world.cover.reset();
+  world.cover.sync();
+  S.lastState = state || null;
+}
 
 function hello() {
   net.send({ t: 'listLobbies', cid: CID, name: profile.name }); // also lets the server put a reconnecting page back
@@ -315,9 +347,7 @@ net.on('welcome', (msg) => {
   if (Array.isArray(S.config.gardenSlots) && S.config.gardenSlots.length) {
     SLOTS = S.config.gardenSlots.filter((s) => s && Number.isFinite(s.x) && Number.isFinite(s.z) && typeof s.kind === 'string');
   }
-  if (S.config.world && !worldMatches(S.config.world)) {
-    console.warn('Server world layout differs from the built-in scenery; collisions may not match visuals.');
-  }
+  loadMap(msg.state);
   enterGame();
 });
 net.on('msg', (msg) => {
@@ -368,6 +398,9 @@ function enterGame() {
   S.lastSun = null;
   S.lastOwnState = null;
   S.introShown = false;
+  S.loading = true;
+  hud.showLoading(ruleText(S.team));
+  buildCancel();
   S.gotCam = false;
   S.eyeY = 1.6;
   S.wasDriving = 0;
@@ -450,8 +483,18 @@ function onSnap(snap) {
   const evs = Array.isArray(snap.events) ? snap.events : [];
   const me = myId();
   const now = performance.now();
+  // a new round without a new welcome (single-lobby dev servers): everything is back to full health
+  if (S.map && typeof snap.round === 'number' && S.round !== null && snap.round !== S.round) {
+    S.round = snap.round;
+    S.map.reset(null);
+    world.cover.reset();
+    world.cover.sync();
+    buildCancel();
+  } else if (typeof snap.round === 'number' && S.round === null) S.round = snap.round;
   for (const ev of evs) {
     if (!ev || typeof ev.type !== 'string') continue;
+    // static-map changes are applied to the data right away (the ghost needs them); their visuals follow with the delay below
+    if (S.map && (ev.type === 'coverHit' || ev.type === 'coverBreak' || ev.type === 'build')) S.map.onEvent(ev);
     // things about me react instantly
     if (ev.type === 'hit' && me !== null) {
       if (ev.by !== null && ev.by !== undefined && String(ev.by) === me && String(ev.id) !== me) {
@@ -500,6 +543,7 @@ function recPos(id) {
 }
 
 function runEvent(ev) {
+  const me = myId();
   const line = feedLine(ev);
   if (line) hud.feed(line);
   const x = num(ev.x, NaN), z = num(ev.z, NaN);
@@ -616,10 +660,76 @@ function runEvent(ev) {
       sfx('wave');
       break;
     }
+    case 'coverHit': {
+      world.cover.onEvent(ev);
+      if (pos) fx.hit(pos.x, 1, pos.z, 0xe0e0e0);
+      sfx('thunk', pos, 0.8, 90);
+      break;
+    }
+    case 'coverBreak': {
+      const d = world.cover.onEvent(ev);
+      if (d) {
+        fx.debris(d.kind, d.x, d.y, d.z);
+        sfx(d.kind === 'door' ? 'doorbreak' : 'crunch', d, d.kind === 'door' ? 1 : 0.9, 80);
+      }
+      if (ev.kind === 'door') hud.toast('A door broke! Zombies can get in!', 2400);
+      break;
+    }
+    case 'build': {
+      world.cover.onEvent(ev);
+      const b = S.map && S.map.placed.get(ev.id);
+      if (b) {
+        const cx = b.x + b.w / 2, cz = b.z + b.d / 2;
+        fx.buildPuff(cx, world.groundAt(cx, cz), cz);
+        sfx('build', { x: cx, y: 1, z: cz }, 0.9, 60);
+      }
+      break;
+    }
+    case 'buildFail':
+      if (me !== null && String(ev.by) === me && performance.now() - S.buildFailAt > 400) {
+        S.buildFailAt = performance.now();
+        hud.toast(BUILD_FAIL[ev.reason] || "Can't build there!", 1800);
+        sfx('hurt', null, 0.5);
+      }
+      break;
+    case 'install': {
+      if (have) fx.install(x, 1.1, z);
+      sfx('install', pos, 1, 80);
+      if (me !== null && String(ev.id) === me) hud.toast(ev.target === 'mower' ? `${PART_INFO[ev.part]?.name || 'Part'} is in the mower!` : `${itemInfo(ev.target).name} is powered! Press E to grab it`, 3000);
+      break;
+    }
+    case 'partTake': {
+      const p = recPos(ev.id);
+      sfx('pickup', p, 0.9, 80);
+      if (me !== null && String(ev.id) === me) hud.toast(`You got the ${PART_INFO[ev.part]?.name || 'part'}! Take it to the mower or a tool hook in the garage`, 3600);
+      break;
+    }
+    case 'partDrop': {
+      if (have) fx.sparkle(x, y + 0.8, z, 0xfff59d, 6, 0.8);
+      sfx('drop', pos, 0.7, 100);
+      if (me !== null && String(ev.id) === me && ev.reason === 'shot') hud.toast('Ouch! You dropped the part!', 2000);
+      break;
+    }
+    case 'release':
+      hud.banner('ZOMBIES COME OUT!', 'Guard the doors and the fridge!', 'wave');
+      sfx('release');
+      break;
+    case 'fridgeAlarm':
+      sfx('wave', pos, 0.6);
+      break;
     default:
       break;
   }
 }
+
+const BUILD_FAIL = {
+  cost: 'Not enough to build that yet!',
+  cap: 'You have too many forts standing already!',
+  spot: "That's not a good spot to build!",
+  far: 'Too far away to build there!',
+  blocked: 'Something is in the way (doors, gardens and the house need room)!',
+  busy: 'Somebody is standing there!',
+};
 
 /* ------------------------------------------------------------------ */
 /* planting helpers                                                    */
@@ -628,11 +738,6 @@ function runEvent(ev) {
 const PLANT_RANGE = 4;
 const plantInfo = (kind) => plantList(S.config).find((p) => p.id === kind) || null;
 const plantName = (kind) => (plantInfo(kind) ? plantInfo(kind).name : 'Plant');
-function worldMatches(w) {
-  const same = (a, b, keys) => !a || !b || keys.every((k) => a[k] === b[k]);
-  return same(w.house, LAYOUT.house, ['minX', 'maxX', 'minZ', 'maxZ']) && same(w.garage, LAYOUT.garage, ['minX', 'maxX', 'minZ', 'maxZ', 'doorMinX', 'doorMaxX'])
-    && same(w.bounds, LAYOUT.bounds, ['minX', 'maxX', 'minZ', 'maxZ']);
-}
 
 /** Nearest empty garden slot within planting range (any plant fits any slot). */
 function nearestEmptySlot(entities, px, pz) {
@@ -672,6 +777,152 @@ function onPlantKey(n) {
     sfx('hurt', null, 0.5);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* building: B opens the wheel, a digit (or a tap) picks, the ghost follows the crosshair on the 1 m grid */
+/* ------------------------------------------------------------------ */
+
+const B = { active: false, kind: 0, rot: 0, wallnut: 0, last: null };
+const BUILD_ICONS = { hedgewall: '\u{1F33F}', fence: '\u{1F6A7}', tombwall: '\u{1F9F1}', junk: '\u{1F6E2}\uFE0F', cantower: '\u{1F5D1}\uFE0F', wallnut: '\u{1F330}' };
+
+/** The wheel: the team's build kinds (plants get the Wall-nut as a last slot: it is still a plant). */
+function buildWheelItems(team, own) {
+  if (!S.map) return [];
+  const list = S.map.listFor(team);
+  const unit = team === 'zombie' ? '\u{1F9E0}' : '\u2600\uFE0F';
+  const have = team === 'zombie' ? num(own.brains, 0) : num(own.sunshine, 0);
+  const items = list.map((d, i) => ({ n: i + 1, icon: BUILD_ICONS[d.id] || '\u{1F9F1}', name: d.name, cost: d.cost, unit, ok: have >= d.cost }));
+  if (team !== 'zombie') {
+    const wn = plantList(S.config).find((p) => p.id === 'wallnut');
+    if (wn) items.push({ n: list.length + 1, icon: BUILD_ICONS.wallnut, name: wn.name, cost: wn.cost, unit, ok: num(own.tier, 0) >= wn.tier && have >= wn.cost });
+  }
+  return items;
+}
+
+function buildSync() {
+  input.buildActive = B.active;
+  input.buildKind = B.kind;
+}
+
+function buildCancel() {
+  B.active = false;
+  B.kind = 0;
+  B.rot = 0;
+  buildSync();
+  hud.setBuildWheel(null);
+  hud.setBuildBar('', '');
+  if (world.cover) world.cover.setGhost(null);
+}
+
+function buildToggle() {
+  if (!S.joined || !lastView || !lastView.self) return;
+  const own = lastView.self;
+  if (own.state === 'wilted' || own.state === 'sprout' || !S.map) return;
+  if (B.active) {
+    buildCancel();
+    return;
+  }
+  if (S.team === 'zombie' && lastView.snap && num(lastView.snap.headStart, 0) > 0) {
+    hud.toast('You can build once the gate opens!', 1800);
+    return;
+  }
+  B.active = true;
+  B.kind = 0;
+  buildSync();
+  sfx('click');
+}
+
+function buildPick(n) {
+  if (!B.active || !lastView || !lastView.self) return;
+  const own = lastView.self;
+  const items = buildWheelItems(S.team, own);
+  const it = items.find((x) => x.n === n);
+  if (!it) return;
+  const list = S.map.listFor(S.team);
+  if (n <= list.length) {
+    B.kind = n;
+    B.rot = 0;
+    buildSync();
+    sfx('click');
+    return;
+  }
+  // the Wall-nut is a plant: plant it in the nearest empty garden spot (key = its seed number)
+  const key = plantList(S.config).findIndex((p) => p.id === 'wallnut') + 1;
+  buildCancel();
+  if (key > 0) {
+    input._plant(key);
+  }
+}
+
+function buildScroll(dir) {
+  if (!B.active || !lastView || !lastView.self) return;
+  const count = buildWheelItems(S.team, lastView.self).length;
+  if (!count) return;
+  if (B.kind === 0) buildPick(dir > 0 ? 1 : count);
+  else if (B.kind <= S.map.listFor(S.team).length) {
+    const lim = S.map.listFor(S.team).length;
+    B.kind = ((B.kind - 1 + dir + lim) % lim) + 1;
+    B.rot = 0;
+    buildSync();
+  }
+}
+
+function buildRotate() {
+  if (!B.active || !B.kind) return;
+  B.rot ^= 1;
+  sfx('tick');
+}
+
+function buildPlace() {
+  if (!B.active || !B.kind || !B.last) return;
+  if (!B.last.ok) {
+    hud.toast(BUILD_FAIL[B.last.reason] || "Can't build there!", 1500);
+    sfx('hurt', null, 0.5);
+    return;
+  }
+  input.builder.press(B.kind, B.last.gx, B.last.gz, B.rot);
+}
+
+/** Per frame while a build is selected: where the ghost goes and whether it may. */
+function buildFrame(own, entities) {
+  const team = S.team;
+  const list = S.map.listFor(team);
+  const def = list[B.kind - 1];
+  if (!def) {
+    B.last = null;
+    return;
+  }
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+  const eye = camera.position;
+  const reach = S.map.builds.reach;
+  const hit = S.map.rayGround(eye.x, eye.y, eye.z, f.x, f.y, f.z, reach + 8);
+  const tx = hit ? hit.x : eye.x + f.x * 7;
+  const tz = hit ? hit.z : eye.z + f.z * 7;
+  const { gx, gz } = S.map.cellFor(def, B.rot, tx, tz);
+  const others = [];
+  for (const e of entities.values()) if ((e.kind === 'player' || e.kind === 'bot' || e.kind === 'garden') && e.state !== 'dead') others.push({ x: e.x, z: e.z, radius: e.radius ?? (e.kind === 'garden' ? 0.6 : 0.5) });
+  const me = { x: own.x, z: own.z };
+  const pl = S.map.placement(def, gx, gz, B.rot, me, others.filter((o) => Math.hypot(o.x - own.x, o.z - own.z) > 0.01));
+  const have = team === 'zombie' ? num(own.brains, 0) : num(own.sunshine, 0);
+  let mine = 0;
+  for (const b of S.map.placed.values()) if (b.alive && String(b.by) === myId()) mine++;
+  let reason = pl.ok ? null : pl.reason;
+  if (pl.ok && have < def.cost) reason = 'cost';
+  else if (pl.ok && mine >= S.map.builds.maxPerPlayer) reason = 'cap';
+  const ok = !reason;
+  B.last = { gx, gz, ok, reason };
+  const cx = (pl.rect.minX + pl.rect.maxX) / 2, cz = (pl.rect.minZ + pl.rect.maxZ) / 2;
+  world.cover.setGhost(def, pl.rect, ok, S.map.supportY(cx, cz, 5) - 0.02);
+  const unit = team === 'zombie' ? 'brains' : 'sunshine';
+  const hint = isTouch() ? 'Tap PLACE \u2022 TURN spins it \u2022 BACK cancels' : 'Click to build \u2022 R turns it \u2022 B cancels';
+  hud.setBuildBar(`${def.name}  (${def.cost} ${unit})`, ok ? hint : (BUILD_FAIL[reason] || "Can't build there!"), !ok);
+}
+
+input.onBuildToggle = buildToggle;
+input.onBuildPick = buildPick;
+input.onBuildPlace = buildPlace;
+input.onBuildRotate = buildRotate;
+input.onBuildScroll = buildScroll;
 
 /* ------------------------------------------------------------------ */
 /* lobby backdrop: a cozy stage with a few friends                      */
@@ -727,6 +978,7 @@ function setLobbyFraming(on) {
 }
 window.addEventListener('resize', () => { const on = lobbyFraming; lobbyFraming = !on; setLobbyFraming(on); });
 
+const groundFn = (x, z, y) => (world.map ? world.map.supportY(x, z, y) : 0);
 let lastMs = performance.now();
 const camTarget = new THREE.Vector3();
 
@@ -780,6 +1032,11 @@ function frame() {
     camera.position.set(...dbg.cam.pos);
     camera.lookAt(...dbg.cam.look);
   }
+  if (dbg.freecam) {
+    // test hook: park the camera anywhere (screenshots of the whole map)
+    camera.position.set(...dbg.freecam.pos);
+    camera.lookAt(...dbg.freecam.look);
+  }
   camera.updateMatrixWorld();
 
   // ---- movement speed estimate (view bob)
@@ -807,7 +1064,7 @@ function frame() {
   world.setTime(skyT, dt);
   world.update(dt, camera, nowMs);
 
-  layer.sync(entities, id, { t, dt, camera });
+  layer.sync(entities, id, { t, dt, camera, ground: groundFn });
   handleLayerChanges();
 
   if (inRound) gameplayFrame(dt, t, nowMs, own, snap, entities);
@@ -848,7 +1105,9 @@ function frame() {
   sound.setListener(camera.position.x, camera.position.y, camera.position.z, input.yaw);
 
   renderer.clear();
+  renderer.info.reset();
   renderer.render(world.scene, camera);
+  S.stats = { calls: renderer.info.render.calls, triangles: renderer.info.render.triangles };
   if (vm.root.visible) {
     renderer.clearDepth();
     renderer.render(world.viewScene, viewCamera);
@@ -909,8 +1168,32 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   if (!S.introShown && alive && snap && snap.phase === 'playing') {
     S.introShown = true;
     hud.toast(team === 'plant'
-      ? 'Shoot the zombies! Stand by an empty garden spot and press 1 or 2 to plant. Press U by a plant to level it up!'
-      : 'Head for the garage on the right: hold E by the mower, or press E at the rack to grab a tool!', 6000);
+      ? 'Quick! Stand by an empty garden spot and press 1 or 2 to plant. Press B to build a fort!'
+      : 'Wait for the gate to open, then break a door and raid the fridge! Press B to build a fort.', 6000);
+  }
+  // fade the loading screen out once we are really playing
+  if (S.loading && performance.now() - S.joinAt > 1800) {
+    S.loading = false;
+    hud.hideLoading();
+  }
+
+  // the world reacts to the round: the gate swings open when the head start ends, the fridge door when zombies come
+  const fr = snap && snap.fridge ? snap.fridge : null;
+  const hs = snap ? num(snap.headStart, 0) : 0;
+  world.state.fridgeN = fr ? num(fr.n, 0) : 0;
+  world.state.gateOpen = !(hs > 0);
+  if (hs > 0) {
+    const sec = Math.ceil(hs);
+    if (sec !== S.lastHs && sec <= 3) sfx('countdown', null, 0.8);
+    S.lastHs = sec;
+  }
+  {
+    const f = S.config.map && S.config.map.fridge;
+    const n = fr ? num(fr.n, 0) : 0;
+    const d = f ? Math.hypot(f.x - camera.position.x, f.z - camera.position.z) : 99;
+    const want = n > 0 ? clamp(1.1 - d / 50, 0.2, 1) : 0;
+    S.alarmLevel += (want - S.alarmLevel) * Math.min(1, dt * 6);
+    sound.loopLevel('alarm', S.alarmLevel);
   }
 
   const held = alive && typeof own.item === 'string' && own.item ? own.item : null;
@@ -936,12 +1219,21 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   let nearSlotInfo = null;
   let mower = null;
   let rackNear = null, rackNearD = Infinity, rackWait = null, rackWaitD = Infinity;
+  let unpowered = null, unpoweredD = Infinity, partNear = null, partNearD = Infinity, carryRack = null, carryRackD = Infinity;
   const rackRange = num(S.config.rackUseRange, 2);
+  const carrying = typeof own.carry === 'string' && PART_INFO[own.carry] ? own.carry : null;
   for (const e of entities.values()) {
     if (e.kind === 'mower') mower = e;
-    else if (e.kind === 'rack_item' && team === 'zombie') {
+    else if (e.kind === 'part' && team === 'zombie') {
       const d = Math.hypot(e.x - own.x, e.z - own.z);
-      if (e.available !== false) { if (d < rackNearD) { rackNearD = d; rackNear = e; } }
+      if (d < partNearD && Math.abs(num(e.y, 0) - num(own.y, 0)) < 1.8) { partNearD = d; partNear = e; }
+    } else if (e.kind === 'rack_item' && team === 'zombie') {
+      const d = Math.hypot(e.x - own.x, e.z - own.z);
+      if (e.powered === false) {
+        if (d < unpoweredD) { unpoweredD = d; unpowered = e; }
+        const need = S.config.equipment && S.config.equipment[e.itemId] && S.config.equipment[e.itemId].needs;
+        if (carrying && need === carrying && d < carryRackD) { carryRackD = d; carryRack = e; }
+      } else if (e.available !== false) { if (d < rackNearD) { rackNearD = d; rackNear = e; } }
       else if (d < rackWaitD) { rackWaitD = d; rackWait = e; }
     }
   }
@@ -966,7 +1258,33 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
           mowerHud = { hp: num(mower.hp, 0), maxHp: num(mower.maxHp, 40) };
         }
       }
+      // parts and doors
+      let extra = '';
+      const PI2 = PART_INFO;
+      const missing = mower && mower.parts !== undefined ? ['battery', 'gas', 'plug'].filter((k, i) => !(num(mower.parts, 0) & (1 << i))) : [];
+      if (carrying) {
+        if (mower && mower.state !== 'destroyed' && missing.includes(carrying) && dm <= num(S.config.mowerUseRange, 2.5) + 0.3) extra = `Press E to put the ${PI2[carrying].name} in the mower!`;
+        else if (carryRack && carryRackD <= rackRange) extra = `Press E to put the ${PI2[carrying].name} in the ${itemInfo(carryRack.itemId).name}!`;
+      } else if (!held) {
+        if (partNear && partNearD <= num(S.config.parts && S.config.parts.pickRange, 1.8) + 0.4) extra = `Press E to pick up the ${PI2[partNear.partKind]?.name || 'part'}!`;
+        else if (unpowered && unpoweredD <= rackRange + 0.8) {
+          const need = S.config.equipment && S.config.equipment[unpowered.itemId] && S.config.equipment[unpowered.itemId].needs;
+          extra = `The ${itemInfo(unpowered.itemId).name} needs a ${PI2[need]?.name || 'part'} first! Search the garage, basement, shed and yard`;
+        } else if (mower && mower.state === 'idle' && dm < 3.6 && missing.length) extra = `The mower needs: ${missing.map((k) => PI2[k].icon + ' ' + PI2[k].name).join(', ')}`;
+      }
+      if (!extra && !held && S.map) {
+        for (const d of S.map.doors.values()) {
+          if (!d.alive) continue;
+          const dd = Math.hypot((d.def.minX + d.def.maxX) / 2 - own.x, (d.def.minZ + d.def.maxZ) / 2 - own.z);
+          if (dd < 7) { extra = 'Shoot the door down to get in!'; break; }
+        }
+      }
+      if (!extra && fr && num(fr.n, 0) > 0 && S.config.map) {
+        const f = S.config.map.fridge;
+        if (Math.hypot(f.x - own.x, f.z - own.z) < f.radius + 0.6) extra = 'The fridge! Stay close and the snack bar keeps filling!';
+      }
       if (drivingMine) prompt = mowerPrompt;
+      else if (extra) prompt = extra;
       else if (held) {
         if (mowerPrompt && mower.state === 'idle') prompt = mowerPrompt;
         else {
@@ -1014,7 +1332,24 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   hud.setPrompt(prompt);
   S.nearSlot = nearSlotInfo;
 
-  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked || input.menuOpen, nearSlot: nearSlotInfo, mower: mowerHud });
+  // doors left standing and the mower's parts (HUD)
+  let doorsAlive = 0;
+  if (S.map) for (const d of S.map.doors.values()) if (d.alive) doorsAlive++;
+  const partsHud = { mask: mower ? num(mower.parts, 0) : 0, carry: typeof own.carry === 'string' && PART_INFO[own.carry] ? { kind: own.carry, text: `Carrying: ${PART_INFO[own.carry].icon} ${PART_INFO[own.carry].name} \u2014 press E at a hook or the mower` } : null };
+  hud.update({ own, snap, config: S.config, now: nowMs, locked: input.locked || input.menuOpen, nearSlot: nearSlotInfo, mower: mowerHud, doors: { alive: doorsAlive, total: S.map ? S.map.doors.size : 4 }, parts: partsHud });
+
+  // building: the wheel, or the ghost
+  if (B.active && (!alive || !playing)) buildCancel();
+  else if (B.active && S.map) {
+    if (!B.kind) {
+      hud.setBuildWheel(buildWheelItems(team, own), 0, isTouch() ? 'Tap one' : 'Pick 1-' + buildWheelItems(team, own).length + ' \u2022 B closes');
+      hud.setBuildBar('', '');
+      world.cover.setGhost(null);
+    } else {
+      hud.setBuildWheel(null);
+      buildFrame(own, entities);
+    }
+  }
 
   entityEffects(dt, nowMs, entities, own, usingSelf);
 }

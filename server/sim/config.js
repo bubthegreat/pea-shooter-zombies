@@ -112,10 +112,10 @@ export const DEFAULT_CONFIG = {
   rackUseRange: 2,
   rackRespawn: 20, // an item is back on its hook this many seconds after a drop / wreck / conversion
   rack: [
-    { item: 'weed_eater', x: 11.2, z: 21.2 },
-    { item: 'leaf_blower', x: 13.6, z: 21.2 },
-    { item: 'hedge_trimmer', x: 16.0, z: 21.2 },
-    { item: 'wheelbarrow', x: 18.4, z: 21.2 },
+    { item: 'weed_eater', x: 11.2, z: 20.8 },
+    { item: 'leaf_blower', x: 13.6, z: 20.8 },
+    { item: 'hedge_trimmer', x: 16.0, z: 20.8 },
+    { item: 'wheelbarrow', x: 18.4, z: 20.8 },
   ],
   equipment: {
     weed_eater: {
@@ -331,6 +331,7 @@ function publicMap() {
     doorPieces: MAP.doors.map(compact),
     cover: MAP.cover.map(compact),
     partSpots: MAP.partSpots,
+    noBuild: MAP.noBuild,
   };
   return mapCache;
 }

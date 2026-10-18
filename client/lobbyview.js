@@ -33,3 +33,13 @@ export function waitText(room, you) {
   if (room.host === you) return 'You are the host. Press Start when everyone is ready!';
   return `Waiting for ${room.hostName || 'the host'} to start…`;
 }
+
+/** The one-sentence rules shown on the loading screen and in the waiting room. */
+export const RULES = {
+  zombie: 'Break into the house and raid the fridge!',
+  plant: 'Plant your garden, guard every door, and hold on until sunrise!',
+};
+
+export function ruleText(team) {
+  return RULES[team === 'zombie' ? 'zombie' : 'plant'];
+}

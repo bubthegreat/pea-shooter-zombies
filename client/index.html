@@ -19,6 +19,16 @@
 <body>
 <canvas id="game"></canvas>
 
+<!-- ============ loading screen with the one-sentence rules ============ -->
+<div id="loading" class="hidden">
+  <div class="card load-card">
+    <h2>Backyard Battle</h2>
+    <p id="loadrule" class="loadrule"></p>
+    <div class="loadteams"><span class="plant">&#127803; <b>Plants:</b> Plant your garden, guard every door, and hold on until sunrise!</span><span class="zombie">&#129503; <b>Zombies:</b> Break into the house and raid the fridge!</span></div>
+    <div id="loadmsg" class="loadmsg">Loading the backyard&hellip;</div>
+  </div>
+</div>
+
 <!-- ============ in-game HUD ============ -->
 <div id="hud" class="hidden">
   <div id="vignette"></div>
@@ -33,7 +43,26 @@
   </div>
 
   <div id="gardenbox"><span class="ico">&#127793;</span> Garden <b id="gardencount">0</b></div>
+  <div id="doorsbox"><span class="ico">&#128682;</span> Doors <b id="doorcount">4</b>/4</div>
   <div id="sunbox" class="hidden"><span class="ico">&#9728;&#65039;</span> <b id="suncount">0</b></div>
+  <div id="brainsbox" class="hidden"><span class="ico">&#129504;</span> <b id="brainscount">0</b></div>
+
+  <div id="fridgebox" title="Zombies win when the fridge is empty!">
+    <div id="fridgeico">&#127828;</div>
+    <div id="fridgetrack"><div id="fridgefill"></div><span id="fridgetext">Snacks left 100%</span></div>
+  </div>
+  <div id="countdown" class="hidden"><div id="cdtitle"></div><div id="cdnum"></div><div id="cdsub"></div></div>
+
+  <div id="partsbox" class="hidden">
+    <div id="partsline"><span class="plabel">Mower</span><span class="pt" id="pt-battery" title="Battery">&#128267;</span><span class="pt" id="pt-gas" title="Gas Can">&#9981;</span><span class="pt" id="pt-plug" title="Spark Plug">&#128268;</span></div>
+    <div id="partscarry" class="hidden"></div>
+  </div>
+
+  <div id="buildwheel" class="hidden" role="menu" aria-label="Build menu">
+    <div id="bwring"></div>
+    <div id="bwhelp"></div>
+  </div>
+  <div id="buildbar" class="hidden"><span id="buildname"></span><small id="buildhint"></small></div>
 
   <div id="seedcards" class="hidden"></div>
 
@@ -71,11 +100,13 @@
     <div><b>W A S D</b> move &nbsp; <b>Space</b> jump</div>
     <div><b>Mouse</b> look &nbsp; <b>Click</b> shoot</div>
     <div class="plantonly"><b>1-9</b> plant a seed from the bar &nbsp; <b>U</b> upgrade the plant you stand by</div>
+    <div><b>B</b> build a fort &nbsp; <b>R</b> turn it &nbsp; <b>Click</b> place</div>
     <div class="plantonly">Shoot zombies to turn them into plants &mdash; kills unlock new plants to grow!</div>
     <div class="plantonly">Aim at the head for a <b>HEADSHOT!</b></div>
-    <div class="zombieonly"><b>E</b> grab a garage tool / start the mower / hop off</div>
+    <div class="zombieonly"><b>E</b> pick up a part, put it in the mower or a tool, grab a tool / start the mower / hop off</div>
     <div class="zombieonly"><b>Q</b> put the tool down</div>
-    <div class="zombieonly">Squash or shred every plant. Dodge the glowing shots!</div>
+    <div class="zombieonly">Break down a door, reach the fridge and stay there! Dodge the glowing shots!</div>
+    <div class="plantonly">Plant a garden at every door and keep the zombies away from the fridge!</div>
     <div><b>O</b> settings (name, look speed)</div>
     <div class="dim"><b>H</b> hide this &nbsp; <b>M</b> sound &nbsp; <b>Esc</b> free mouse</div>
   </div>
@@ -161,6 +192,7 @@
 
     <div class="g-team">
       <div class="label">Your team</div>
+      <div id="roomrule" class="rulebox"></div>
       <div class="row" id="roomteamrow">
         <button type="button" class="choice team plant" data-team="plant"><span class="big">&#127803;</span><span class="nm">Plants</span></button>
         <button type="button" class="choice team zombie" data-team="zombie"><span class="big">&#129503;</span><span class="nm">Zombies</span></button>

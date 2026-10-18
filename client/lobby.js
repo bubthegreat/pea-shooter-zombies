@@ -2,7 +2,7 @@
 // Everything players type (names, lobby names) goes onto the page with textContent only, never as HTML.
 import { profile } from './profile.js';
 import { cleanLobbyName } from './text.js';
-import { modeLabel, diffLabel, teamLabel, playersText, statusText, detailText, waitText } from './lobbyview.js';
+import { modeLabel, diffLabel, teamLabel, playersText, statusText, detailText, waitText, ruleText } from './lobbyview.js';
 
 const $ = (id) => document.getElementById(id);
 const ICON = { plant: String.fromCodePoint(0x1f33b), zombie: String.fromCodePoint(0x1f9df), crown: String.fromCodePoint(0x1f451) };
@@ -240,6 +240,8 @@ export class Lobby {
       row.append(el('span', `pteam ${p.team === 'zombie' ? 'zombie' : 'plant'}`, teamLabel(p.team)));
       box.appendChild(row);
     }
+    const mine = room.players.find((p) => p.id === this.you);
+    setText($('roomrule'), ruleText(mine ? mine.team : this.choice.team));
     $('hostctl').classList.toggle('hidden', !isHost || room.status !== 'waiting');
     setText($('waitmsg'), waitText(room, this.you));
     $('waitmsg').classList.toggle('hidden', isHost && room.status === 'waiting');

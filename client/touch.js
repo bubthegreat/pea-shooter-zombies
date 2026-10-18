@@ -56,6 +56,7 @@ export function mobilize(text) {
     .replace(/\b(press|tap) 1(?: or |-)[2-9] to plant\b/gi, (_, w) => `${tap(w)} a seed card to plant`)
     .replace(/\b(press) ([1-9]) to plant\b/gi, (_, w, n) => `${tap(w)} ${plantList(null)[n - 1].icon} to plant`)
     .replace(/\b([Pp]ress) U\b/g, (_, w) => `${tap(w)} UPGRADE`)
+    .replace(/\b([Pp]ress) B\b/g, (_, w) => `${tap(w)} BUILD`)
     .replace(/\b([Pp]ress) E\b/g, (_, w) => `${tap(w)} USE`)
     .replace(/\b([Pp]ress) Q\b/g, (_, w) => `${tap(w)} DROP`)
     .replace(/\bE\b/g, 'USE')
@@ -78,6 +79,10 @@ const UI_HTML = `
   <div id="tc-use" class="tc-btn small hidden" data-act="use"><b>&#9995;</b><span>USE</span></div>
   <div id="tc-drop" class="tc-btn small hidden" data-act="drop"><b>&#11015;&#65039;</b><span>DROP</span></div>
   <div id="tc-up" class="tc-btn small hidden" data-act="upgrade"><b>&#11088;</b><span>UPGRADE</span></div>
+  <div id="tc-build" class="tc-btn small" data-tap="build"><b>&#129521;</b><span>BUILD</span></div>
+  <div id="tc-place" class="tc-btn small hidden" data-tap="place"><b>&#9989;</b><span>PLACE</span></div>
+  <div id="tc-rotate" class="tc-btn small hidden" data-tap="rotate"><b>&#128260;</b><span>TURN</span></div>
+  <div id="tc-cancel" class="tc-btn small hidden" data-tap="cancel"><b>&#10006;&#65039;</b><span>BACK</span></div>
 `;
 
 export class TouchControls {
@@ -91,7 +96,7 @@ export class TouchControls {
     this.stick = null; // { id, ox, oy, r, ex, ey }
     this.holds = {}; // act -> { ids: Set, t0, timer, el }
     this.prompt = '';
-    this._shown = { use: null, drop: null, up: null, attn: null, upattn: null };
+    this._shown = { use: null, drop: null, up: null, attn: null, upattn: null, build: null, place: null, rotate: null, cancel: null };
     this.wake = null;
 
     if (isTouch()) this.enable();
@@ -131,6 +136,7 @@ export class TouchControls {
     this.el = {
       stick: $('tc-stick'), knob: $('tc-knob'), rest: $('tc-rest'),
       fire: $('tc-fire'), jump: $('tc-jump'), use: $('tc-use'), drop: $('tc-drop'), upgrade: $('tc-up'),
+      build: $('tc-build'), place: $('tc-place'), rotate: $('tc-rotate'), cancel: $('tc-cancel'),
     };
     for (const act of ['fire', 'jump', 'use', 'drop', 'upgrade']) this.holds[act] = { ids: new Set(), t0: 0, timer: 0, el: this.el[act] };
 
@@ -293,6 +299,12 @@ export class TouchControls {
       this.el.use.classList.toggle('attn', attn);
     }
     // plant kids: the UPGRADE button shows while the prompt offers an affordable level-up ("Press U to upgrade ...")
+    // build: the BUILD button is always there; once a build is picked PLACE / TURN appear, BACK while the wheel or a build is up
+    const building = !!this.input.buildActive;
+    this._toggle('build', this.el.build, !building);
+    this._toggle('place', this.el.place, building && !!this.input.buildKind);
+    this._toggle('rotate', this.el.rotate, building && !!this.input.buildKind);
+    this._toggle('cancel', this.el.cancel, building);
     const wantsUp = own.team === 'plant' && /\bPress U\b/.test(this.prompt);
     this._toggle('up', this.el.upgrade, wantsUp);
     if (this._shown.upattn !== wantsUp) {
@@ -322,9 +334,18 @@ export class TouchControls {
     this._prune(e);
     if (!this._live()) return;
     for (const t of e.changedTouches) {
-      const tgt = t.target && t.target.closest ? t.target.closest('[data-act], .tc-zone') : null;
+      const tgt = t.target && t.target.closest ? t.target.closest('[data-act], [data-tap], .tc-zone') : null;
       if (!tgt) continue;
-      if (tgt.dataset.act) this._press(tgt.dataset.act, t);
+      if (this.input.buildActive && !this.input.buildKind && !tgt.dataset.tap) {
+        // the build wheel is up: a finger on one of its buttons picks it (the look zone is on top of the wheel)
+        const hit = document.elementsFromPoint(t.clientX, t.clientY).find((n) => n.classList && n.classList.contains('bw-item'));
+        if (hit && this.input.onBuildPick) {
+          this.input.onBuildPick(Number(hit.dataset.n));
+          continue;
+        }
+      }
+      if (tgt.dataset.tap) this._tap(tgt.dataset.tap, tgt);
+      else if (tgt.dataset.act) this._press(tgt.dataset.act, t);
       else if (tgt.id === 'tc-move') this._stickStart(t);
       else this.touches.set(t.identifier, { kind: 'look', x: t.clientX, y: t.clientY });
     }
@@ -415,6 +436,16 @@ export class TouchControls {
   }
 
   /* ---- buttons */
+
+  /** One-shot buttons (build, place, turn, back): they act on touch start. */
+  _tap(name, el) {
+    const inp = this.input;
+    if (name === 'build' || name === 'cancel') { if (inp.onBuildToggle) inp.onBuildToggle(); }
+    else if (name === 'place') { if (inp.onBuildPlace) inp.onBuildPlace(); }
+    else if (name === 'rotate') { if (inp.onBuildRotate) inp.onBuildRotate(); }
+    el.classList.add('down');
+    setTimeout(() => el.classList.remove('down'), 140);
+  }
 
   _setAct(act, v) {
     const inp = this.input;

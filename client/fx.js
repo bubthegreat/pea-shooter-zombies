@@ -66,6 +66,7 @@ export class Fx {
     this.alpha = new Float32Array(N_PART);
     this.col = new Float32Array(N_PART * 3);
     this.head = 0;
+    this.groundAt = null; // (x, z) => terrain height: particles rest on the ground, not at y = 0
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.px, 3).setUsage(THREE.DynamicDrawUsage));
     geo.setAttribute('size', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
@@ -218,6 +219,41 @@ export class Fx {
     this.dust(x, y - 0.2, z, 0xb08a5a, big ? 9 : 4);
   }
 
+  /** Cover / door / build breaks: chunks and a puff in the colours of the thing. */
+  debris(kind, x, y, z) {
+    const sets = {
+      gravestone: [[0xb9c1c9, 0x8f99a2, 0xcfd8dc], 0xaab4bc, 12],
+      rock: [[0x9aa5ae, 0x7a858e, 0xb0bac2], 0x9aa5ae, 16],
+      tree: [[0x4caf50, 0x66bb6a, 0x8d5a2b, 0x7ac74f], 0x7aa85a, 22],
+      hedge: [[0x3a9a48, 0x56b85f, 0x2e7d32], 0x4caf50, 16],
+      hedgewall: [[0x3a9a48, 0x56b85f, 0x2e7d32], 0x4caf50, 14],
+      trashcan: [[0x78909c, 0x546e7a, 0xcfd8dc], 0x90a4ae, 10],
+      cantower: [[0x78909c, 0x546e7a, 0xcfd8dc], 0x90a4ae, 14],
+      picnic: [[0xc49a6c, 0xa87a4c, 0xef5350], 0xb08a5a, 14],
+      pool: [[0x4fc3f7, 0xff8a65, 0xb3e5fc], 0x81d4fa, 12],
+      shedwall: [[0xb98a5a, 0x8d5a2b, 0xd9b27c], 0xb08a5a, 16],
+      fence: [[0xd9b27c, 0xb98a5a, 0xe6c592], 0xb08a5a, 14],
+      door: [[0xa9774a, 0x8d5a2b, 0xd9b27c, 0xffffff], 0xb08a5a, 22],
+      tombwall: [[0x9aa5ae, 0x7e8a93, 0xb6c0c8], 0xaab4bc, 14],
+      junk: [[0xef5350, 0x42a5f5, 0xffca28, 0x8d6e63], 0xb08a5a, 14],
+    };
+    const [colors, puff, n] = sets[kind] || sets.rock;
+    this.leafBurst(x, y, z, n, colors, 6.5, 6, 0.75);
+    this.dust(x, y - 0.4, z, puff, 10);
+  }
+
+  /** A part clicks into place. */
+  install(x, y, z) {
+    this.sparkle(x, y, z, 0xfff59d, 12, 1.4);
+    this.dust(x, y - 0.4, z, 0xcfd8dc, 4);
+  }
+
+  /** A fort goes up: dust and a few leaves around its feet. */
+  buildPuff(x, y, z) {
+    this.dust(x, y, z, 0xb08a5a, 10);
+    this.leafBurst(x, y + 0.4, z, 5, [0x8bd450, 0xc8955a], 3, 3, 0.6);
+  }
+
   /** Mower conks out: sputtering black smoke, a few sparks. */
   mowerBoom(x, y, z) {
     for (let i = 0; i < 14; i++) {
@@ -334,7 +370,10 @@ export class Fx {
       const d = Math.max(0, 1 - this.drag[i] * dt);
       this.vel[k] *= d; this.vel[k + 1] = this.vel[k + 1] * d + this.grav[i] * dt; this.vel[k + 2] *= d;
       this.px[k] += this.vel[k] * dt; this.px[k + 1] += this.vel[k + 1] * dt; this.px[k + 2] += this.vel[k + 2] * dt;
-      if (this.px[k + 1] < 0.02) this.px[k + 1] = 0.02;
+      if (this.px[k + 1] < 4) {
+        const floor = (this.groundAt ? this.groundAt(this.px[k], this.px[k + 2]) : 0) + 0.02;
+        if (this.px[k + 1] < floor) this.px[k + 1] = floor;
+      }
       const f = a / this.life[i];
       this.size[i] = this.s0[i] + (this.s1[i] - this.s0[i]) * f;
       this.alpha[i] = this.a0[i] * (1 - f) * (f < 0.1 ? f * 10 : 1);
@@ -358,7 +397,8 @@ export class Fx {
       l.v.y -= 7 * dt;
       l.v.x *= 1 - 0.8 * dt; l.v.z *= 1 - 0.8 * dt;
       l.p.addScaledVector(l.v, dt);
-      if (l.p.y < 0.05) { l.p.y = 0.05; l.v.set(0, 0, 0); l.spin.multiplyScalar(0.5); }
+      const lf = (this.groundAt ? this.groundAt(l.p.x, l.p.z) : 0) + 0.05;
+      if (l.p.y < lf) { l.p.y = lf; l.v.set(0, 0, 0); l.spin.multiplyScalar(0.5); }
       l.rot.x += l.spin.x * dt; l.rot.y += l.spin.y * dt; l.rot.z += l.spin.z * dt;
       q.setFromEuler(l.rot);
       const k = 1 - Math.max(0, (l.age / l.life - 0.7) / 0.3);

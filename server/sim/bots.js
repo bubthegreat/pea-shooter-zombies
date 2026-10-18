@@ -36,7 +36,7 @@ export function ensureAI(game, bot) {
     moving: false,
   };
   if (bot.team === 'zombie') {
-    bot.fireScale = game.difficultyConfig().fireScale;
+    bot.fireScale = bot.kind === 'player' ? 1 : game.difficultyConfig().fireScale; // an autopilot kid shoots at full rate
     const itin = chooseItinerary(game.rng);
     const errand = game.rng() < c.parts.botChance ? {} : null; // fetch a part, install it, use what it powers
     bot.ai = { ...base, role: 'zombie', itin, mode: 'route', errand, coin: game.rng(), goal: null, goalKey: null };
@@ -515,7 +515,8 @@ export function stepBots(game, dt) {
       ctx.plantSide.push(e);
     } else if (isFighter(e)) {
       (e.team === 'plant' ? ctx.plantSide : ctx.zombieSide).push(e);
-      if (e.kind === 'bot' && e.state === 'alive') bots.push(e);
+      // bots, and zombie kids flagged `autopilot` (the balance harness's scripted kids use the bot brain)
+      if ((e.kind === 'bot' || (e.autopilot && e.team === 'zombie')) && e.state === 'alive') bots.push(e);
     }
   }
   for (const b of bots) {

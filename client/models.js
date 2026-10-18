@@ -112,6 +112,13 @@ function kgroup(parent, x = 0, y = 0, z = 0) {
 const _inv = new THREE.Matrix4();
 const _rel = new THREE.Matrix4();
 
+/** One shared cel-shaded material for every plain coloured part once its colour is baked into vertex colours: one draw call instead of one per colour. */
+export const vcMat = new THREE.MeshToonMaterial({ gradientMap, vertexColors: true });
+/** A plain opaque toon material (no texture, glow, transparency or special sides) can have its colour baked into the geometry. */
+export function isPlainToon(m) {
+  return Boolean(m && m.isMeshToonMaterial && !m.map && !m.transparent && m.opacity === 1 && m.side === THREE.FrontSide && !m.vertexColors && m.emissive.getHex() === 0 && !m.polygonOffset);
+}
+
 /** Merge the meshes under `g` (not inside nested bake/keep groups) into one mesh per material. */
 export function bakeGroup(g) {
   g.updateMatrixWorld(true);
@@ -122,12 +129,21 @@ export function bakeGroup(g) {
     for (const c of o.children) {
       if (c.userData.bake || c.userData.keep) continue;
       if (c.isMesh && c.geometry) {
-        let b = buckets.get(c.material.uuid);
-        if (!b) { b = { mat: c.material, pos: [], nor: [] }; buckets.set(c.material.uuid, b); }
+        const plain = isPlainToon(c.material);
+        const key = plain ? 'vc' : c.material.uuid;
+        let b = buckets.get(key);
+        if (!b) { b = { mat: plain ? vcMat : c.material, plain, pos: [], nor: [], col: [] }; buckets.set(key, b); }
         const geo = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
         geo.applyMatrix4(_rel.multiplyMatrices(_inv, c.matrixWorld));
         b.pos.push(geo.attributes.position.array);
         b.nor.push(geo.attributes.normal.array);
+        if (plain) {
+          const n = geo.attributes.position.count;
+          const arr = new Float32Array(n * 3);
+          const col = c.material.color;
+          for (let i = 0; i < n; i++) { arr[i * 3] = col.r; arr[i * 3 + 1] = col.g; arr[i * 3 + 2] = col.b; }
+          b.col.push(arr);
+        }
         geo.dispose();
         doomed.push(c);
       } else if (!c.isSprite) {
@@ -149,6 +165,7 @@ export function bakeGroup(g) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cat(b.pos), 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(cat(b.nor), 3));
+    if (b.plain) geo.setAttribute('color', new THREE.BufferAttribute(cat(b.col), 3));
     geo.computeBoundingSphere();
     geo.userData.baked = true;
     g.add(new THREE.Mesh(geo, b.mat));
@@ -255,12 +272,74 @@ export function setEquipmentTable(eq) {
     ITEMS[id] = {
       name: typeof v.name === 'string' && v.name ? v.name : prev.name || prettyId(id),
       blurb: typeof v.blurb === 'string' ? v.blurb : prev.blurb || '',
+      needs: typeof v.needs === 'string' ? v.needs : undefined, // the part that powers it
     };
   }
 }
 
 function prettyId(id) {
   return String(id).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/* ---- mower parts ---- */
+
+export const PART_INFO = {
+  battery: { name: 'Battery', icon: '\u{1F50B}', color: 0x66bb6a },
+  gas: { name: 'Gas Can', icon: '\u26FD', color: 0xe53935 },
+  plug: { name: 'Spark Plug', icon: '\u{1F50C}', color: 0xeceff1 },
+};
+
+/** A little glowing part (battery, gas can, spark plug) about 0.5 m tall, origin at its middle. Shared by pickups, carried icons and rack markers. */
+export function makePartMesh(kind) {
+  const g = new THREE.Group();
+  if (kind === 'battery') {
+    add(g, G.cylLo, toon(0x455a64), 0, 0, 0, { sx: 0.17, sy: 0.4, sz: 0.17 });
+    add(g, G.cylLo, toon(0x66bb6a), 0, 0.03, 0, { sx: 0.18, sy: 0.22, sz: 0.18 });
+    add(g, G.cylLo, toon(0xffd54f), 0, 0.23, 0, { sx: 0.07, sy: 0.07, sz: 0.07 });
+    add(g, G.box, basic(0xffffff), 0, 0.03, -0.185, { sx: 0.1, sy: 0.03, sz: 0.02 });
+    add(g, G.box, basic(0xffffff), 0, 0.03, -0.185, { sx: 0.03, sy: 0.1, sz: 0.02 });
+  } else if (kind === 'gas') {
+    add(g, G.box, toon(0xe53935), 0, -0.02, 0, { sx: 0.34, sy: 0.38, sz: 0.2 });
+    add(g, G.box, toon(0xb71c1c), 0, -0.02, 0, { sx: 0.36, sy: 0.06, sz: 0.22 });
+    add(g, G.cylLo, toon(0xffd54f), 0.1, 0.24, 0, { sx: 0.05, sy: 0.12, sz: 0.05 });
+    add(g, G.box, toon(0xb71c1c), -0.09, 0.2, 0, { sx: 0.14, sy: 0.03, sz: 0.05 });
+    add(g, G.box, basic(0xffeb3b), 0, -0.02, -0.105, { sx: 0.16, sy: 0.16, sz: 0.02 });
+  } else {
+    add(g, G.cylLo, toon(0xeceff1), 0, 0.06, 0, { sx: 0.07, sy: 0.3, sz: 0.07 });
+    add(g, G.cylLo, toon(0xb0bec5), 0, -0.12, 0, { sx: 0.12, sy: 0.1, sz: 0.12 });
+    add(g, G.cylLo, toon(0xcfd8dc), 0, -0.2, 0, { sx: 0.04, sy: 0.1, sz: 0.04 });
+    add(g, G.cylLo, toon(0x607d8b), 0, 0.23, 0, { sx: 0.045, sy: 0.08, sz: 0.045 });
+    add(g, G.torus, toon(0x37474f), 0, 0.3, 0, { sx: 0.07, sy: 0.07, sz: 0.07, rx: PI / 2 });
+  }
+  g.userData.bake = true;
+  bakeGroup(g); // a handful of meshes become two
+  return g;
+}
+
+function buildPart(e) {
+  const root = new THREE.Group();
+  const kind = PART_INFO[e.partKind] ? e.partKind : 'battery';
+  const body = new THREE.Group();
+  const mesh = makePartMesh(kind);
+  mesh.scale.setScalar(1.7);
+  body.add(mesh);
+  root.add(body);
+  const tex = getGlowTex();
+  if (tex) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: PART_INFO[kind].color, transparent: true, depthWrite: false, opacity: 0.8 }));
+    sp.scale.setScalar(1.9);
+    body.add(sp);
+  }
+  const seed = (hash(e.id) % 628) / 100;
+  return {
+    root,
+    tagY: 0,
+    kick() {},
+    update(c) {
+      body.position.y = 0.75 + Math.sin(c.t * 2.2 + seed) * 0.1;
+      body.rotation.y = c.t * 1.4 + seed;
+    },
+  };
 }
 
 export function itemInfo(id) {
@@ -2091,6 +2170,18 @@ function buildRackItem(e) {
     }
   }
   root.add(hang);
+  // an unpowered tool shows the part it still needs, bobbing above its hook
+  const needsKind = (ITEMS[id] && ITEMS[id].needs) || null;
+  let needMark = null;
+  if (needsKind && PART_INFO[needsKind]) {
+    needMark = new THREE.Group();
+    const pm = makePartMesh(needsKind);
+    pm.scale.setScalar(1.3);
+    needMark.add(pm);
+    add(needMark, G.torus, basic(0xff5252, { transparent: true, opacity: 0.9 }), 0, 0, 0, { s: 0.42, rx: PI / 2 });
+    needMark.position.set(0, 2.85, -0.1);
+    root.add(needMark);
+  }
   let shown = 1;
   let prev = true;
   let age = 0;
@@ -2099,6 +2190,14 @@ function buildRackItem(e) {
     tagY: 2.6,
     kick() {},
     update(c) {
+      if (needMark) {
+        const need = c.e.powered === false;
+        needMark.visible = need;
+        if (need) {
+          needMark.position.y = 2.85 + Math.sin(c.t * 2.4) * 0.08;
+          needMark.rotation.y = c.t * 1.2;
+        }
+      }
       const avail = c.e.available !== false;
       if (avail && !prev) age = 0;
       prev = avail;
@@ -2136,6 +2235,7 @@ export function modelKey(e) {
   if (k === 'projectile') return 'proj:' + (e.projKind || 'pea');
   if (k === 'mower') return e.state === 'destroyed' ? null : 'mower'; // a wrecked mower vanishes until it respawns
   if (k === 'sun') return 'sun';
+  if (k === 'part') return 'part:' + (PART_INFO[e.partKind] ? e.partKind : 'battery');
   return null; // unknown: don't render
 }
 
@@ -2164,6 +2264,7 @@ function buildModelRaw(e) {
     case 'mower': return buildMower(e);
     case 'sun': return buildSun(e);
     default:
+      if (key.startsWith('part:')) return buildPart(e);
       if (key.startsWith('proj:')) return buildProjectile(e);
       if (key.startsWith('rack:')) return buildRackItem(e);
       return null;
@@ -2180,4 +2281,4 @@ export function makeBlob(radius) {
   return m;
 }
 
-export const SHADOW_RADIUS = { char: 0.6, garden: 0.55, mower: 0.9, sprout: 0.45, sun: 0.0, proj: 0.0, rack: 0.0 };
+export const SHADOW_RADIUS = { char: 0.6, garden: 0.55, mower: 0.9, sprout: 0.45, sun: 0.0, proj: 0.0, rack: 0.0, part: 0.0 };

@@ -269,6 +269,37 @@ export class Sound {
         this._tone(out, { type: 'square', f0: 220, f1: 140, dur: 0.08, vol: 0.14, delay: 0.7 });
         secs = 1.0;
         break;
+      case 'build': // a fort goes up: two hammer knocks and a pop
+        this._tone(out, { type: 'sine', f0: 210 * r, f1: 90, dur: 0.1, vol: 0.5 });
+        this._noiseBurst(out, { dur: 0.06, f0: 1200, f1: 500, q: 1.2, vol: 0.3 });
+        this._tone(out, { type: 'sine', f0: 240 * r, f1: 100, dur: 0.1, vol: 0.45, delay: 0.11 });
+        this._tone(out, { type: 'triangle', f0: 520, f1: 880, dur: 0.14, vol: 0.2, delay: 0.24 });
+        secs = 0.5;
+        break;
+      case 'doorbreak': // a door crashes in
+        this._noiseBurst(out, { dur: 0.35, type: 'lowpass', f0: 1400, f1: 120, vol: 0.6 });
+        this._tone(out, { type: 'sawtooth', f0: 170, f1: 45, dur: 0.4, vol: 0.3 });
+        this._noiseBurst(out, { dur: 0.1, f0: 900, f1: 300, q: 1.4, vol: 0.4, delay: 0.12 });
+        this._noiseBurst(out, { dur: 0.08, f0: 1200, f1: 400, q: 1.4, vol: 0.3, delay: 0.3 });
+        secs = 0.7;
+        break;
+      case 'install': // a part clicks into place
+        this._noiseBurst(out, { dur: 0.04, type: 'highpass', f0: 3500, vol: 0.3 });
+        this._tone(out, { type: 'square', f0: 330, f1: 330, dur: 0.05, vol: 0.12, delay: 0.04 });
+        this._tone(out, { type: 'triangle', f0: 659, dur: 0.12, vol: 0.28, delay: 0.1 });
+        this._tone(out, { type: 'triangle', f0: 988, dur: 0.22, vol: 0.26, delay: 0.18 });
+        secs = 0.5;
+        break;
+      case 'countdown': // head-start beep
+        this._tone(out, { type: 'triangle', f0: 740, dur: 0.12, vol: 0.28 });
+        secs = 0.2;
+        break;
+      case 'release': // the gate swings open: a creak and a horn
+        this._tone(out, { type: 'sawtooth', f0: 90, f1: 150, dur: 0.5, vol: 0.2, vibHz: 14, vibDepth: 12 });
+        this._tone(out, { type: 'square', f0: 392, f1: 392, dur: 0.4, vol: 0.14, delay: 0.1 });
+        this._tone(out, { type: 'square', f0: 523, f1: 523, dur: 0.5, vol: 0.14, delay: 0.1 });
+        secs = 0.8;
+        break;
       case 'respawn':
         this._tone(out, { type: 'sine', f0: 784, dur: 0.18, vol: 0.22 });
         this._tone(out, { type: 'sine', f0: 1175, dur: 0.28, vol: 0.2, delay: 0.1 });
@@ -477,6 +508,17 @@ export class Sound {
         o.start();
         gate.connect(g);
         return { g, amp: 0.26 };
+      }
+      case 'alarm': {
+        // a wailing fridge alarm
+        const o = c.createOscillator();
+        o.type = 'square';
+        o.frequency.value = 660;
+        lfo('triangle', 2.4, 230, o.frequency);
+        const lp = filt('lowpass', 1800);
+        o.connect(lp); lp.connect(g);
+        o.start();
+        return { g, amp: 0.1 };
       }
       case 'squeak': {
         // squeaky wheel

@@ -33,7 +33,15 @@ export class HUD {
       help: $('help'), pause: $('pausehint'), mute: $('mutebtn'),
       end: $('endscreen'), endTitle: $('endtitle'), endSub: $('endsub'), endCount: $('endcount'), endLeave: $('endleave'),
       vignette: $('vignette'), hitmark: $('hitmark'),
+      doorsBox: $('doorsbox'), doorCount: $('doorcount'), brainsBox: $('brainsbox'), brainsCount: $('brainscount'),
+      fridgeBox: $('fridgebox'), fridgeFill: $('fridgefill'), fridgeText: $('fridgetext'), fridgeIco: $('fridgeico'),
+      cd: $('countdown'), cdTitle: $('cdtitle'), cdNum: $('cdnum'), cdSub: $('cdsub'),
+      partsBox: $('partsbox'), partsCarry: $('partscarry'),
+      pt: { battery: $('pt-battery'), gas: $('pt-gas'), plug: $('pt-plug') },
+      bw: $('buildwheel'), bwRing: $('bwring'), bwHelp: $('bwhelp'), bbar: $('buildbar'), bname: $('buildname'), bhint: $('buildhint'),
+      loading: $('loading'), loadRule: $('loadrule'), loadMsg: $('loadmsg'),
     };
+    this._bwSig = '';
     this.team = null;
     this.lastSun = 0;
     this.lastStreak = 0;
@@ -147,6 +155,72 @@ export class HUD {
     requestAnimationFrame(() => requestAnimationFrame(() => v.classList.remove('flash')));
   }
 
+  /** Loading screen with the one-sentence rules; hidden once the first snapshot arrives. */
+  showLoading(rule, msg = 'Loading the backyard\u2026') {
+    this.el.loadRule.textContent = rule;
+    this.el.loadMsg.textContent = msg;
+    this.el.loading.classList.remove('hidden', 'fade');
+  }
+
+  hideLoading() {
+    const l = this.el.loading;
+    if (l.classList.contains('hidden')) return;
+    l.classList.add('fade');
+    setTimeout(() => { if (l.classList.contains('fade')) l.classList.add('hidden'); }, 520);
+  }
+
+  /**
+   * The build wheel: items = [{ n, icon, name, cost, unit, ok }] around the crosshair, or null to hide it. `pick` highlights one.
+   * Rebuilt only when the list changes; affordability is toggled every call.
+   */
+  setBuildWheel(items, pick = 0, help = '') {
+    const e = this.el;
+    if (!items) {
+      if (this._bwSig !== '') { this._bwSig = ''; e.bw.classList.add('hidden'); e.bwRing.textContent = ''; }
+      return;
+    }
+    const sig = items.map((i) => `${i.n}:${i.icon}:${i.name}:${i.cost}`).join('|');
+    if (sig !== this._bwSig) {
+      this._bwSig = sig;
+      e.bw.classList.remove('hidden');
+      e.bwRing.textContent = '';
+      const touch = document.documentElement.classList.contains('touch');
+      const r = touch ? 80 : 124;
+      const c = touch ? 130 : 180;
+      items.forEach((it, i) => {
+        const a = (i / items.length) * Math.PI * 2 - Math.PI / 2;
+        const b = document.createElement('div');
+        b.className = 'bw-item';
+        b.dataset.n = String(it.n);
+        b.style.left = `${c + Math.cos(a) * r}px`;
+        b.style.top = `${c + Math.sin(a) * r}px`;
+        const add = (cls, text) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; b.appendChild(s); };
+        add('key', String(it.n));
+        add('ico', it.icon);
+        add('nm', it.name);
+        add('cost', `${it.unit} ${it.cost}`);
+        e.bwRing.appendChild(b);
+      });
+    }
+    for (const b of e.bwRing.children) {
+      const it = items.find((x) => String(x.n) === b.dataset.n);
+      const cls = 'bw-item' + (it && !it.ok ? ' no' : '') + (Number(b.dataset.n) === pick ? ' pick' : '');
+      if (b.className !== cls) b.className = cls;
+    }
+    this._set('bwh', e.bwHelp, 'text', help);
+  }
+
+  /** The bar at the bottom while a build is selected: name + hint (bad = the ghost is red). */
+  setBuildBar(name, hint, bad = false) {
+    const e = this.el;
+    const on = !!name;
+    if (this._cache.bbv !== on) { this._cache.bbv = on; e.bbar.classList.toggle('hidden', !on); }
+    if (!on) return;
+    this._set('bbn', e.bname, 'text', name);
+    this._set('bbh', e.bhint, 'text', hint);
+    if (this._cache.bbb !== bad) { this._cache.bbb = bad; e.bbar.classList.toggle('bad', bad); }
+  }
+
   pressSeed(n) {
     const el = this.el.seeds.querySelector(`.seed[data-n="${n | 0}"]`);
     if (!el) return;
@@ -233,6 +307,8 @@ export class HUD {
       this.root.classList.remove('plant', 'zombie');
       this.root.classList.add(team);
       e.sunBox.classList.toggle('hidden', team !== 'plant');
+      e.brainsBox.classList.toggle('hidden', team !== 'zombie');
+      e.partsBox.classList.toggle('hidden', team !== 'zombie');
       e.seeds.classList.toggle('hidden', team !== 'plant');
       this._set('hpico', e.hpIco, 'text', team === 'plant' ? '\u{1F33B}' : '\u{1F9DF}');
     }
@@ -248,6 +324,27 @@ export class HUD {
         this._set('timelabel', e.timeLabel, 'text', f >= 1 ? 'Sunrise!' : `Sunrise in ${fmtTime(rl - rt)}`);
       }
       this._set('garden', e.garden, 'text', String(num(snap.gardenCount, 0)));
+
+      // ---- the Fridge Meter: a big snack bar that zombies eat away
+      const fr = snap.fridge || { m: 0, n: 0 };
+      const left = Math.max(0, Math.min(1, 1 - num(fr.m, 0)));
+      const n = num(fr.n, 0);
+      this._set('frw', e.fridgeFill, 'width', (left * 100).toFixed(0) + '%');
+      this._set('frc', e.fridgeFill, 'class', left < 0.3 ? 'low' : left < 0.6 ? 'mid' : '');
+      this._set('frt', e.fridgeText, 'text', n > 0 ? `ALARM! ${n} zombie${n > 1 ? 's' : ''} at the fridge! ${Math.ceil(left * 100)}%` : `Fridge snacks left ${Math.ceil(left * 100)}%`);
+      if (this._cache.fra !== (n > 0)) { this._cache.fra = n > 0; e.fridgeBox.classList.toggle('alarm', n > 0); }
+
+      // ---- head start countdown
+      const hs = num(snap.headStart, 0);
+      const showCd = hs > 0 && snap.phase === 'playing';
+      if (this._cache.cdv !== showCd) { this._cache.cdv = showCd; e.cd.classList.toggle('hidden', !showCd); }
+      if (showCd) {
+        const zom = team === 'zombie';
+        this._set('cds', e.cd, 'class', zom ? '' : 'small');
+        this._set('cdt', e.cdTitle, 'text', zom ? 'Zombies come out in\u2026' : 'Zombies come out in\u2026');
+        this._set('cdn', e.cdNum, 'text', String(Math.ceil(hs)));
+        this._set('cdsub', e.cdSub, 'text', zom ? 'The plants are planting their garden!' : 'Plant your garden and build a fort!');
+      }
     }
 
     if (own) {
@@ -308,6 +405,24 @@ export class HUD {
       if (streak > this.lastStreak) { e.streakBox.classList.remove('hot'); void e.streakBox.offsetWidth; e.streakBox.classList.add('hot'); }
       this.lastStreak = streak;
       if (this._cache.sb !== sb) { this._cache.sb = sb; e.streakBox.lastChild.textContent = ` / ${sb}`; }
+
+      // ---- brains (zombie kids buy forts with them), doors, mower parts
+      if (team === 'zombie') {
+        const brains = Math.floor(num(own.brains, 0));
+        this._set('brains', e.brainsCount, 'text', String(brains));
+        if (brains > (this.lastBrains || 0)) { e.brainsBox.classList.remove('bump'); void e.brainsBox.offsetWidth; e.brainsBox.classList.add('bump'); }
+        this.lastBrains = brains;
+        const pm = ctx.parts || { mask: 0, carry: null };
+        for (const [k, bit] of [['battery', 1], ['gas', 2], ['plug', 4]]) {
+          const have = (pm.mask & bit) !== 0;
+          if (this._cache['pt' + k] !== have) { this._cache['pt' + k] = have; e.pt[k].classList.toggle('have', have); }
+        }
+        const carry = pm.carry ? pm.carry.text : '';
+        this._set('pcarry', e.partsCarry, 'text', carry);
+        if (this._cache.pcv !== !!carry) { this._cache.pcv = !!carry; e.partsCarry.classList.toggle('hidden', !carry); }
+      }
+      if (ctx.doors) this._set('doors', e.doorCount, 'text', String(ctx.doors.alive));
+      this.root.classList.toggle('driving', !!ctx.mower);
 
       // ---- sunshine & seeds
       if (team === 'plant') {

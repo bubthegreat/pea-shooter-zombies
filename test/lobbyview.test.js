@@ -33,3 +33,11 @@ test('waitText: host sees a go message, everyone else waits for the host by name
   assert.equal(waitText({ ...room, status: 'playing' }, 'p2'), 'Joining the game…');
   assert.equal(waitText(null, 'p1'), '');
 });
+
+import { ruleText, RULES } from '../client/lobbyview.js';
+
+test('the one-sentence rules for each team', () => {
+  assert.equal(ruleText('zombie'), 'Break into the house and raid the fridge!');
+  assert.equal(ruleText('plant'), 'Plant your garden, guard every door, and hold on until sunrise!');
+  assert.equal(ruleText('banana'), RULES.plant);
+});
