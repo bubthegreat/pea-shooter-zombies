@@ -13,7 +13,11 @@ Open http://localhost:8080 (or `http://<this-computer's-LAN-IP>:8080` from anoth
 
 ## Play
 
-- Pick a name, team (Plants or Zombies), mode (Co-op or Versus), difficulty. First player picks the mode.
+- The front page is a **lobby browser**: pick a name and a team (Plants or Zombies), then **Join** a lobby from the live list (name, host, players, Co-op/Versus, bot difficulty, Waiting or Playing with the time left) or press **Create lobby** (it starts as "<your name>'s Backyard"; you choose Co-op or Versus and the bots).
+- In the **waiting room** everyone sees who is in and on which team and can switch teams. Only the host sees **Start** and can change the game mode and bots; everybody else sees "Waiting for <host> to start". Joining a lobby that is already playing drops you straight into the game on the team you picked.
+- If the host leaves, the player who has been there longest becomes host; when the last player leaves the lobby closes. When a round ends, everyone goes back to the waiting room (keeping their team) and the host starts the next one.
+- There is no password and no account: the lobby name is all that identifies a lobby. Names are cut to 16 letters (lobby names to 32), invisible characters are removed, and they are only ever shown as plain text. Change your name any time from the settings panel (O).
+- Other kids' names float over their heads (green for Plants, purple for Zombies, fading with distance), and the kill feed in the top right says who turned, wilted or mowed whom (with a target icon for headshots).
 - **Plants** win by turning every zombie into a plant, or holding the garden until sunrise. Zombies that get converted burst into a flower and leave sunshine to grab. Plant sunshine to grow more Peashooters and Cacti.
 - **Zombies** win by wrecking the whole garden. The garage has a lawnmower (the driver can't be hurt, but the mower can be wrecked) and a rack of lawn tools: Weed Eater, Leaf Blower, Hedge Trimmer, Wheelbarrow.
 - Beat enemies to upgrade your gun (8 guns each way). Hit the head (top of the body) for triple damage. Beat 10 in a row without getting hurt for a bonus jump.
@@ -32,7 +36,13 @@ Open http://localhost:8080 (or `http://<this-computer's-LAN-IP>:8080` from anoth
 | Q | Zombies: put down the lawn tool you are holding (back to your gun) |
 | Left click (hold) | Use the lawn tool you are holding (Weed Eater / Leaf Blower / Hedge Trimmer; the Wheelbarrow just blocks shots) |
 | M / H | Mute / help |
-| O | Look settings: invert up/down, invert left/right, mouse speed (0.25x-3x). Also the gear button, or "Look settings" in the lobby. Saved in your browser. |
+| O | Settings: your name, invert up/down, invert left/right, mouse speed (0.25x-3x), Leave lobby. Also the gear button, or "Settings" in the lobby screens. Saved in your browser. |
+
+## Lobbies (for developers)
+
+One server process holds many independent games. `server/lobby.js` (`LobbyManager`) owns the lobbies; each has its own `Game`, tick accumulator and snapshot fan-out (only to its own sockets), so bots and waves are per lobby. `server/index.js` is transport only. State is in memory, so a restart or deploy drops every lobby. Hidden safety caps: 50 players per lobby, 20 lobbies per server (`MAX_PLAYERS_PER_LOBBY`, `MAX_LOBBIES` in `server/lobby.js`).
+
+WebSocket messages (JSON). Client to server: `listLobbies` (also carries the page's client token `cid` and name; a token that was in a lobby a moment ago is put back into it), `createLobby {lobbyName, mode, difficulty, team, name, cid}`, `joinLobby {lobbyId, team, name, cid}`, `leaveLobby`, `setTeam {team}`, `setOptions {mode, difficulty}` (host, waiting room), `startGame` (host), `setName {name}`, and `input` (unchanged). Server to client: `lobbies {lobbies}` (pushed to browsing clients whenever the list changes), `lobbyState {you, lobby}` (`lobby: null` when you are not in one), `welcome {id, config}` (you are now in a running game), `snap` (unchanged), `error {reason, message}`. The old `join` message is gone.
 
 ## Develop
 
