@@ -89,6 +89,38 @@ export const DEFAULT_CONFIG = {
   mowerRadius: 0.9, // hit volume of a started mower (covers the driver)
   mowerHeight: 1.9,
 
+  // Garage equipment rack: zombies swap their gun for a lawn tool (E at the rack; Q or E elsewhere to drop it).
+  // range/halfAngle: melee cone (m, rad); tick: seconds between swings; dps*: damage per second against garden
+  // plants / plant players; knock: m/s push on plant players; deflect: chance to swat a light shot (damage <= deflectMaxDamage); blowSun: m/s push on suns.
+  rackUseRange: 2,
+  rackRespawn: 20, // an item is back on its hook this many seconds after a drop / wreck / conversion
+  rack: [
+    { item: 'weed_eater', x: 15.5, z: 41.5 },
+    { item: 'leaf_blower', x: 18.5, z: 41.5 },
+    { item: 'hedge_trimmer', x: 21.5, z: 41.5 },
+    { item: 'wheelbarrow', x: 24.5, z: 41.5 },
+  ],
+  equipment: {
+    weed_eater: {
+      name: 'Weed Eater', blurb: 'Shreds garden plants in seconds, hurts plant kids - but the range is tiny',
+      range: 3, halfAngle: 0.7, tick: 0.1, dpsGarden: 40, dpsFighter: 30, speedScale: 1,
+    },
+    leaf_blower: {
+      name: 'Leaf Blower', blurb: 'Pushes plant kids back, swats peas, blows suns away - but barely hurts',
+      range: 9, halfAngle: 0.45, tick: 0.1, dpsGarden: 2, dpsFighter: 3, knock: 12, deflect: 0.85, deflectMaxDamage: 2, blowSun: 8, speedScale: 1,
+    },
+    hedge_trimmer: {
+      name: 'Hedge Trimmer', blurb: 'Wilts plant kids fast and chews turrets - but you walk slower',
+      range: 2, halfAngle: 0.8, tick: 0.1, dpsGarden: 30, dpsFighter: 150, speedScale: 0.75,
+    },
+    wheelbarrow: {
+      name: 'Wheelbarrow', blurb: 'A rolling shield that soaks up shots - but you cannot attack',
+      hp: 30, speedScale: 0.85, shield: { forward: 1.1, halfWidth: 0.9, depth: 0.7, height: 1.2 },
+    },
+  },
+  // Share of zombie bots that go for each item (rolled once per bot, after the mower roll).
+  botItemChance: { weed_eater: 0.12, hedge_trimmer: 0.05, leaf_blower: 0.03, wheelbarrow: 0.05 },
+
   // Rounds, waves and win rules
   roundLength: 480,
   endedTime: 10, // result screen before an automatic restart
@@ -171,7 +203,14 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     sunPickupRadius: c.sunPickupRadius,
     sunRestHeight: c.sunRestHeight,
     sunLifetime: c.sunLifetime,
+    // Garage equipment
+    rackUseRange: c.rackUseRange,
+    rackRespawn: c.rackRespawn,
+    rack: c.rack,
+    equipment: c.equipment,
     // Mower
+    mowerHp: c.mowerHp,
+    mowerRespawn: c.mowerRespawn,
     mowerStartTime: c.mowerStartTime,
     mowerUseRange: c.mowerUseRange,
     mowerSpeed: c.mowerSpeed,

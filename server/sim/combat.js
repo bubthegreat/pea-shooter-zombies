@@ -5,6 +5,7 @@ import { getWeapon } from './weapons.js';
 import { recordHurt, recordKill } from './upgrades.js';
 import { spawnSun } from './garden.js';
 import { destroyMower } from './mower.js';
+import { barrowBlocks, barrowTakesHit, dropOnConvert } from './equipment.js';
 
 /**
  * Create a projectile entity. `dir` is a unit vector. Optional: gravity (m/s^2), splash (blast radius m),
@@ -95,9 +96,13 @@ export function stepProjectiles(game, dt) {
   const ext = WORLD.extent;
   const projectiles = [];
   const targets = [];
+  const barrows = [];
   for (const e of game.entities.values()) {
     if (e.kind === 'projectile') projectiles.push(e);
-    else if (isTargetable(game, e)) targets.push(e);
+    else if (isTargetable(game, e)) {
+      targets.push(e);
+      if (e.item === 'wheelbarrow') barrows.push(e);
+    }
   }
   for (const p of projectiles) {
     const steps = Math.max(1, Math.ceil((p.speed * dt) / c.projectileStep));
@@ -116,6 +121,13 @@ export function stepProjectiles(game, dt) {
           p.y = 0.05;
           explode(game, p);
         }
+        dead = true;
+        break;
+      }
+      const barrow = barrows.find((b) => b.item === 'wheelbarrow' && barrowBlocks(game, b, p));
+      if (barrow) {
+        barrowTakesHit(game, barrow, p);
+        if (p.splash) explode(game, p);
         dead = true;
         break;
       }
@@ -196,6 +208,7 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
 function convertZombie(game, target, attacker) {
   const c = game.config;
   const human = target.kind === 'player';
+  dropOnConvert(game, target);
   game.emit('convert', { id: target.id, x: target.x, y: target.y, z: target.z, by: attacker?.id ?? null, human });
   if (human) {
     // A converted kid becomes a little sprout, then digs back up as a zombie at the gate.

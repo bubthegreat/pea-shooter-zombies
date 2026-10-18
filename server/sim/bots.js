@@ -7,6 +7,17 @@ import { dist2D, rightVec, forwardVec, yawTo } from './vec.js';
 
 const isFighter = (e) => e.kind === 'player' || e.kind === 'bot';
 
+/** Some zombie bots head for a garage tool instead of using their gun (botItemChance is per item). */
+function rollItem(game) {
+  const r = game.rng();
+  let acc = 0;
+  for (const [item, chance] of Object.entries(game.config.botItemChance ?? {})) {
+    acc += chance;
+    if (r < acc) return item;
+  }
+  return null;
+}
+
 /** Create the brain for a bot that has none (new spawns). Plant-team bots other than the Gardener are inert. */
 export function ensureAI(game, bot) {
   if (bot.ai) return bot.ai;
@@ -21,7 +32,8 @@ export function ensureAI(game, bot) {
   };
   if (bot.team === 'zombie') {
     bot.fireScale = game.difficultyConfig().fireScale;
-    bot.ai = { ...base, role: 'zombie', goalId: null, seeksMower: game.rng() < c.mowerBotChance, strafe: 0, strafeTimer: 0 };
+    const seeksMower = game.rng() < c.mowerBotChance;
+    bot.ai = { ...base, role: 'zombie', goalId: null, seeksMower, seeksItem: seeksMower ? null : rollItem(game), strafe: 0, strafeTimer: 0 };
   } else {
     bot.fireScale = c.gardener.fireScale;
     bot.ai = { ...base, role: bot.isGardener ? 'gardener' : 'inert', slotIdx: -1 };
@@ -130,10 +142,53 @@ function walkToward(b, wx, wz) {
   return { x: dx / d, z: dz / d };
 }
 
+/** A zombie bot holding a garage tool: walk up to prey and use it (the wheelbarrow just rolls toward the garden). */
+function armedBrain(game, b, ai, ctx, dt) {
+  const c = game.config;
+  const def = c.equipment[b.item];
+  const inp = b.input;
+  inp.fire = false;
+  inp.use = false;
+  inp.keys.jump = false;
+  ai.armed = true;
+
+  ai.think -= dt;
+  if (ai.think <= 0) {
+    ai.think += c.botThinkInterval;
+    // Trimmers and blowers go for plant kids first (they shred / shove them); everything else for the garden.
+    const wantsKids = b.item === 'hedge_trimmer' || b.item === 'leaf_blower';
+    const kids = ctx.plantSide.filter((e) => e.kind !== 'garden' && e.state === 'alive');
+    ai.preyId = (wantsKids ? nearest(kids, b.x, b.z, 30) : null)?.id ?? nearest(ctx.gardenPlants, b.x, b.z, Infinity)?.id ?? null;
+  }
+  let prey = ai.preyId ? game.entities.get(ai.preyId) : null;
+  if (!prey || prey.state !== 'alive') {
+    prey = null;
+    ai.preyId = null;
+  }
+  let dir = { x: 0, z: 0 };
+  if (prey) {
+    const reach = b.item === 'wheelbarrow' ? 4 : b.item === 'leaf_blower' ? def.range * 0.6 : def.range * 0.6;
+    const d = dist2D(b.x, b.z, prey.x, prey.z);
+    if (d > reach) dir = walkToward(b, prey.x, prey.z);
+    aimAt(game, b, ai, prey, 0, dt);
+    b.pitch = 0;
+    inp.fire = b.item !== 'wheelbarrow' && d <= def.range + (prey.radius ?? 0);
+  }
+  setMoveKeys(b, dir.x, dir.z);
+}
+
 function zombieBrain(game, b, ai, ctx, dt) {
   const c = game.config;
   const diff = ctx.diff;
   const inp = b.input;
+  if (b.item) {
+    armedBrain(game, b, ai, ctx, dt);
+    return;
+  }
+  if (ai.armed) {
+    ai.armed = false; // lost the tool: back to plain shooting
+    ai.seeksItem = null;
+  }
   inp.fire = false;
   inp.use = false;
   inp.keys.jump = false;
@@ -173,9 +228,17 @@ function zombieBrain(game, b, ai, ctx, dt) {
       goal = goalPlant && goalPlant.state === 'alive' ? goalPlant : null;
       stop = 0; // drive right over it
     }
-  } else if (goalPlant && goalPlant.state === 'alive') {
-    goal = goalPlant;
+  } else if (ai.seeksItem) {
+    const rack = game.racks?.get(ai.seeksItem);
+    if (!rack || !rack.available) {
+      ai.seeksItem = null; // somebody got there first
+    } else {
+      goal = rack;
+      stop = c.mowerBotStopDistance;
+      if (dist2D(b.x, b.z, rack.x, rack.z) <= c.rackUseRange - 0.4) b.usePressed = true;
+    }
   }
+  if (!goal && !ai.seeksMower && goalPlant && goalPlant.state === 'alive' && !ai.seeksItem) goal = goalPlant;
 
   // Walk.
   let dir = { x: 0, z: 0 };

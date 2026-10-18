@@ -40,7 +40,7 @@ const MIME = {
   '.wasm': 'application/wasm',
 };
 
-const NEUTRAL_INPUT = { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, plant: 0 };
+const NEUTRAL_INPUT = { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, drop: false, plant: 0 };
 
 /** Join `rel` under `base`, refusing anything that escapes it. */
 function safeJoin(base, rel) {

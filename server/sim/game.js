@@ -6,6 +6,7 @@ import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
 import { emptySlots, initGarden, stepGarden, stepSun, tryPlant } from './garden.js';
 import { createMower, stepMower } from './mower.js';
+import { createRack, stepEquipment } from './equipment.js';
 import { planWaves, stepRules } from './rules.js';
 import { stepBots } from './bots.js';
 
@@ -14,12 +15,12 @@ const MODES = new Set(['coop', 'versus']);
 const DIFFICULTIES = new Set(['easy', 'normal']);
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
-const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver'];
+const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy'];
 const MAX_PENDING_EVENTS = 500;
 const MAX_PLANT_QUEUE = 4; // plant presses buffered between ticks
 
 export function neutralInput() {
-  return { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, plant: 0 };
+  return { keys: { f: false, b: false, l: false, r: false, jump: false }, fire: false, use: false, drop: false, plant: 0 };
 }
 
 export class Game {
@@ -48,6 +49,7 @@ export class Game {
     this.wave = 0;
     this.slots = emptySlots();
     this.mower = null;
+    this.racks = null;
     this.waveTimes = [];
     this.waveIndex = 0;
     this.finalWaveSpawned = false;
@@ -98,6 +100,7 @@ export class Game {
     this.endTimer = 0;
     this.gardenerTimer = 0;
     createMower(this);
+    createRack(this);
     if (this.config.features.initialGarden) initGarden(this);
     for (const p of this.humans()) this._resetPlayer(p);
   }
@@ -158,6 +161,7 @@ export class Game {
       cooldown: 0,
       weapon: weaponFor(team, 0).id,
       input: neutralInput(),
+      item: null, // garage equipment currently held (see equipment.js)
       plantQueue: [], // pending planting attempts (1 = peashooter, 2 = cactus)
       plantSeqSeen: 0, // highest client plantSeq applied
     };
@@ -186,6 +190,7 @@ export class Game {
       timer: 0,
       cooldown: 0,
       input: neutralInput(),
+      item: null,
       ai: null,
     };
     this.entities.set(e.id, e);
@@ -202,6 +207,7 @@ export class Game {
     e.input = neutralInput();
     if (e.kind === 'player') e.plantQueue.length = 0;
     e.usePressed = false;
+    e.dropPressed = false;
   }
 
   /** Spawn point for a team; zombies appear along the gate. */
@@ -223,6 +229,9 @@ export class Game {
     p.timer = 0;
     p.slowTimer = 0;
     p.slowFactor = 1;
+    p.item = null;
+    p.using = false;
+    delete p.itemHp;
     p.plantQueue.length = 0;
     p.yaw = p.team === 'plant' ? 0 : Math.PI; // plants face the gate (-z), zombies face the house (+z)
     p.pitch = 0;
@@ -262,6 +271,11 @@ export class Game {
       if (use && !inp.use) e.usePressed = true; // rising edge: consumed by the sim at the end of the tick
       inp.use = use;
     }
+    if (raw.drop !== undefined) {
+      const drop = Boolean(raw.drop);
+      if (drop && !inp.drop) e.dropPressed = true;
+      inp.drop = drop;
+    }
     if (Number.isInteger(raw.plant) && raw.plant >= 0 && raw.plant <= 2) {
       if (Number.isSafeInteger(raw.plantSeq) && raw.plantSeq >= 0) {
         // Sequenced planting: every press carries a higher plantSeq, so repeated presses of the same
@@ -296,6 +310,7 @@ export class Game {
       stepBots(this, dt);
       this._stepActors(dt);
       stepMower(this, dt);
+      stepEquipment(this, dt);
       stepGarden(this, dt);
       stepProjectiles(this, dt);
       stepSun(this, dt);
@@ -313,7 +328,12 @@ export class Game {
 
   /** Edge-triggered presses live for exactly one tick. */
   _clearEdges() {
-    for (const e of this.entities.values()) if (e.kind === 'player') e.usePressed = false;
+    for (const e of this.entities.values()) {
+      if (e.kind === 'player' || e.kind === 'bot') {
+        e.usePressed = false;
+        e.dropPressed = false;
+      }
+    }
   }
 
   _stepActors(dt) {
@@ -344,7 +364,7 @@ export class Game {
   _stepWeapon(e, dt) {
     const w = getWeapon(e.weapon);
     e.cooldown -= dt;
-    if (!w || !e.input.fire || this.phase !== 'playing' || this.isDriving(e)) {
+    if (!w || !e.input.fire || this.phase !== 'playing' || this.isDriving(e) || e.item) {
       if (e.cooldown < 0) e.cooldown = 0;
       return;
     }
@@ -366,6 +386,7 @@ export class Game {
     else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed : c.gardener.speed;
     else speed = c.moveSpeed;
     if (e.slowTimer > 0) speed *= e.slowFactor ?? 0.5;
+    if (e.item) speed *= c.equipment[e.item]?.speedScale ?? 1;
     return speed;
   }
 
@@ -431,6 +452,8 @@ export class Game {
     for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = f === 'progress' ? round(e[f], 3) : e[f];
     if (e.state === 'wilted' || e.state === 'sprout' || e.state === 'destroyed') o.respawnIn = round(Math.max(0, e.timer), 1);
     if (e.slowTimer > 0) o.slowed = true;
+    if (e.using) o.using = true;
+    if (e.kind === 'rack_item' && !e.available && e.heldBy === null) o.respawnIn = round(Math.max(0, e.timer), 1);
     return o;
   }
 

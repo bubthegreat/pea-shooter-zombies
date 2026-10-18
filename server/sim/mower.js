@@ -84,7 +84,7 @@ export function stepMower(game, dt) {
     for (const e of game.entities.values()) {
       if (!isZombieFighter(e)) continue;
       if (e.mountLatch && !e.input.use) e.mountLatch = false;
-      if (!e.input.use || e.mountLatch) continue;
+      if (!e.input.use || e.mountLatch || e.item) continue; // hands full of lawn equipment
       const d = dist2D(e.x, e.z, m.x, m.z);
       if (d <= bestDist) {
         best = e;
@@ -108,6 +108,7 @@ export function stepMower(game, dt) {
   if (m.state === 'driving' && driver.usePressed) {
     // A fresh press of use hops off. (Presses while the engine was still starting don't count.)
     driver.mountLatch = true; // holding the key must not instantly remount
+    driver.usePressed = false; // this press is spent
     release(m);
     return;
   }

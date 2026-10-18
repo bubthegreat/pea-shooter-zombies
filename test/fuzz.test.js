@@ -31,8 +31,17 @@ for (const seed of [1, 2, 3]) {
             pitch: (rnd() - 0.5) * 4,
             fire: rnd() < 0.5,
             use: rnd() < 0.3,
+            drop: rnd() < 0.05,
             plant: Math.floor(rnd() * 3),
+            plantSeq: rnd() < 0.5 ? tick : undefined,
           });
+          // now and then wander into the garage so the tool rack gets exercised too
+          const me = game.entities.get(id);
+          if (me && rnd() < 0.02) {
+            const r = DEFAULT_CONFIG.rack[Math.floor(rnd() * DEFAULT_CONFIG.rack.length)];
+            me.x = r.x + (rnd() - 0.5) * 2;
+            me.z = r.z - 0.5 - rnd();
+          }
         }
       }
       game.tick(1 / 30);
@@ -52,6 +61,14 @@ for (const seed of [1, 2, 3]) {
           }
         }
         assert.ok(snap.entities.length < 400, 'entity count stays bounded');
+        // tool bookkeeping: one holder per tool, both sides agree
+        for (const r of snap.entities.filter((e) => e.kind === 'rack_item')) {
+          const holders = snap.entities.filter((e) => e.item === r.itemId);
+          assert.ok(holders.length <= 1, `${r.itemId} held by ${holders.length}`);
+          assert.equal(r.heldBy, holders[0]?.id ?? null, `${r.itemId} heldBy`);
+          if (r.heldBy) assert.equal(r.available, false);
+          if (holders[0]?.item === 'wheelbarrow') assert.ok(holders[0].itemHp > 0 && holders[0].itemHp <= 30);
+        }
         if (snap.phase === 'lobby') assert.equal(snap.entities.length, 0);
       }
     }

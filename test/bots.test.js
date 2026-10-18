@@ -11,7 +11,7 @@ const nearestPlantDist = (game, b) =>
   Math.min(...entitiesOfKind(game, 'garden').map((g) => Math.hypot(g.x - b.x, g.z - b.z)));
 
 function botGame(features = {}, overrides = {}) {
-  return makeGame({ features: { botAI: true, ...features }, ...overrides });
+  return makeGame({ features: { botAI: true, ...features }, botItemChance: {}, mowerBotChance: 0, ...overrides }); // no mower/tool errands unless a test asks
 }
 
 test('zombie bot moves toward garden over 2 s', () => {
@@ -33,8 +33,10 @@ test('zombie bots slow-walk (kid-friendly speed) and stop short of the front row
   bot.hp = bot.maxHp = 1e6; // survive turrets for this test
   assert.ok(DEFAULT_CONFIG.zombieBotSpeed < DEFAULT_CONFIG.moveSpeed);
   run(game, 40);
-  assert.ok(bot.z < -4 && bot.z > -14, `bot parked at z=${bot.z}`);
-  assert.ok(bot.z <= 0);
+  // it parks about zombieBotStopDistance short of the front row (it may shuffle sideways while shooting)
+  assert.ok(bot.z < -2 && bot.z > -14, `bot parked at z=${bot.z}`);
+  const nearest = Math.min(...entitiesOfKind(game, 'garden').map((g) => Math.hypot(g.x - bot.x, g.z - bot.z)));
+  assert.ok(nearest > 3, `kept its distance (${nearest.toFixed(1)} m)`);
 });
 
 test('zombie bots shoot garden plants within range', () => {
@@ -96,7 +98,7 @@ test('easy is gentler than normal', () => {
 });
 
 test('about 1 in 4 zombie bots go for the mower', () => {
-  const game = botGame({});
+  const game = botGame({}, { mowerBotChance: DEFAULT_CONFIG.mowerBotChance });
   game.addPlayer('a', { team: 'plant', mode: 'coop' });
   let n = 0;
   const total = 400;
