@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Backyard Battle</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A friendly first-person backyard battle: plants vs. zombies, played in the browser.">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "three": "/vendor/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- ============ in-game HUD ============ -->
+<div id="hud" class="hidden">
+  <div id="vignette"></div>
+  <div id="crosshair"><i class="ch-dot"></i><i class="ch-ring"></i><i id="hitmark"></i></div>
+
+  <div id="topbar">
+    <div id="wavetext">Wave 0</div>
+    <div id="timetrack"><div id="timefill"></div><div id="timesun"></div></div>
+    <div id="timelabel">Sunrise in 8:00</div>
+  </div>
+
+  <div id="gardenbox"><span class="ico">&#127793;</span> Garden <b id="gardencount">0</b></div>
+  <div id="sunbox" class="hidden"><span class="ico">&#9728;&#65039;</span> <b id="suncount">0</b></div>
+
+  <div id="seedcards" class="hidden">
+    <div class="seed" id="seed1"><span class="key">1</span><span class="ico">&#127793;</span><span class="nm">Peashooter</span><span class="cost">&#9728;&#65039; <b>50</b></span></div>
+    <div class="seed" id="seed2"><span class="key">2</span><span class="ico">&#127797;</span><span class="nm">Cactus</span><span class="cost">&#9728;&#65039; <b>100</b></span></div>
+  </div>
+
+  <div id="hpbox">
+    <div id="hpico">&#127803;</div>
+    <div class="hp-track"><div id="hpfill"></div><span id="hptext">100</span></div>
+  </div>
+
+  <div id="weaponbox">
+    <div id="weaponname">Pea Blaster</div>
+    <div id="pips"><i></i><i></i><i></i><i></i></div>
+    <div id="upgtrack"><div id="upgfill"></div></div>
+    <div id="upgtext">Next gun: 0 / 3</div>
+    <div id="streak">&#128293; Streak <b id="streaknum">0</b> / 10</div>
+  </div>
+
+  <div id="banner"><div id="bannertitle"></div><div id="bannersub"></div></div>
+  <div id="toast"></div>
+
+  <div id="downoverlay" class="hidden">
+    <div id="downtitle"></div>
+    <div id="downcount"></div>
+    <div id="downsub"></div>
+  </div>
+
+  <div id="help">
+    <h3>How to play</h3>
+    <div><b>W A S D</b> move &nbsp; <b>Space</b> jump</div>
+    <div><b>Mouse</b> look &nbsp; <b>Click</b> shoot</div>
+    <div class="plantonly"><b>1</b> plant Peashooter &nbsp; <b>2</b> plant Cactus</div>
+    <div class="zombieonly">Hold <b>E</b> near the mower to start it!</div>
+    <div class="plantonly">Shoot zombies 5 times to turn them into plants!</div>
+    <div class="zombieonly">Reach the garden and squash every plant!</div>
+    <div class="dim"><b>H</b> hide this &nbsp; <b>M</b> sound &nbsp; <b>Esc</b> free mouse</div>
+  </div>
+
+  <div id="pausehint" class="hidden">Click to keep playing!</div>
+  <div id="mutebtn" title="Sound on/off (M)">&#128266;</div>
+
+  <div id="endscreen" class="hidden">
+    <div id="endtitle"></div>
+    <div id="endsub"></div>
+    <div id="endcount"></div>
+    <button id="endchange" type="button">Change team (T)</button>
+  </div>
+</div>
+
+<!-- ============ lobby ============ -->
+<div id="lobby">
+  <div class="card">
+    <h1><span class="t-ico">&#127803;</span> Backyard Battle <span class="t-ico">&#129503;</span></h1>
+    <p class="tag">Defend the garden &mdash; or mow it down!</p>
+
+    <label class="field">Your name
+      <input id="name" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Type your name">
+    </label>
+
+    <div class="label">Pick your team</div>
+    <div class="row" id="teamrow">
+      <button type="button" class="choice team plant selected" data-team="plant">
+        <span class="big">&#127803;</span><span class="nm">Plants</span><span class="ds">Shoot zombies to turn them into plants!</span>
+      </button>
+      <button type="button" class="choice team zombie" data-team="zombie">
+        <span class="big">&#129503;</span><span class="nm">Zombies</span><span class="ds">Grab the mower and squash the garden!</span>
+      </button>
+    </div>
+
+    <div class="label">Game</div>
+    <div class="row" id="moderow">
+      <button type="button" class="choice mode selected" data-mode="coop"><span class="nm">Co-op</span><span class="ds">Same team vs. bots</span></button>
+      <button type="button" class="choice mode" data-mode="versus"><span class="nm">Versus</span><span class="ds">Plants vs. Zombies</span></button>
+    </div>
+
+    <div class="label">Bots</div>
+    <div class="row" id="diffrow">
+      <button type="button" class="choice diff selected" data-diff="easy"><span class="nm">Easy</span></button>
+      <button type="button" class="choice diff" data-diff="normal"><span class="nm">Normal</span></button>
+    </div>
+
+    <button id="play" type="button" disabled>Play!</button>
+    <div id="status">Connecting&hellip;</div>
+    <div class="fine">The first player to join picks Co-op / Versus and the bots. Press Esc to free your mouse.</div>
+  </div>
+</div>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>

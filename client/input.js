@@ -1,0 +1,149 @@
+// Keyboard + mouse (pointer lock). Look angles are applied locally and immediately; the
+// server just receives them 30 times a second.
+//
+//   W A S / arrows  move      Space  jump      mouse  look      left click  fire
+//   E  use (hold, mower)      1 / 2  plant peashooter / cactus
+//   M  mute     H  help
+
+const SENS = 0.0023;
+const PITCH_LIMIT = 1.4;
+
+export class Input {
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.enabled = false; // true while in a round (so typing in the lobby isn't captured)
+    this.locked = false;
+    this.yaw = 0;
+    this.pitch = 0;
+    this.keys = { f: false, b: false, l: false, r: false, jump: false };
+    this.fire = false;
+    this.use = false;
+    this.plantQueue = [];
+    this.seq = 0;
+    this.onToggleMute = null;
+    this.onToggleHelp = null;
+    this.onLockChange = null;
+    this.onPlantKey = null;
+    this.onChangeTeam = null;
+    this.lookMoved = false;
+    this._sendTimer = null;
+
+    document.addEventListener('pointerlockchange', () => {
+      this.locked = document.pointerLockElement === canvas;
+      if (!this.locked) this._releaseAll();
+      if (this.onLockChange) this.onLockChange(this.locked);
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!this.locked) return;
+      const dx = e.movementX || 0, dy = e.movementY || 0;
+      if (Math.abs(dx) > 600 || Math.abs(dy) > 600) return; // browsers occasionally glitch
+      this.yaw -= dx * SENS; // mouse right -> turn right (negative yaw)
+      this.pitch -= dy * SENS;
+      this.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, this.pitch));
+      if (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
+      else if (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
+      this.lookMoved = true;
+    });
+    canvas.addEventListener('mousedown', (e) => {
+      if (!this.enabled) return;
+      if (!this.locked) {
+        this.requestLock();
+        return;
+      }
+      if (e.button === 0) this.fire = true;
+      e.preventDefault();
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.fire = false;
+    });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('blur', () => this._releaseAll());
+    window.addEventListener('keydown', (e) => this._key(e, true));
+    window.addEventListener('keyup', (e) => this._key(e, false));
+  }
+
+  requestLock() {
+    try {
+      const p = this.canvas.requestPointerLock();
+      if (p && p.catch) p.catch(() => {});
+    } catch (_) { /* ignore */ }
+  }
+
+  exitLock() {
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  _releaseAll() {
+    const k = this.keys;
+    k.f = k.b = k.l = k.r = k.jump = false;
+    this.fire = false;
+    this.use = false;
+  }
+
+  _key(e, down) {
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON' && e.code === 'Space') return;
+    if (down && !e.repeat) {
+      if (e.code === 'KeyM' && this.onToggleMute) this.onToggleMute();
+      if (e.code === 'KeyH' && this.onToggleHelp && this.enabled) this.onToggleHelp();
+      if (e.code === 'KeyT' && this.onChangeTeam && this.enabled) this.onChangeTeam();
+    }
+    if (!this.enabled) return;
+    const k = this.keys;
+    let handled = true;
+    switch (e.code) {
+      case 'KeyW': case 'ArrowUp': k.f = down; break;
+      case 'KeyS': case 'ArrowDown': k.b = down; break;
+      case 'KeyA': case 'ArrowLeft': k.l = down; break;
+      case 'KeyD': case 'ArrowRight': k.r = down; break;
+      case 'Space': k.jump = down; break;
+      case 'KeyE': this.use = down; break;
+      case 'Digit1': case 'Numpad1': if (down && !e.repeat) this._plant(1); break;
+      case 'Digit2': case 'Numpad2': if (down && !e.repeat) this._plant(2); break;
+      default: handled = false;
+    }
+    if (handled) e.preventDefault();
+  }
+
+  _plant(n) {
+    this.plantQueue.push(n);
+    if (this.plantQueue.length > 3) this.plantQueue.shift();
+    if (this.onPlantKey) this.onPlantKey(n);
+  }
+
+  /** Make the next outgoing input message carry a fresh plant request. */
+  consumePlant() {
+    return this.plantQueue.length ? this.plantQueue.shift() : 0;
+  }
+
+  /** Build the protocol input message. */
+  message() {
+    const k = this.keys;
+    return {
+      t: 'input',
+      seq: ++this.seq,
+      keys: { f: k.f, b: k.b, l: k.l, r: k.r, jump: k.jump },
+      yaw: this.yaw,
+      pitch: this.pitch,
+      fire: this.fire,
+      use: this.use,
+      plant: this.consumePlant(),
+    };
+  }
+
+  /** Start sending at 30 Hz via send(msg). */
+  startSending(send) {
+    this.stopSending();
+    this._sendTimer = setInterval(() => send(this.message()), 1000 / 30);
+  }
+
+  stopSending() {
+    if (this._sendTimer) clearInterval(this._sendTimer);
+    this._sendTimer = null;
+  }
+
+  get moving() {
+    const k = this.keys;
+    return k.f || k.b || k.l || k.r;
+  }
+}
