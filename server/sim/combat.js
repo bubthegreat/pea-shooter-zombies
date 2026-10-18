@@ -79,6 +79,7 @@ export function fireWeapon(game, shooter) {
 /** Living things shots can hit. A mower with a driver in it is the target instead of the driver. */
 function isTargetable(game, e) {
   if (e.kind === 'mower') return e.state === 'driving' || e.state === 'starting';
+  if (game.isHeld(e)) return false; // waiting in the gate pen: nobody can shoot them yet
   return e.state === 'alive' && (e.kind === 'player' || e.kind === 'bot' || e.kind === 'garden') && !game.isDriving(e);
 }
 

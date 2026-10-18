@@ -172,7 +172,7 @@ export function stepGarden(game, dt) {
   const plants = [];
   for (const e of game.entities.values()) {
     if (e.kind === 'garden') plants.push(e);
-    else if ((e.kind === 'player' || e.kind === 'bot') && e.team === 'zombie' && e.state === 'alive') zombies.push(e);
+    else if ((e.kind === 'player' || e.kind === 'bot') && e.team === 'zombie' && e.state === 'alive' && !game.isHeld(e)) zombies.push(e);
   }
   for (const g of plants) {
     const type = c.plantTypes[g.plantKind];
@@ -180,13 +180,20 @@ export function stepGarden(game, dt) {
     const scale = levelScale(c, g.level ?? 1);
     const rate = type.rate * scale.rate;
     g.cooldown -= dt;
-    let target = null;
-    let best = type.range;
+    // the nearest zombie it can see (walls, doors, hills and cover block the view)
+    const muzzleY = g.y + (type.muzzle ?? c.turretMuzzleHeight);
+    const near = [];
     for (const z of zombies) {
       const d = dist2D(g.x, g.z, z.x, z.z);
-      if (d <= best) {
-        best = d;
+      if (d <= type.range) near.push([d, z]);
+    }
+    near.sort((p, q) => p[0] - q[0]);
+    let target = null;
+    for (let i = 0; i < Math.min(3, near.length); i++) {
+      const z = near[i][1];
+      if (game.field.clearLine(g.x, muzzleY, g.z, z.x, z.y + z.height * c.turretAimHeight, z.z, 'plant')) {
         target = z;
+        break;
       }
     }
     if (!target) {

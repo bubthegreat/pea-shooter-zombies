@@ -4,9 +4,10 @@ import { WORLD } from './world.js';
 /** Wave times (seconds into the round). The last wave arrives lastWaveLead seconds before sunrise. */
 export function planWaves(config) {
   const last = config.roundLength - config.lastWaveLead;
+  const shift = config.features?.headStart === false ? 0 : config.headStart ?? 0; // the zombies wait at the gate first
   const times = [];
   for (let k = 0; ; k++) {
-    const t = config.waveFirst + k * config.waveInterval;
+    const t = shift + config.waveFirst + k * config.waveInterval;
     if (t >= last - config.waveInterval / 2) break;
     times.push(t);
   }
@@ -74,7 +75,7 @@ export function stepRules(game, dt) {
   }
 
   if (!c.features.winRules) return;
-  if (game.gardenCount() === 0) endRound(game, 'zombie');
+  if (game.fridge.meter >= 1) endRound(game, 'zombie');
   else if (game.roundTime >= c.roundLength) endRound(game, 'plant');
   else if (game.finalWaveSpawned && !anyZombieAlive(game)) endRound(game, 'plant');
 }

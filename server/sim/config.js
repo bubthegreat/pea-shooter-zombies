@@ -13,7 +13,8 @@ export const DEFAULT_CONFIG = {
 
   // Feature switches (tests and debugging turn individual subsystems off).
   features: {
-    initialGarden: true,
+    initialGarden: false, // no default plants: the plants plant their own defence
+    fridge: true,
     cover: true,
     headStart: true,
     waves: true,
@@ -81,7 +82,7 @@ export const DEFAULT_CONFIG = {
   turretAimHeight: 0.6, // fraction of target height to aim at
   turretLag: 0.5, // seconds: turrets aim at where a moving target was this long ago
   plantRange: 4, // a plant can be placed in an empty slot this close to the player
-  startSunshine: 200,
+  startSunshine: 300,
   sunPerConversion: 25,
   sunValue: 25,
   sunDropInterval: 3,
@@ -137,6 +138,11 @@ export const DEFAULT_CONFIG = {
   // Share of zombie bots that go for each item (rolled once per bot, after the mower roll).
   botItemChance: { weed_eater: 0, hedge_trimmer: 0, leaf_blower: 0, wheelbarrow: 0 },
 
+  // The Fridge Meter: every living zombie standing by the open fridge (up to maxZombies) fills 1 / fillSeconds of the
+  // meter per second; it never drains. A full meter is a zombie win.
+  fridge: { fillSeconds: 10, maxZombies: 4 },
+  headStart: 15, // seconds the plants have alone: zombies wait in the gate pen (waves are shifted by this)
+
   // Rounds, waves and win rules
   roundLength: 480,
   endedTime: 10, // result screen before the next round (or the waiting room)
@@ -172,7 +178,7 @@ export const DEFAULT_CONFIG = {
   gardener: {
     name: 'Gardener',
     speed: 4,
-    startSunshine: 200,
+    startSunshine: 300,
     income: 10, // sunshine per second
     maxSunshine: 300,
     respawn: 10, // seconds after it wilts
@@ -224,6 +230,8 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     plantLevels: c.plantLevels,
     plantRange: c.plantRange,
     startSunshine: c.startSunshine,
+    headStart: c.headStart,
+    fridge: c.fridge,
     sunValue: c.sunValue,
     sunPerConversion: c.sunPerConversion,
     sunPickupRadius: c.sunPickupRadius,

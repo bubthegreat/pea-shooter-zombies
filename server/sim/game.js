@@ -4,6 +4,7 @@ import { WORLD } from './world.js';
 import { terrainHeight } from './terrain.js';
 import { createField, STEP, MAX_SLOPE } from './collide.js';
 import { Cover } from './cover.js';
+import { createFridge, stepFridge } from './fridge.js';
 import { clamp, round, wrapAngle } from './vec.js';
 import { getWeapon, weaponFor } from './weapons.js';
 import { fireWeapon, stepProjectiles } from './combat.js';
@@ -63,6 +64,7 @@ export class Game {
     this.endTimer = 0;
     this.gardenerTimer = 0;
     this.headStart = 0;
+    this.fridge = createFridge();
   }
 
   difficultyConfig() {
@@ -107,6 +109,8 @@ export class Game {
     this.finalWaveSpawned = false;
     this.endTimer = 0;
     this.gardenerTimer = 0;
+    this.headStart = this.config.features.headStart ? this.config.headStart : 0;
+    this.fridge = createFridge();
     this.cover.reset();
     createMower(this);
     createRack(this);
@@ -347,6 +351,10 @@ export class Game {
     if (this.phase === 'lobby') return;
     if (this.phase === 'playing') {
       this.roundTime += dt;
+      if (this.headStart > 0) {
+        this.headStart = Math.max(0, this.headStart - dt);
+        if (this.headStart === 0) this.emit('release');
+      }
       stepBots(this, dt);
       this._stepActors(dt);
       stepMower(this, dt);
@@ -354,6 +362,7 @@ export class Game {
       stepGarden(this, dt);
       stepProjectiles(this, dt);
       stepSun(this, dt);
+      stepFridge(this, dt);
       this._clearEdges();
     } else {
       this._stepActors(dt); // result screen: everyone can still walk around, nobody can shoot
@@ -408,7 +417,7 @@ export class Game {
   _stepWeapon(e, dt) {
     const w = getWeapon(e.weapon);
     e.cooldown -= dt;
-    if (!w || !e.input.fire || this.phase !== 'playing' || this.isDriving(e) || e.item) {
+    if (!w || !e.input.fire || this.phase !== 'playing' || this.isHeld(e) || this.isDriving(e) || e.item) {
       if (e.cooldown < 0) e.cooldown = 0;
       return;
     }
@@ -416,6 +425,11 @@ export class Game {
       fireWeapon(this, e);
       e.cooldown += 1 / (w.rate * (e.fireScale ?? 1));
     }
+  }
+
+  /** Zombies wait in the gate pen while the plants have their head start: no shooting, no walking out. */
+  isHeld(e) {
+    return this.headStart > 0 && e.team === 'zombie';
   }
 
   isDriving(e) {
@@ -469,6 +483,11 @@ export class Game {
     if (p) {
       e.x = p.x;
       e.z = p.z;
+    }
+    if (this.isHeld(e)) {
+      const pen = WORLD.pen;
+      e.x = clamp(e.x, pen.minX + e.radius, pen.maxX - e.radius);
+      e.z = clamp(e.z, pen.minZ + e.radius, pen.maxZ - e.radius);
     }
     // Vertical: stand on the ground (terrain or a ledge within a step), otherwise fall; jump from the ground.
     const ground = this.field.groundAt(e.x, e.z, e.y);
@@ -554,6 +573,8 @@ export class Game {
       time: Math.round(this.time * 1000), // sim clock in milliseconds
       phase: this.phase,
       round: this.cover.round,
+      headStart: round(this.headStart, 1),
+      fridge: { m: round(this.fridge.meter, 3), n: this.fridge.n },
       winner: this.winner,
       roundTime: round(this.roundTime, 2),
       roundLength: this.config.roundLength,

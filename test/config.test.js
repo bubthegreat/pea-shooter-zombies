@@ -24,7 +24,10 @@ test('publicConfig is plain JSON with everything the client needs', () => {
   assert.deepEqual(cfg.plantLevels.cost, [0.75, 1.25]);
   assert.equal(cfg.plantLevels.max, 3);
   assert.equal(cfg.weapons.zombie.at(-1).id, 'auto_shot_rifle');
-  assert.equal(cfg.waves.times[0], 5);
+  assert.equal(cfg.waves.times[0], 20, 'the first wave waits for the 15 s head start');
+  assert.equal(cfg.headStart, 15);
+  assert.equal(cfg.startSunshine, 300);
+  assert.deepEqual(cfg.fridge, { fillSeconds: 10, maxZombies: 4 });
   assert.equal(cfg.map.garage.maxX, 20);
   assert.equal(cfg.map.doors.length, 4);
   assert.equal(cfg.map.terrain.nx * cfg.map.terrain.nz * 2, Buffer.from(cfg.map.terrain.data, 'base64').length);

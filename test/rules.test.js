@@ -48,10 +48,11 @@ test('easy waves are 2 + wave, later waves come every 45 s and grow', () => {
   assert.equal(zombieBots(game).length, 4 + 5);
 });
 
-test('waves are planned from t=5 every 45 s, with the last wave 60 s before sunrise', () => {
+test('waves are planned from t=5 (+ the 15 s head start) every 45 s, with the last wave 60 s before sunrise', () => {
   const t = planWaves(DEFAULT_CONFIG);
-  assert.equal(t[0], 5);
-  assert.equal(t[1], 50);
+  assert.equal(t[0], 20);
+  assert.equal(t[1], 65);
+  assert.equal(planWaves(makeGame().config)[0], 5, 'no head start, no shift');
   assert.equal(t.at(-1), DEFAULT_CONFIG.roundLength - 60);
   for (let i = 1; i < t.length; i++) assert.ok(t[i] > t[i - 1] + 20, 'waves are not bunched up');
   assert.ok(t.length >= 8);
@@ -87,12 +88,15 @@ const winGame = (extra = {}) => {
   return { game, a };
 };
 
-test('garden count 0 -> zombie win', () => {
+test('a wiped-out garden no longer ends the round; a full Fridge Meter does', () => {
   const { game } = winGame();
   run(game, 1);
   assert.equal(game.phase, 'playing');
   for (const g of garden(game)) applyDamage(game, g, 1000, null);
   assert.equal(game.gardenCount(), 0);
+  run(game, 1);
+  assert.equal(game.phase, 'playing', 'no garden is fine: plants can replant');
+  game.fridge.meter = 1;
   game.tick(1 / 30);
   assert.equal(game.phase, 'ended');
   assert.equal(game.winner, 'zombie');
@@ -116,10 +120,10 @@ test('sunrise with garden -> plant win', () => {
   assert.equal(game.drainEvents().find((e) => e.type === 'win').winner, 'plant');
 });
 
-test('losing the garden on the last tick still counts for zombies', () => {
+test('filling the fridge on the last tick still counts for zombies', () => {
   const { game } = winGame();
   game.roundTime = DEFAULT_CONFIG.roundLength - 0.01;
-  for (const g of garden(game)) applyDamage(game, g, 1000, null);
+  game.fridge.meter = 1;
   game.tick(1 / 30);
   assert.equal(game.winner, 'zombie');
 });
