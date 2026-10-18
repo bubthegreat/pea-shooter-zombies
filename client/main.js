@@ -9,6 +9,7 @@ import { Sound } from './audio.js';
 import { HUD } from './hud.js';
 import { Lobby } from './lobby.js';
 import { Options } from './options.js';
+import { TouchControls, isTouch } from './touch.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -27,7 +28,7 @@ try {
   lobby.setStatus("Your browser couldn't start 3D graphics. Try the latest Chrome!", true);
   throw err;
 }
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch() ? 1 : 1.5)); // phones render at 1x to keep the frame rate up
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false; // scenery never moves: shadows are rendered once
@@ -45,6 +46,7 @@ const sound = new Sound();
 const hud = new HUD();
 const net = new Net();
 const input = new Input(canvas);
+new TouchControls(input, hud); // phones/tablets: on-screen controls (no-op on desktop)
 
 hud.setMuted(sound.muted);
 

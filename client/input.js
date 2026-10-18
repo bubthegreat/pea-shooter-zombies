@@ -64,6 +64,7 @@ export class Input {
     this.canvas = canvas;
     this.enabled = false; // true while in a round (so typing in the lobby isn't captured)
     this.locked = false;
+    this.touch = false; // phone/tablet: touch.js drives the input, there is no pointer lock
     this.menuOpen = false; // settings panel is up: ignore game keys
     this.yaw = 0;
     this.pitch = 0;
@@ -113,6 +114,7 @@ export class Input {
   }
 
   requestLock() {
+    if (this.touch) return this._touchLock(true);
     try {
       const p = this.canvas.requestPointerLock();
       if (p && p.catch) p.catch(() => {});
@@ -120,7 +122,16 @@ export class Input {
   }
 
   exitLock() {
+    if (this.touch) return this._touchLock(false);
     if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /** Touch has no pointer lock: "locked" just means the touch controls are live (in a round, no menu). */
+  _touchLock(on) {
+    if (this.locked === on) return;
+    this.locked = on;
+    if (!on) this._releaseAll();
+    if (this.onLockChange) this.onLockChange(on);
   }
 
   /** The settings panel needs the real mouse and shouldn't leak keys into the game. */

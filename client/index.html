@@ -3,9 +3,15 @@
 <head>
 <meta charset="utf-8">
 <title>Backyard Battle</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1d2a5e">
 <meta name="description" content="A friendly first-person backyard battle: plants vs. zombies, played in the browser.">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="touch.css">
+<script>try { if (matchMedia('(pointer: coarse)').matches) document.documentElement.classList.add('touch'); } catch (e) {}</script>
 <script type="importmap">
 { "imports": { "three": "/vendor/three.module.js", "three/addons/": "/vendor/three/addons/" } }
 </script>
