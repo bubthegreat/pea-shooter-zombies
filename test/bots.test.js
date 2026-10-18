@@ -64,7 +64,7 @@ test('zombie bots shoot human plants, with a reaction delay and imperfect aim', 
   run(game, 0.6);
   assert.equal(entitiesOfKind(game, 'projectile').length, 0, 'still reacting');
   assert.equal(a.hp, a.maxHp);
-  run(game, 14);
+  run(game, 40);
   assert.ok(a.hp < a.maxHp, 'player took some hits');
 });
 
@@ -91,10 +91,11 @@ test('aim error makes bots miss: sloppier aim lands fewer hits', () => {
 test('easy is gentler than normal', () => {
   const d = DEFAULT_CONFIG.difficulties;
   assert.ok(d.easy.aimError > d.normal.aimError);
-  assert.equal(d.easy.aimError, 0.15);
-  assert.equal(d.normal.aimError, 0.07);
-  assert.ok(d.easy.fireScale < d.normal.fireScale);
-  assert.ok(d.easy.reaction >= d.normal.reaction);
+  assert.equal(d.easy.aimError, 0.16);
+  assert.equal(d.normal.aimError, 0.14);
+  assert.ok(d.easy.fireScale <= d.normal.fireScale);
+  assert.ok(d.easy.reaction > d.normal.reaction);
+  assert.ok(d.easy.waveBase < d.normal.waveBase);
 });
 
 test('about 1 in 4 zombie bots go for the mower', () => {

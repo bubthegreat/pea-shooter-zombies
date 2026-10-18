@@ -145,7 +145,7 @@ test('zombie bots fire 40-50% less often than before', () => {
   const d = DEFAULT_CONFIG.difficulties;
   assert.ok(d.easy.fireScale <= 0.5 * 0.6 + 1e-9, `easy ${d.easy.fireScale}`);
   assert.ok(d.normal.fireScale <= 0.8 * 0.6 + 1e-9, `normal ${d.normal.fireScale}`);
-  assert.ok(d.easy.fireScale < d.normal.fireScale);
+  assert.ok(d.easy.fireScale <= d.normal.fireScale);
 });
 
 // ---- headshots ---------------------------------------------------------------

@@ -58,8 +58,8 @@ export const DEFAULT_CONFIG = {
   gardenPlantHeight: 1.2,
   plantTypes: {
     // range in m, rate in shots/s, speed in m/s, aimError = random cone half-angle (rad)
-    peashooter: { cost: 50, range: 25, rate: 1.5, damage: 1, speed: 50, projKind: 'pea', aimError: 0.16 },
-    cactus: { cost: 100, range: 50, rate: 0.8, damage: 2, speed: 60, projKind: 'spike', aimError: 0.12 },
+    peashooter: { cost: 50, range: 25, rate: 1.5, damage: 1, speed: 50, projKind: 'pea', aimError: 0.14 },
+    cactus: { cost: 100, range: 50, rate: 0.8, damage: 3, speed: 60, projKind: 'spike', aimError: 0.12 },
   },
   turretMuzzleHeight: 1.0,
   turretAimHeight: 0.6, // fraction of target height to aim at
@@ -132,8 +132,8 @@ export const DEFAULT_CONFIG = {
   // Bots. aimError = random cone half-angle (rad); fireScale scales the weapon fire rate;
   // reaction = seconds before a freshly spotted target is shot at; waveBase + wave number = wave size.
   difficulties: {
-    easy: { aimError: 0.15, fireScale: 0.28, reaction: 0.8, waveBase: 2 },
-    normal: { aimError: 0.07, fireScale: 0.45, reaction: 0.4, waveBase: 3 },
+    easy: { aimError: 0.16, fireScale: 0.3, reaction: 0.8, waveBase: 2 },
+    normal: { aimError: 0.14, fireScale: 0.3, reaction: 0.4, waveBase: 3 },
   },
   zombieBotSpeed: 3,
   botThinkInterval: 0.25,

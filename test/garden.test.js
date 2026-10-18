@@ -238,11 +238,12 @@ test('cactus turret hits zombie 40 m away', () => {
     stepGarden(game, 1 / 30);
     stepProjectiles(game, 1 / 30);
   }
-  // 2 damage per spike vs 5 hp: converted after 3 hits (~3.75 s) -- stop earlier to inspect
+  // 3 damage per spike vs 5 hp: converted after 2 hits
   assert.ok(zombie.hp < DEFAULT_CONFIG.zombieHp || zombie.team === 'plant');
   const hits = game.drainEvents().filter((e) => e.type === 'hit' && e.id === zombie.id);
   assert.ok(hits.length >= 1);
-  assert.equal(hits[0].dmg, 2);
+  assert.equal(hits[0].dmg, DEFAULT_CONFIG.plantTypes.cactus.damage);
+  assert.equal(DEFAULT_CONFIG.plantTypes.cactus.damage, 3);
   assert.equal(hits[0].by, cactus.id);
 });
 

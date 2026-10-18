@@ -105,7 +105,7 @@ Exact names, damage, fire rate, and upgrade thresholds are left to the builder t
 
 - **Zombie waves:** zombie bots arrive in waves from the far end of the yard until sunrise. The last wave comes just before sunrise. Plants win by converting the final wave, or by reaching sunrise with any garden left.
 - **Converted kid players:** bots who get converted stay plants for good. A kid playing zombie who gets converted becomes a little sprout for about 5 seconds, then digs back up as a zombie at the gate. Upgrades are kept. This keeps Versus two-sided, and nobody sits out.
-- **Converted bots** become walking plant-team bots that fight alongside the plants. They are not garden plants.
+- **Converted bots** become walking plant-team bots that fight alongside the plants. They are not garden plants. *(Superseded by the playtest changes below: converted bots now poof into sunshine.)*
 - **Garden loss:** zombies win the moment the garden has zero planted plants, no matter what destroyed them (mower or gunfire). Plants can replant any time with sunshine. The mower destroys any planted plant it drives over.
 - **Players per game:** one game at a time, up to 2 human players.
 
@@ -115,3 +115,59 @@ Exact names, damage, fire rate, and upgrade thresholds are left to the builder t
 - Visual style details, sounds, and music, keeping them cheerful and not scary.
 - Network architecture details, as long as two home computers play smoothly together.
 - Code structure, test approach, and build tooling.
+
+## Playtest changes 2026-10-18
+
+After the first family playtest ("Dad's list"), these changes replace or extend what is written above.
+
+**A. No plant soldiers.** The walking plant-soldier bots are gone: no converted-zombie soldiers and no computer defenders.
+The plant team is the human plant kids (who keep their guns and the whole upgrade ladder) plus the turrets they plant.
+A converted zombie bot bursts into a flower poof and drops a sunshine pickup worth `sunValue` where it stood (a converted kid
+still sprouts and digs back up as a zombie, and pays `sunPerConversion` directly). *Exception:* when nobody on the plant team is
+human (for example both kids are zombies in co-op), exactly one computer **Gardener** appears. It walks the garden replanting empty
+slots from its own passive sunshine income (about 10 per second), shoots only weakly, and comes back a few seconds after it wilts.
+It leaves as soon as a human takes the plant side. Plants still win by clearing the final wave or reaching sunrise. A converted
+kid who is still sprouting counts as a zombie for the "final wave cleared" check.
+
+**B. Shotguns feel like upgrades.** Tight spread (about 0.045 rad) and 8 pellets: a whole Spike Shotgun blast under 10 m converts a
+zombie, and headshot pellets do even more. The Zombie Shotgun is the same idea against plants.
+
+**C. Enemy bullets you can dodge.** Zombie shots travel about 20 m/s (plant turret peas stay fast), are drawn big, bright and glowing
+(purple/magenta goo with a short trail), and zombie bots fire about 40% less often. Hit radii are a bit larger so what you see is what
+hurts you.
+
+**D. Headshots.** The top 0.4 m of the 1.8 m body is the head: triple damage for shots from players and bots against players and bots
+(not garden turrets, not splash). The `hit` event carries `head: true`; the shooter gets a "HEADSHOT!" pop and a ding.
+
+**E. Eight-rung gun ladders.** Kills needed (cumulative): 0, 2, 4, 7, 10, 14, 18, 23, so a decent kid reaches the top most rounds.
+The 10-in-a-row no-hurt bonus still skips one rung.
+Plants: Pea Blaster, Double Pea, Pea Rifle, Snow Pea (slows zombies 50% for 2 s), Spike Shotgun, Repeater (very fast), Melon Lobber
+(arcing, splash), House Gun (one-hit convert).
+Zombies: Goo Blaster, Slime Pistol, Zombie Rifle, Bone Burst (3-shot spread), Zombie Shotgun, Sludge Sprayer, Brain Cannon (big slow
+splash orb), Auto-Shot Rifle. Every rung has its own first-person gun and its own shot look.
+
+**F. The lawn mower driver is protected.** While driving, the zombie takes no damage; the mower has its own HP (40, shown over the
+mower and on the driver's HUD). When it is destroyed it sputters out in a poof, the driver is dropped on foot unhurt, and a new mower
+appears in the garage 20 seconds later. Pressing E again while driving hops off.
+
+**G. Garage equipment rack (weed eater and friends).** Four lawn tools hang in the garage, one of each. A zombie presses E near a
+hook to swap their gun for the tool, and Q (or E away from the rack) puts it down; E at the hook puts it straight back. A tool is
+back on its hook 20 seconds after it is dropped, wrecked, or its holder is converted. Holders are not protected. About 1 in 4 zombie bots go for the mower and about 1 in 5 of the rest grab a tool
+(the weed eater most often).
+- *Weed Eater:* 3 m melee cone, shreds a garden plant in about 1.5 s (counts as a kill), moderate against plant kids. Very short range.
+- *Leaf Blower:* 9 m cone, shoves plant kids backwards, swats light incoming shots, blows sunshine drops away. Almost no damage.
+- *Hedge Trimmer:* 2 m, wilts a plant kid in about a second, chews turrets. The holder walks 25% slower.
+- *Wheelbarrow:* pushed as a moving front shield that blocks plant shots from the front (30 HP); the pusher cannot attack and walks 15%
+  slower; other zombies can hide behind it.
+- *Lawn Mower* (unchanged apart from F): fastest way to clear the garden, but it is loud, a big target, and takes 3 s to start.
+
+**H. Robustness fixes from review.** A throwing tick no longer stops the server loop; a join that times out retries on a fresh socket,
+the server evicts a page's ghost connection by its client token and drops half-open sockets within about 6 s (3 s heartbeat);
+planting uses a per-press counter (`plantSeq`) so rapid repeated presses all count; the mower snapshot names its driver.
+
+
+**Balance after the changes** (`node scripts/balance.mjs`, seeded full rounds with scripted kids; no soldiers, so turrets carry the
+defence). A plant kid who stands still all round: zombies win about 13% of Easy rounds and about 47% of Normal rounds; a plant kid who
+shoots and replants wins every round. The mower is driven in most AFK rounds. Knobs: peashooter aim error 0.14, cactus damage 3
+(range 50, aim error 0.12), bot aim error 0.16 / 0.14 (Easy / Normal) at fire scale 0.3, Easy waves 2+n and Normal waves 3+n, 25% of
+bots chase the mower (via the right-hand flank).
