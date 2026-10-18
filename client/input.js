@@ -82,7 +82,6 @@ export class Input {
     this.onToggleHelp = null;
     this.onLockChange = null;
     this.onPlantKey = null;
-    this.onChangeTeam = null;
     this.lookMoved = false;
     this._sendTimer = null;
 
@@ -163,7 +162,6 @@ export class Input {
     if (down && !e.repeat) {
       if (e.code === 'KeyM' && this.onToggleMute) this.onToggleMute();
       if (e.code === 'KeyH' && this.onToggleHelp && this.enabled && !this.menuOpen) this.onToggleHelp();
-      if (e.code === 'KeyT' && this.onChangeTeam && this.enabled && !this.menuOpen) this.onChangeTeam();
     }
     if (!this.enabled || this.menuOpen) return;
     const k = this.keys;

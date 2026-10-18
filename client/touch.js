@@ -181,9 +181,10 @@ export class TouchControls {
     });
     window.addEventListener('blur', () => this._resetAll());
 
-    // fullscreen + landscape lock + screen wake lock, all from the Play tap (a user gesture)
-    const play = $('play');
-    if (play) play.addEventListener('click', () => this._onPlay());
+    // fullscreen + landscape lock + screen wake lock, all from a Join / Create / Start tap (a user gesture)
+    document.addEventListener('click', (e) => {
+      if (e.target && e.target.closest && e.target.closest('[data-play]')) this._onPlay();
+    });
   }
 
   _onPlay() {
@@ -235,7 +236,6 @@ export class TouchControls {
     const d1 = desc('set-invy'); if (d1) d1.textContent = 'Drag up to look down';
     const d2 = desc('set-invx'); if (d2) d2.textContent = 'Drag right to turn left';
     for (const f of document.querySelectorAll('#settings .fine')) f.textContent = 'Changes happen right away and are saved on this device.';
-    for (const f of document.querySelectorAll('#lobby .fine')) f.textContent = 'The first player to join picks Co-op / Versus and the bots.';
   }
 
   /** Keyboard hints in HUD text become touch hints, and the HUD tells us what the player is holding. */

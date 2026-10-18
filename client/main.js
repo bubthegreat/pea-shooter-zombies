@@ -273,28 +273,39 @@ const fireSound = (proj) => FIRE_SOUND[proj] || 'pea';
 /* lobby / networking                                                  */
 /* ------------------------------------------------------------------ */
 
-function leaveToLobby(msg, bad = false) {
+/** Back to the menus: stop playing locally (the server decides which lobby screen to show). */
+function leaveGameView() {
   S.joined = false;
   input.enabled = false;
   input.stopSending();
   input.exitLock();
   hud.hide();
+  hud.clearFeed();
   layer.clear();
   world.hideSlot();
   sound.engineLevel(0);
   lobby.show();
-  if (msg) lobby.setStatus(msg, bad);
 }
 
-lobby.setReady(false);
+const R = { room: null, you: null }; // the lobby we are in, from the latest lobbyState
+
+function hello() {
+  net.send({ t: 'listLobbies', cid: CID, name: profile.name }); // also lets the server put a reconnecting page back
+}
+
 net.on('open', () => {
-  lobby.setReady(true);
-  lobby.setStatus('Ready! Pick a team and press Play.');
+  lobby.setConnected(true);
+  hello();
 });
 net.on('close', () => {
-  const wasJoined = S.joined;
-  lobby.setReady(false);
-  leaveToLobby(wasJoined ? 'Lost the connection — reconnecting…' : 'Connecting…', wasJoined);
+  const wasIn = S.joined || !!R.room;
+  R.room = null;
+  options.setInLobby(false);
+  lobby.setConnected(false);
+  lobby.setList([]);
+  leaveGameView();
+  lobby.showBrowse();
+  lobby.setStatus(wasIn ? 'Lost the connection — reconnecting…' : 'Connecting…', wasIn);
 });
 net.on('welcome', (msg) => {
   S.config = msg.config || {};
@@ -306,20 +317,48 @@ net.on('welcome', (msg) => {
   if (S.config.world && !worldMatches(S.config.world)) {
     console.warn('Server world layout differs from the built-in scenery; collisions may not match visuals.');
   }
+  enterGame();
 });
 net.on('msg', (msg) => {
-  if (msg.t === 'error' || msg.t === 'full' || msg.t === 'rejected') {
-    leaveToLobby(msg.message || msg.reason || "Couldn't join. Try again!", true);
+  if (msg.t === 'lobbies') lobby.setList(msg.lobbies);
+  else if (msg.t === 'lobbyState') onLobbyState(msg);
+  else if (msg.t === 'error') {
+    if (S.joined) hud.toast(msg.message || 'Something went wrong. Try again!', 2600);
+    else lobby.setStatus(msg.message || msg.reason || "That didn't work. Try again!", true);
   }
 });
 net.on('snap', onSnap);
 
-lobby.onPlay = (choice) => {
-  if (!net.open) return;
-  sound.unlock();
-  sfx('click');
-  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  S.team = choice.team;
+function onLobbyState(msg) {
+  const room = msg.lobby && typeof msg.lobby === 'object' ? msg.lobby : null;
+  const prevHost = R.room ? R.room.host : null;
+  R.room = room;
+  R.you = msg.you ?? null;
+  options.setInLobby(!!room);
+  if (!room) {
+    // left (or the lobby closed under us): back to the browser
+    if (S.joined) leaveGameView();
+    lobby.setRoom(null, null);
+    lobby.showBrowse();
+    return;
+  }
+  lobby.setRoom(room, R.you);
+  if (room.status === 'waiting') {
+    // round over (or we just arrived): the waiting room
+    if (S.joined) leaveGameView();
+    if (lobby.screen !== 'room') lobby.showRoom();
+    lobby.show();
+  } else if (!S.joined) {
+    lobby.showRoom(); // a running game: the welcome message that follows takes us in
+  } else if (prevHost !== null && prevHost !== room.host && room.host === R.you) {
+    hud.toast("You're the host now!", 2600);
+  }
+}
+
+/** The server welcomed us into a running game: show it. */
+function enterGame() {
+  const me = R.room && R.room.players.find((p) => p.id === net.id);
+  S.team = me && me.team === 'zombie' ? 'zombie' : 'plant';
   S.joined = true;
   S.joinAt = performance.now();
   S.needYawSync = true;
@@ -332,7 +371,7 @@ lobby.onPlay = (choice) => {
   S.eyeY = 1.6;
   S.wasDriving = 0;
   vm.gunId = null;
-  net.send({ t: 'join', name: choice.name, team: choice.team, mode: choice.mode, difficulty: choice.difficulty, cid: CID });
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   hud.show();
   hud.resetForJoin(performance.now());
   lobby.hide();
@@ -341,21 +380,51 @@ lobby.onPlay = (choice) => {
   input.requestLock();
   // wait for the first snapshot (it carries our spawn facing) before sending look angles
   input.startSending((m) => (S.joined && !S.needYawSync ? net.send(m) : false));
-};
-
-function changeTeam() {
-  leaveToLobby('Pick a team and press Play.');
-  net.restart();
 }
-hud.el.endChange.addEventListener('click', changeTeam);
-input.onChangeTeam = () => { if (hud.endShown) changeTeam(); };
+
+// button presses in the lobby screens (a click is also the browser's permission to play sounds / go fullscreen)
+function press() {
+  sound.unlock();
+  sfx('click');
+}
+lobby.onCreate = (o) => {
+  if (!net.open) return;
+  press();
+  net.send({ t: 'createLobby', lobbyName: o.lobbyName, mode: o.mode, difficulty: o.difficulty, team: lobby.choice.team, name: profile.name, cid: CID });
+};
+lobby.onJoin = (lobbyId) => {
+  if (!net.open) return;
+  press();
+  net.send({ t: 'joinLobby', lobbyId, team: lobby.choice.team, name: profile.name, cid: CID });
+};
+lobby.onTeam = (team) => { press(); net.send({ t: 'setTeam', team }); };
+lobby.onOptions = (o) => { press(); net.send({ t: 'setOptions', ...o }); };
+lobby.onStart = () => {
+  if (!net.open) return;
+  press();
+  net.send({ t: 'startGame' });
+};
+lobby.onLeave = leaveLobby;
+
+function leaveLobby() {
+  press();
+  options.close(false);
+  net.send({ t: 'leaveLobby' });
+  R.room = null;
+  options.setInLobby(false);
+  if (S.joined) leaveGameView();
+  lobby.setRoom(null, null);
+  lobby.showBrowse();
+}
+hud.el.endLeave.addEventListener('click', leaveLobby);
 hud.el.mute.addEventListener('click', () => toggleMute());
 input.onToggleMute = toggleMute;
 input.onToggleHelp = () => hud.toggleHelp();
 input.onPlantKey = (n) => onPlantKey(n);
 
-profile.subscribe((name) => { if (S.joined) net.send({ t: 'setName', name }); }); // renamed from the settings panel mid-game
+profile.subscribe((name) => { if (net.open) net.send({ t: 'setName', name }); }); // renamed (settings panel, lobby page)
 const options = new Options();
+options.onLeave = leaveLobby;
 options.onOpen = () => input.setMenuOpen(true);
 options.onClose = (relock) => {
   input.setMenuOpen(false);
@@ -733,8 +802,7 @@ function frame() {
   // join timeout
   if (S.joined && !own && nowMs - S.joinAt > 6000) {
     // The socket may be half-dead: retry on a fresh one (the server swaps out any ghost of ours via cid).
-    net.restart();
-    leaveToLobby("Couldn't join the game. Reconnecting — try again in a moment!", true);
+    net.restart(); // the close handler puts us in the menu; the server puts a rejoining page back in its lobby
   }
 
   // ---- view model (own gun)
@@ -791,6 +859,7 @@ function handleLayerChanges() {
 
 function gameplayFrame(dt, t, nowMs, own, snap, entities) {
   const team = own.team === 'zombie' ? 'zombie' : 'plant';
+  S.team = team;
   const alive = own.state !== 'wilted' && own.state !== 'sprout';
 
   // phase transitions

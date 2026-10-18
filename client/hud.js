@@ -30,7 +30,7 @@ export class HUD {
       banner: $('banner'), bannerTitle: $('bannertitle'), bannerSub: $('bannersub'),
       feed: $('killfeed'), toast: $('toast'), down: $('downoverlay'), downTitle: $('downtitle'), downCount: $('downcount'), downSub: $('downsub'),
       help: $('help'), pause: $('pausehint'), mute: $('mutebtn'),
-      end: $('endscreen'), endTitle: $('endtitle'), endSub: $('endsub'), endCount: $('endcount'), endChange: $('endchange'),
+      end: $('endscreen'), endTitle: $('endtitle'), endSub: $('endsub'), endCount: $('endcount'), endLeave: $('endleave'),
       vignette: $('vignette'), hitmark: $('hitmark'),
     };
     this.team = null;
@@ -336,7 +336,7 @@ export class HUD {
       }
       const total = num(config && config.endedTime, 10);
       const left = Math.max(0, Math.ceil(total - (now - this.endStart) / 1000));
-      this._set('ec', e.endCount, 'text', `Next round in ${left}…`);
+      this._set('ec', e.endCount, 'text', `Back to the lobby in ${left}…`);
     } else if (this.endShown) {
       this.endShown = false;
       e.end.classList.add('hidden');

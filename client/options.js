@@ -13,6 +13,8 @@ export class Options {
     this.sens = $('set-sens');
     this.sensVal = $('set-sensval');
     this.nameEl = $('set-name');
+    this.leaveBtn = $('set-leave');
+    this.onLeave = null; // () => void
     this.onOpen = null; // () => void
     this.onClose = null; // (relock: boolean) => void
 
@@ -31,8 +33,8 @@ export class Options {
     $('set-reset').addEventListener('click', () => settings.reset());
     $('set-done').addEventListener('click', () => this.close());
     this.root.addEventListener('click', (e) => { if (e.target === this.root) this.close(); });
-    for (const id of ['optbtn', 'lobbyopt']) {
-      const b = $(id);
+    this.leaveBtn.addEventListener('click', () => { if (this.onLeave) this.onLeave(); });
+    for (const b of [$('optbtn'), ...document.querySelectorAll('[data-open-settings]')]) {
       if (b) b.addEventListener('click', () => this.open());
     }
 
@@ -51,6 +53,9 @@ export class Options {
     settings.subscribe(() => this._render());
     this._render();
   }
+
+  /** "Leave lobby" only shows while we are in one. */
+  setInLobby(inLobby) { this.leaveBtn.classList.toggle('hidden', !inLobby); }
 
   get isOpen() { return !this.root.classList.contains('hidden'); }
 

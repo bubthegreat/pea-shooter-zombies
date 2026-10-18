@@ -79,7 +79,7 @@
     <div class="zombieonly"><b>E</b> grab a garage tool / start the mower / hop off</div>
     <div class="zombieonly"><b>Q</b> put the tool down</div>
     <div class="zombieonly">Squash or shred every plant. Dodge the glowing shots!</div>
-    <div><b>O</b> look settings (invert, speed)</div>
+    <div><b>O</b> settings (name, look speed)</div>
     <div class="dim"><b>H</b> hide this &nbsp; <b>M</b> sound &nbsp; <b>Esc</b> free mouse</div>
   </div>
 
@@ -91,46 +91,104 @@
     <div id="endtitle"></div>
     <div id="endsub"></div>
     <div id="endcount"></div>
-    <button id="endchange" type="button">Change team (T)</button>
+    <button id="endleave" type="button">Leave lobby</button>
   </div>
 </div>
 
-<!-- ============ lobby ============ -->
+<!-- ============ lobbies: browser (front page), create form, waiting room ============ -->
 <div id="lobby">
-  <div class="card">
-    <h1><span class="t-ico">&#127803;</span> Backyard Battle <span class="t-ico">&#129503;</span></h1>
-    <p class="tag">Defend the garden &mdash; or mow it down!</p>
+  <!-- 1. lobby browser -->
+  <div class="card lobby-card" id="screen-browse">
+    <header class="g-head">
+      <h1><span class="t-ico">&#127803;</span> Backyard Battle <span class="t-ico">&#129503;</span></h1>
+      <p class="tag">Join a game &mdash; or make your own!</p>
+    </header>
 
-    <label class="field">Your name
-      <input id="name" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Type your name">
-    </label>
-
-    <div class="label">Pick your team</div>
-    <div class="row" id="teamrow">
-      <button type="button" class="choice team plant selected" data-team="plant">
-        <span class="big">&#127803;</span><span class="nm">Plants</span><span class="ds">Shoot zombies, plant turrets, grow better guns!</span>
-      </button>
-      <button type="button" class="choice team zombie" data-team="zombie">
-        <span class="big">&#129503;</span><span class="nm">Zombies</span><span class="ds">Drive the mower or grab a garage tool and wreck the garden!</span>
-      </button>
+    <div class="bar g-bar">
+      <label class="field">Your name
+        <input id="name" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Type your name">
+      </label>
+      <div class="teamblock">
+        <div class="label">Your team</div>
+        <div class="row" id="teamrow">
+          <button type="button" class="choice team plant selected" data-team="plant"><span class="big">&#127803;</span><span class="nm">Plants</span></button>
+          <button type="button" class="choice team zombie" data-team="zombie"><span class="big">&#129503;</span><span class="nm">Zombies</span></button>
+        </div>
+      </div>
     </div>
 
+    <div class="g-list">
+      <div class="label">Lobbies <span id="lobbycount"></span></div>
+      <div id="lobbylist" role="list" aria-live="polite">
+        <div id="lobbyempty">No lobbies yet &mdash; be the first! Press <b>Create lobby</b>.</div>
+      </div>
+    </div>
+
+    <button id="createbtn" class="bigbtn" type="button" disabled>Create lobby</button>
+    <div id="status" class="status">Connecting&hellip;</div>
+    <button id="lobbyopt" type="button" class="linkbtn g-foot" data-open-settings>&#9881;&#65039; Settings <kbd>O</kbd></button>
+  </div>
+
+  <!-- 2. create a lobby -->
+  <div class="card lobby-card hidden" id="screen-create">
+    <h2>Create a lobby</h2>
+    <label class="field">Lobby name
+      <input id="lobbyname" type="text" maxlength="32" autocomplete="off" spellcheck="false" placeholder="Name your lobby">
+    </label>
     <div class="label">Game</div>
-    <div class="row" id="moderow">
+    <div class="row" id="createmoderow">
       <button type="button" class="choice mode selected" data-mode="coop"><span class="nm">Co-op</span><span class="ds">Same team vs. bots</span></button>
       <button type="button" class="choice mode" data-mode="versus"><span class="nm">Versus</span><span class="ds">Plants vs. Zombies</span></button>
     </div>
-
     <div class="label">Bots</div>
-    <div class="row" id="diffrow">
+    <div class="row" id="creatediffrow">
       <button type="button" class="choice diff selected" data-diff="easy"><span class="nm">Easy</span></button>
       <button type="button" class="choice diff" data-diff="normal"><span class="nm">Normal</span></button>
     </div>
+    <button id="create-go" class="bigbtn" type="button" data-play>Create!</button>
+    <div id="create-status" class="status"></div>
+    <button id="create-back" type="button" class="linkbtn">&larr; Back to lobbies</button>
+  </div>
 
-    <button id="play" type="button" disabled>Play!</button>
-    <div id="status">Connecting&hellip;</div>
-    <button id="lobbyopt" type="button" class="linkbtn">&#9881;&#65039; Look settings <kbd>O</kbd></button>
-    <div class="fine">The first player to join picks Co-op / Versus and the bots. Press Esc to free your mouse.</div>
+  <!-- 3. waiting room -->
+  <div class="card lobby-card hidden" id="screen-room">
+    <header class="g-head">
+      <h2 id="roomname">Lobby</h2>
+      <div class="chips"><span class="chip" id="roommode"></span><span class="chip" id="roomdiff"></span></div>
+    </header>
+
+    <div class="g-list">
+      <div class="label">Players <span id="roomcount"></span></div>
+      <div id="roomplayers" role="list"></div>
+    </div>
+
+    <div class="g-team">
+      <div class="label">Your team</div>
+      <div class="row" id="roomteamrow">
+        <button type="button" class="choice team plant" data-team="plant"><span class="big">&#127803;</span><span class="nm">Plants</span></button>
+        <button type="button" class="choice team zombie" data-team="zombie"><span class="big">&#129503;</span><span class="nm">Zombies</span></button>
+      </div>
+    </div>
+
+    <div id="hostctl" class="hidden g-host">
+      <div class="label">Game</div>
+      <div class="row" id="roommoderow">
+        <button type="button" class="choice mode" data-mode="coop"><span class="nm">Co-op</span></button>
+        <button type="button" class="choice mode" data-mode="versus"><span class="nm">Versus</span></button>
+      </div>
+      <div class="label">Bots</div>
+      <div class="row" id="roomdiffrow">
+        <button type="button" class="choice diff" data-diff="easy"><span class="nm">Easy</span></button>
+        <button type="button" class="choice diff" data-diff="normal"><span class="nm">Normal</span></button>
+      </div>
+      <button id="startgame" class="bigbtn" type="button" data-play>Start!</button>
+    </div>
+    <div id="waitmsg" class="waitmsg"></div>
+    <div id="room-status" class="status"></div>
+    <div class="g-foot row2">
+      <button id="leavebtn" type="button" class="linkbtn">Leave lobby</button>
+      <button type="button" class="linkbtn" data-open-settings>&#9881;&#65039; Settings</button>
+    </div>
   </div>
 </div>
 
@@ -162,6 +220,7 @@
       <button type="button" id="set-reset" class="choice"><span class="nm">Reset</span></button>
       <button type="button" id="set-done">Done</button>
     </div>
+    <button type="button" id="set-leave" class="linkbtn hidden">Leave lobby</button>
     <div class="fine">Press O to open or close this. Changes happen right away and are saved on this computer.</div>
   </div>
 </div>

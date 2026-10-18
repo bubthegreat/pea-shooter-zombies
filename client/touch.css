@@ -6,7 +6,7 @@ html.touch, html.touch body {
   -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 }
 html.touch #game { cursor: default; touch-action: none; }
-html.touch .choice:hover, html.touch #play:hover:not(:disabled), html.touch .linkbtn:hover, html.touch #set-done:hover { transform: none; filter: none; }
+html.touch .choice:hover, html.touch button.bigbtn:hover:not(:disabled), html.touch .joinbtn:hover:not(:disabled), html.touch .linkbtn:hover, html.touch #set-done:hover { transform: none; filter: none; }
 
 /* ---------------- controls layer (lives inside #hud) ---------------- */
 #touchui { display: none; }
@@ -119,7 +119,7 @@ html.touch #mutebtn, html.touch #optbtn {
 html.touch #mutebtn { right: 8px; }
 html.touch #optbtn { right: 56px; }
 html.touch #endscreen { z-index: 6; }
-html.touch #endchange { font-size: 26px; padding: 8px 26px 11px; }
+html.touch #endleave { font-size: 26px; padding: 8px 26px 11px; }
 html.touch #downoverlay { z-index: 2; }
 
 /* ---------------- lobby + settings on a phone ---------------- */
@@ -133,31 +133,21 @@ html.touch .namerow input { flex-basis: 100%; font-size: 22px; padding: 8px 12px
 html.touch .choice { min-height: 44px; }
 html.touch #lobbyopt kbd { display: none; }
 html.touch #lobbyopt { padding: 8px 18px 9px; font-size: 16px; }
-html.touch #play { min-height: 56px; }
+html.touch button.bigbtn { min-height: 56px; }
+html.touch .joinbtn { min-height: 48px; min-width: 92px; }
+html.touch .lobby-card .choice { min-height: 44px; }
 html.touch .switch { width: 76px; height: 42px; }
 html.touch .switch[aria-checked="true"] i { transform: translateX(34px); }
 html.touch .setrow input[type=range] { height: 36px; }
 html.touch #set-done, html.touch .setbtns .choice { min-height: 52px; }
 
-/* short landscape screens (phones): two columns so the whole card fits without scrolling */
+/* short landscape screens (phones): the lobby cards go two-column (see style.css); settings stay compact */
 @media (orientation: landscape) and (max-height: 560px) {
   html.touch #lobby { align-items: flex-start; }
-  html.touch .card { width: min(820px, 100%); margin: auto; padding: 8px 18px 10px; border-width: 5px; border-radius: 26px; column-count: 2; column-gap: 22px; animation: none; }
-  html.touch .card > * { break-inside: avoid; }
-  html.touch .card > .label { break-after: avoid; }
-  html.touch h1 { font-size: 28px; }
-  html.touch .tag { font-size: 15px; margin: 0 0 4px; }
-  html.touch .label { margin: 6px 0 3px; font-size: 13px; }
-  html.touch .field { font-size: 13px; }
-  html.touch .field input { font-size: 20px; padding: 6px 12px; margin-top: 3px; }
-  html.touch .choice { padding: 5px 8px 6px; border-radius: 16px; }
-  html.touch .choice .big { font-size: 26px; }
-  html.touch .choice .nm { font-size: 18px; }
-  html.touch .choice .ds { display: none; }
-  html.touch #play { margin-top: 10px; font-size: 32px; padding: 4px 0 9px; }
-  html.touch #status { margin-top: 4px; min-height: 20px; font-size: 14px; }
+  html.touch .settings-card { border-width: 5px; border-radius: 26px; animation: none; }
+  html.touch #lobby .status { font-size: 14px; }
   html.touch .fine { font-size: 11px; }
-  html.touch .settings-card { width: min(520px, 100%); column-count: 1; padding: 8px 16px 8px; }
+  html.touch .settings-card { width: min(520px, 100%); padding: 8px 16px 8px; }
   html.touch .settings-card h2 { font-size: 24px; margin-bottom: 2px; }
   html.touch .setrow { margin: 5px 0; padding: 5px 12px 6px; border-radius: 16px; border-width: 3px; border-bottom-width: 5px; }
   html.touch .setname { font-size: 17px; }
