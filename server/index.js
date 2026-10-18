@@ -226,23 +226,29 @@ export function startServer(opts = {}) {
   let last = performance.now();
   let acc = 0;
   let snapAcc = 0;
+  let loopErrors = 0;
   const loop = setInterval(() => {
-    const now = performance.now();
-    acc += Math.min((now - last) / 1000, 0.25);
-    last = now;
-    let steps = 0;
-    while (acc >= step && steps < MAX_CATCHUP_STEPS) {
-      releaseStaleInputs(now);
-      game.tick(step);
-      acc -= step;
-      steps++;
-      snapAcc += step;
-      if (snapAcc >= snapStep - 1e-9) {
-        snapAcc -= snapStep;
-        broadcast();
+    try {
+      const now = performance.now();
+      acc += Math.min((now - last) / 1000, 0.25);
+      last = now;
+      let steps = 0;
+      while (acc >= step && steps < MAX_CATCHUP_STEPS) {
+        releaseStaleInputs(now);
+        acc -= step; // consume first so a throwing tick can't wedge the loop
+        game.tick(step);
+        steps++;
+        snapAcc += step;
+        if (snapAcc >= snapStep - 1e-9) {
+          snapAcc -= snapStep;
+          broadcast();
+        }
       }
+      if (steps === MAX_CATCHUP_STEPS) acc = 0; // fell behind; drop the backlog
+    } catch (err) {
+      // Never let one bad tick take the whole game down: log (rate-limited) and keep going.
+      if (loopErrors++ % 100 === 0) log(`tick error (#${loopErrors}): ${err?.stack ?? err}`);
     }
-    if (steps === MAX_CATCHUP_STEPS) acc = 0; // fell behind; drop the backlog
   }, Math.max(1, Math.floor(1000 / config.tickRate / 2)));
 
   const heartbeat = setInterval(() => {

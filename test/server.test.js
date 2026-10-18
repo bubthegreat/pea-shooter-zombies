@@ -186,3 +186,32 @@ test('stale input is released so a silent client stops moving', async () => {
   ws.close();
   await sleep(100);
 });
+
+test('an exception in the tick loop is logged and the server keeps running', async () => {
+  const ws = await connect();
+  ws.send(JSON.stringify({ t: 'join', name: 'Boom', team: 'plant', mode: 'coop' }));
+  const welcome = await waitFor(ws, (m) => m.t === 'welcome');
+  const orig = srv.game.tick;
+  let thrown = 0;
+  srv.game.tick = function patched(dt) {
+    if (thrown < 3) {
+      thrown++;
+      throw new Error('boom');
+    }
+    return orig.call(this, dt);
+  };
+  try {
+    const before = ws.messages.length;
+    await sleep(400);
+    assert.equal(thrown, 3);
+    const after = ws.messages.slice(before).filter((m) => m.t === 'snap');
+    assert.ok(after.length > 0, 'snapshots keep flowing after the errors');
+    const t0 = srv.game.time;
+    await sleep(200);
+    assert.ok(srv.game.time > t0, 'the sim keeps advancing');
+  } finally {
+    srv.game.tick = orig;
+  }
+  ws.close();
+  await sleep(100);
+});
