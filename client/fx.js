@@ -2,7 +2,7 @@
 // Everything is pooled; spawning an effect allocates nothing.
 import * as THREE from 'three';
 
-const N_PART = 700;
+const N_PART = 900;
 const N_LEAF = 120;
 
 function softTexture() {
@@ -123,7 +123,7 @@ export class Fx {
     this.col[k] = tmpColor.r; this.col[k + 1] = tmpColor.g; this.col[k + 2] = tmpColor.b;
   }
 
-  leafBurst(x, y, z, count = 14, colors = [0x66bb6a, 0x8bd450, 0xa5e84f, 0x43a047], speed = 5, up = 5) {
+  leafBurst(x, y, z, count = 14, colors = [0x66bb6a, 0x8bd450, 0xa5e84f, 0x43a047], speed = 5, up = 5, scale = 1) {
     for (let n = 0; n < count; n++) {
       const l = this.leaf[this.leafHead];
       const i = this.leafHead;
@@ -135,7 +135,7 @@ export class Fx {
       l.v.set(Math.cos(a) * sp, rnd(0.4, 1) * up, Math.sin(a) * sp);
       l.spin.set(rnd(-8, 8), rnd(-8, 8), rnd(-8, 8));
       l.rot.set(rnd(0, 6), rnd(0, 6), rnd(0, 6));
-      l.s = rnd(0.2, 0.4);
+      l.s = rnd(0.2, 0.4) * scale;
       this.leafMesh.setColorAt(i, tmpColor.set(colors[(Math.random() * colors.length) | 0]));
     }
     if (this.leafMesh.instanceColor) this.leafMesh.instanceColor.needsUpdate = true;
@@ -153,6 +153,87 @@ export class Fx {
       this.emit(x, y + 0.5, z, rnd(-2, 2), rnd(1, 4), rnd(-2, 2), rnd(0.5, 0.9), 0.25, 0.05, 0xfff59d, 1, 1.2, 4);
     }
     this.leafBurst(x, y + 0.6, z, 16);
+  }
+
+  /** Pretty flower poof where a computer-controlled plant bot turns into sunshine: petals, sparkles, soft puffs. */
+  flowerPoof(x, y, z) {
+    this.leafBurst(x, y + 0.3, z, 22, [0xff8fb8, 0xffd93b, 0xffffff, 0xff9e4a, 0xc58bff, 0xff6fa8], 4.2, 5.5);
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rnd(0.6, 2.4);
+      this.emit(x + Math.cos(a) * 0.25, y + rnd(-0.3, 0.6), z + Math.sin(a) * 0.25, Math.cos(a) * sp, rnd(0.6, 2.4), Math.sin(a) * sp,
+        rnd(0.6, 1.0), 0.6, rnd(1.6, 2.4), i % 2 ? 0xffd1e3 : 0xfff3b0, 0.7, 2.2, -0.4);
+    }
+    this.sparkle(x, y + 0.6, z, 0xfff59d, 12, 1.4);
+    this.sparkle(x, y + 0.9, z, 0xffffff, 6, 0.8);
+  }
+
+  /** Splash impact. kind: melon (green juice + seeds) | brain (pink goo) | anything else (generic). radius in metres. */
+  explode(x, y, z, radius = 3, kind = '') {
+    const r = Math.max(0.8, Math.min(8, radius));
+    const v0 = r * 3.1; // with the drag below the spray travels ~radius metres
+    const melon = kind === 'melon';
+    const brain = kind === 'brain';
+    const pal = melon ? [0x66d33f, 0xb9f57d, 0xff6f91, 0xffb3c6] : brain ? [0xff6fa8, 0xff9ec4, 0xffc2d9, 0xd94f93] : [0xffffff, 0xffe082];
+    const n = 20;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.3;
+      const sp = v0 * rnd(0.5, 1);
+      this.emit(x, y + 0.3, z, Math.cos(a) * sp, rnd(0.6, 3.2), Math.sin(a) * sp, rnd(0.45, 0.8), 0.7, rnd(1.4, 2.4), pal[i % pal.length], 0.9, 2.6, -2);
+    }
+    for (let i = 0; i < 10; i++) {
+      this.emit(x + rnd(-0.3, 0.3), y + 0.4, z + rnd(-0.3, 0.3), rnd(-1.5, 1.5), rnd(2.5, 6), rnd(-1.5, 1.5), rnd(0.6, 1.0), 0.45, 0.2, pal[(i + 1) % pal.length], 0.95, 0.8, -9);
+    }
+    if (melon) {
+      this.leafBurst(x, y + 0.5, z, 10, [0x111111, 0x222222], v0 * 0.55, 7, 0.3); // seeds
+      this.leafBurst(x, y + 0.5, z, 12, [0xff4d6d, 0xff6f91, 0x66d33f], v0 * 0.5, 6, 0.6); // rind & flesh chunks
+    } else if (brain) {
+      this.sparkle(x, y + 0.5, z, 0xffd1e3, 10, r * 0.5);
+    }
+    this.dust(x, y, z, melon ? 0x8bd450 : brain ? 0xff8fb8 : 0xb08a5a, 8);
+  }
+
+  /** Little puff where the leaf blower swatted a pea. */
+  deflect(x, y, z) {
+    for (let i = 0; i < 6; i++) {
+      this.emit(x, y, z, rnd(-2.5, 2.5), rnd(-1, 2.5), rnd(-2.5, 2.5), rnd(0.25, 0.45), 0.3, 0.9, 0xeaf6ff, 0.8, 2.5, 0);
+    }
+    this.sparkle(x, y, z, 0xffffff, 4, 0.6);
+  }
+
+  /** One airy streak of blown wind; call a few times a frame while a leaf blower is on. dir is a unit vector. */
+  wind(x, y, z, dx, dy, dz, speed = 13) {
+    const sp = speed * rnd(0.8, 1.15);
+    this.emit(x, y, z, dx * sp + rnd(-1.2, 1.2), dy * sp + rnd(-0.8, 0.8), dz * sp + rnd(-1.2, 1.2), rnd(0.35, 0.6), 0.14, rnd(0.55, 0.95), 0xeaf6ff, 0.26, 0.3, 0);
+  }
+
+  /** Tiny ice-crystal glitter around a slowed fighter. */
+  ice(x, y, z) {
+    this.emit(x + rnd(-0.4, 0.4), y + rnd(0.1, 1.7), z + rnd(-0.4, 0.4), rnd(-0.3, 0.3), rnd(-0.1, 0.5), rnd(-0.3, 0.3), rnd(0.5, 0.9), 0.22, 0.04, Math.random() < 0.5 ? 0xbdf0ff : 0xffffff, 1, 1.0, 0);
+  }
+
+  /** Wooden splinters (wheelbarrow thunk / breaking). big = the barrow fell apart. */
+  splinters(x, y, z, big = false) {
+    this.leafBurst(x, y, z, big ? 18 : 7, [0xc8955a, 0x8d5a2b, 0xe0b074], big ? 6 : 3.4, big ? 6 : 3.5, 0.6);
+    this.dust(x, y - 0.2, z, 0xb08a5a, big ? 9 : 4);
+  }
+
+  /** Mower conks out: sputtering black smoke, a few sparks. */
+  mowerBoom(x, y, z) {
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rnd(0.3, 2.2);
+      this.emit(x + Math.cos(a) * 0.4, y + 0.6, z + Math.sin(a) * 0.4, Math.cos(a) * sp, rnd(0.8, 3), Math.sin(a) * sp, rnd(0.8, 1.5), 0.5, rnd(1.6, 2.8), i % 3 ? 0x4a4a52 : 0x8d949b, 0.75, 1.2, 0.3);
+    }
+    this.sparkle(x, y + 0.8, z, 0xffb74d, 10, 1.5);
+    this.leafBurst(x, y + 0.5, z, 5, [0xe53935, 0xb71c1c, 0xcfd8dc], 4.5, 5, 0.5);
+  }
+
+  /** Bigger gold spark for a headshot. */
+  headHit(x, y, z) {
+    for (let i = 0; i < 9; i++) {
+      this.emit(x, y, z, rnd(-3, 3), rnd(0, 3.5), rnd(-3, 3), rnd(0.25, 0.5), 0.38, 0.05, i % 2 ? 0xffe14a : 0xffffff, 1, 2.5, 0);
+    }
   }
 
   /** Dusty little puff (planting, stomping). */
@@ -199,6 +280,11 @@ export class Fx {
 
   smoke(x, y, z) {
     this.emit(x + rnd(-0.1, 0.1), y, z + rnd(-0.1, 0.1), rnd(-0.3, 0.3), rnd(0.8, 1.6), rnd(-0.3, 0.3), rnd(0.7, 1.1), 0.3, 1.1, 0xcfd8dc, 0.55, 0.5, 0);
+  }
+
+  /** A battered mower coughing dark smoke. */
+  mowerSputter(x, y, z) {
+    this.emit(x, y, z, rnd(-0.3, 0.3), rnd(0.8, 1.6), rnd(-0.3, 0.3), rnd(0.8, 1.3), 0.3, 1.2, 0x3e3e46, 0.6, 0.5, 0);
   }
 
   /** Celebration confetti around a point. */

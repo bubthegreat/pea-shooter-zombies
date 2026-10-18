@@ -10,6 +10,7 @@ export class Sound {
     this.voices = 0;
     this.lis = { x: 0, y: 0, z: 0, yaw: 0 };
     this.engine = null;
+    this.loops = {};
     this._noise = null;
     try {
       this.muted = localStorage.getItem('bb-muted') === '1';
@@ -47,7 +48,10 @@ export class Sound {
     this.muted = !!m;
     try { localStorage.setItem('bb-muted', this.muted ? '1' : '0'); } catch (_) { /* ignore */ }
     if (this.master) this.master.gain.value = this.muted ? 0 : this.volume;
-    if (this.muted) this.engineLevel(0);
+    if (this.muted) {
+      this.engineLevel(0);
+      for (const k of Object.keys(this.loops)) this.loopLevel(k, 0);
+    }
   }
 
   setListener(x, y, z, yaw) {
@@ -145,7 +149,11 @@ export class Sound {
 
   /* ---- the sound menu ---- */
 
-  /** name: pea | spike | housepea | goo | boing | chime | plant | sun | crunch | wilt | hurt | tick | wave | win | lose | hitme | click */
+  /**
+   * name: pea | snow | spike | melon | housepea | goo | slime | bone | sludge | brain | boing | bloom | chime | plant | sun |
+   *       crunch | wilt | hurt | tick | headshot | splat | squish | deflect | pickup | drop | thunk | mower_break | respawn |
+   *       wave | win | lose | hitme | click
+   */
   play(name, pos, vol = 1) {
     if (!this.ctx) return;
     const out = this._out(pos, vol);
@@ -173,6 +181,98 @@ export class Sound {
         this._tone(out, { type: 'sine', f0: 320 * r, f1: 110, dur: 0.2, vol: 0.38, vibHz: 28, vibDepth: 40 });
         this._noiseBurst(out, { dur: 0.08, f0: 600, f1: 300, q: 2, vol: 0.12 });
         secs = 0.25;
+        break;
+      case 'snow':
+        this._tone(out, { type: 'sine', f0: 1500 * r, f1: 520 * r, dur: 0.13, vol: 0.3 });
+        this._tone(out, { type: 'triangle', f0: 3100 * r, f1: 2300, dur: 0.1, vol: 0.12 });
+        this._tone(out, { type: 'sine', f0: 4200, f1: 3400, dur: 0.18, vol: 0.06, delay: 0.04 });
+        secs = 0.25;
+        break;
+      case 'melon':
+        this._tone(out, { type: 'sine', f0: 170 * r, f1: 55, dur: 0.28, vol: 0.6 });
+        this._noiseBurst(out, { dur: 0.18, type: 'lowpass', f0: 800, f1: 160, vol: 0.35 });
+        this._tone(out, { type: 'triangle', f0: 420, f1: 200, dur: 0.12, vol: 0.15 });
+        secs = 0.4;
+        break;
+      case 'slime':
+        this._tone(out, { type: 'sine', f0: 280 * r, f1: 80, dur: 0.24, vol: 0.4, vibHz: 34, vibDepth: 55 });
+        this._noiseBurst(out, { dur: 0.12, f0: 500, f1: 220, q: 3, vol: 0.18 });
+        this._tone(out, { type: 'sine', f0: 700, f1: 330, dur: 0.07, vol: 0.12, delay: 0.1 });
+        secs = 0.32;
+        break;
+      case 'bone':
+        this._tone(out, { type: 'square', f0: 950 * r, f1: 640, dur: 0.045, vol: 0.2 });
+        this._tone(out, { type: 'square', f0: 700 * r, f1: 480, dur: 0.05, vol: 0.18, delay: 0.07 });
+        this._noiseBurst(out, { dur: 0.07, type: 'highpass', f0: 2200, vol: 0.18 });
+        secs = 0.2;
+        break;
+      case 'sludge':
+        this._noiseBurst(out, { dur: 0.09, f0: 1100, f1: 420, q: 1.2, vol: 0.28 });
+        this._tone(out, { type: 'sine', f0: 150 * r, f1: 80, dur: 0.1, vol: 0.2, vibHz: 40, vibDepth: 30 });
+        secs = 0.16;
+        break;
+      case 'brain':
+        this._tone(out, { type: 'sine', f0: 150 * r, f1: 45, dur: 0.5, vol: 0.6, vibHz: 16, vibDepth: 22 });
+        this._tone(out, { type: 'sawtooth', f0: 90, f1: 40, dur: 0.4, vol: 0.12 });
+        this._noiseBurst(out, { dur: 0.25, type: 'lowpass', f0: 700, f1: 120, vol: 0.4 });
+        secs = 0.6;
+        break;
+      case 'headshot':
+        this._tone(out, { type: 'triangle', f0: 1568, dur: 0.32, vol: 0.34 });
+        this._tone(out, { type: 'sine', f0: 2093, dur: 0.4, vol: 0.28, delay: 0.05 });
+        this._tone(out, { type: 'sine', f0: 3136, dur: 0.5, vol: 0.16, delay: 0.1 });
+        this._tone(out, { type: 'square', f0: 2400, f1: 1800, dur: 0.05, vol: 0.1 });
+        secs = 0.65;
+        break;
+      case 'bloom':
+        [784, 988, 1175, 1568].forEach((f, i) => this._tone(out, { type: 'sine', f0: f, dur: 0.34, vol: 0.22, delay: i * 0.06 }));
+        this._tone(out, { type: 'triangle', f0: 392, f1: 520, dur: 0.18, vol: 0.18 });
+        secs = 0.65;
+        break;
+      case 'splat':
+        this._noiseBurst(out, { dur: 0.3, f0: 900, f1: 220, q: 0.9, vol: 0.5 });
+        this._tone(out, { type: 'sine', f0: 200 * r, f1: 70, dur: 0.22, vol: 0.45 });
+        secs = 0.4;
+        break;
+      case 'squish':
+        this._noiseBurst(out, { dur: 0.35, f0: 500, f1: 140, q: 1.4, vol: 0.45 });
+        this._tone(out, { type: 'sine', f0: 130 * r, f1: 50, dur: 0.4, vol: 0.5, vibHz: 20, vibDepth: 20 });
+        secs = 0.5;
+        break;
+      case 'deflect':
+        this._noiseBurst(out, { dur: 0.14, type: 'highpass', f0: 2600, f1: 900, vol: 0.2 });
+        this._tone(out, { type: 'triangle', f0: 1200 * r, f1: 500, dur: 0.1, vol: 0.12 });
+        secs = 0.2;
+        break;
+      case 'pickup':
+        this._tone(out, { type: 'triangle', f0: 392, f1: 520, dur: 0.1, vol: 0.3 });
+        this._tone(out, { type: 'triangle', f0: 659, f1: 880, dur: 0.14, vol: 0.3, delay: 0.09 });
+        this._noiseBurst(out, { dur: 0.05, type: 'highpass', f0: 3000, vol: 0.18 });
+        secs = 0.35;
+        break;
+      case 'drop':
+        this._tone(out, { type: 'sine', f0: 150, f1: 55, dur: 0.16, vol: 0.5 });
+        this._noiseBurst(out, { dur: 0.1, type: 'lowpass', f0: 700, f1: 200, vol: 0.3 });
+        secs = 0.25;
+        break;
+      case 'thunk':
+        this._tone(out, { type: 'sine', f0: 230 * r, f1: 95, dur: 0.12, vol: 0.55 });
+        this._tone(out, { type: 'triangle', f0: 360, f1: 200, dur: 0.06, vol: 0.2 });
+        this._noiseBurst(out, { dur: 0.07, f0: 800, f1: 400, q: 1.5, vol: 0.3 });
+        secs = 0.2;
+        break;
+      case 'mower_break':
+        this._noiseBurst(out, { dur: 0.18, type: 'lowpass', f0: 900, f1: 150, vol: 0.5 });
+        this._tone(out, { type: 'sawtooth', f0: 130, f1: 38, dur: 0.7, vol: 0.28, vibHz: 22, vibDepth: 16 });
+        this._noiseBurst(out, { dur: 0.1, type: 'lowpass', f0: 700, f1: 200, vol: 0.35, delay: 0.25 });
+        this._noiseBurst(out, { dur: 0.08, type: 'lowpass', f0: 600, f1: 200, vol: 0.28, delay: 0.5 });
+        this._tone(out, { type: 'square', f0: 220, f1: 140, dur: 0.08, vol: 0.14, delay: 0.7 });
+        secs = 1.0;
+        break;
+      case 'respawn':
+        this._tone(out, { type: 'sine', f0: 784, dur: 0.18, vol: 0.22 });
+        this._tone(out, { type: 'sine', f0: 1175, dur: 0.28, vol: 0.2, delay: 0.1 });
+        secs = 0.5;
         break;
       case 'boing': {
         // springy: pitch bounces up and down while fading
@@ -256,6 +356,126 @@ export class Sound {
         return;
     }
     this._done(out, secs);
+  }
+
+  /**
+   * Continuous tool loops (own and nearby players'): name = weed | blower | trimmer | squeak; level 0..1 (0 = off).
+   * Call every frame with the loudest source, already attenuated by distance.
+   */
+  loopLevel(name, level) {
+    if (!this.ctx) return;
+    let L = this.loops[name];
+    if (!L) {
+      if (level <= 0.01) return;
+      L = this.loops[name] = this._makeLoop(name);
+      if (!L) return;
+    }
+    const t = this.ctx.currentTime;
+    L.g.gain.setTargetAtTime(this.muted ? 0 : level * L.amp, t, 0.07);
+  }
+
+  _makeLoop(name) {
+    const c = this.ctx;
+    const g = c.createGain();
+    g.gain.value = 0;
+    g.connect(this.master);
+    const noise = () => {
+      const s = c.createBufferSource();
+      s.buffer = this._noise;
+      s.loop = true;
+      s.start(0, Math.random() * 0.5);
+      return s;
+    };
+    const lfo = (type, hz, depth, target) => {
+      const o = c.createOscillator();
+      o.type = type;
+      o.frequency.value = hz;
+      const d = c.createGain();
+      d.gain.value = depth;
+      o.connect(d);
+      d.connect(target);
+      o.start();
+      return o;
+    };
+    const filt = (type, f, q = 1) => {
+      const b = c.createBiquadFilter();
+      b.type = type;
+      b.frequency.value = f;
+      b.Q.value = q;
+      return b;
+    };
+    switch (name) {
+      case 'weed': {
+        // angry little two-stroke whirr
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 175;
+        lfo('sine', 31, 16, o.frequency);
+        const lp = filt('lowpass', 1400);
+        const trem = c.createGain();
+        trem.gain.value = 0.65;
+        lfo('sine', 46, 0.3, trem.gain);
+        o.connect(lp); lp.connect(trem); trem.connect(g);
+        o.start();
+        const n = noise();
+        const bp = filt('bandpass', 2600, 1.2);
+        const ng = c.createGain();
+        ng.gain.value = 0.45;
+        n.connect(bp); bp.connect(ng); ng.connect(g);
+        return { g, amp: 0.2 };
+      }
+      case 'blower': {
+        // steady whoosh
+        const n = noise();
+        const bp = filt('bandpass', 750, 0.7);
+        lfo('sine', 0.7, 70, bp.frequency);
+        const lp = filt('lowpass', 2200);
+        n.connect(bp); bp.connect(lp); lp.connect(g);
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 78;
+        const olp = filt('lowpass', 260);
+        const og = c.createGain();
+        og.gain.value = 0.35;
+        o.connect(olp); olp.connect(og); og.connect(g);
+        o.start();
+        return { g, amp: 0.42 };
+      }
+      case 'trimmer': {
+        // fast clack-clack-clack
+        const gate = c.createGain();
+        gate.gain.value = 0.5;
+        lfo('square', 13, 0.5, gate.gain);
+        const n = noise();
+        const bp = filt('bandpass', 3100, 2.2);
+        n.connect(bp); bp.connect(gate);
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = 96;
+        const olp = filt('lowpass', 500);
+        const og = c.createGain();
+        og.gain.value = 0.35;
+        o.connect(olp); olp.connect(og); og.connect(gate);
+        o.start();
+        gate.connect(g);
+        return { g, amp: 0.26 };
+      }
+      case 'squeak': {
+        // squeaky wheel
+        const o = c.createOscillator();
+        o.type = 'triangle';
+        o.frequency.value = 1350;
+        lfo('sine', 5.5, 210, o.frequency);
+        const am = c.createGain();
+        am.gain.value = 0.55;
+        lfo('sine', 3.1, 0.45, am.gain);
+        o.connect(am); am.connect(g);
+        o.start();
+        return { g, amp: 0.09 };
+      }
+      default:
+        return null;
+    }
   }
 
   /** Continuous mower engine; level 0..1 (0 = off). */
