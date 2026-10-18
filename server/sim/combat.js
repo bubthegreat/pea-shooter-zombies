@@ -206,6 +206,7 @@ export function applyDamage(game, target, amount, attacker, { head = false } = {
     return false; // the mower shields its driver completely
   }
   target.hp -= amount;
+  if (isFighter(target)) target.hurtAt = game.time; // (a hit stops a door repair)
   if (attacker && target.team === 'plant' && target.kind !== 'mower') game.awardBrains(attacker, target.id);
   const hit = {
     id: target.id,

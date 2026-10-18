@@ -197,6 +197,10 @@ export const DEFAULT_CONFIG = {
 
   // Doors: HP of each (a zombie shot does 8). Plants walk and shoot through their own doors; zombies must break them.
   doorHp: { front: 220, side: 220, back: 220, garage: 360, default: 220 },
+  // Door repair (plant kids and the Gardener, free): hold E at the repair pile inside a door (world.js `repair`) without moving or
+  // shooting. rate = door HP per second per repairer; range = metres from the pile; a fully broken door is rebuilt after
+  // rebuildTime seconds of work and comes back with rebuildHp of its HP; a hit on the repairer stops the work for hurtPause s.
+  repair: { rate: 9, range: 1.8, rebuildTime: 3, rebuildHp: 0.25, hurtPause: 1.2, fxEvery: 0.5 },
   // Destructible cover by kind: hp (a pea does 1, a goo shot 8; rocks are tough, stones and fences medium).
   cover: {
     gravestone: { hp: 60 },
@@ -303,6 +307,8 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     plantLevels: c.plantLevels,
     plantRange: c.plantRange,
     builds: c.builds,
+    repair: c.repair,
+    doorHp: c.doorHp,
     pots: c.pots,
     potRules: potRules(c), // where a pot may stand (shapes + numbers), for the ghost preview
     brains: c.brains,
@@ -377,6 +383,7 @@ function publicMap() {
     statics: MAP.statics.map(compact),
     doorPieces: MAP.doors.map(compact),
     cover: MAP.cover.map(compact),
+    repairPiles: WORLD.repair,
     partSpots: MAP.partSpots,
     noBuild: MAP.noBuild,
   };

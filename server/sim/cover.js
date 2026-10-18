@@ -6,6 +6,7 @@ import { MAP } from './map.js';
 import { WORLD } from './world.js';
 import { footprint } from './build.js';
 
+const round2 = (v) => Math.round(v * 100) / 100;
 const HIT_STEPS = [0.75, 0.5, 0.25]; // HP shares at which a coverHit event is sent
 
 export class Cover {
@@ -132,6 +133,37 @@ export class Cover {
     } else this.gone.add(piece.id);
     g.emit('coverBreak', { id: piece.id, kind: piece.kind, x: Math.round(piece.x * 100) / 100, y: piece.y0, z: Math.round(piece.z * 100) / 100, by: attacker?.id ?? null });
     g.onPieceBroken?.(piece, attacker);
+  }
+
+  /** Heal a standing door or piece by `amount` (never above its maximum); the hit steps rearm. Returns the new HP. */
+  heal(piece, amount) {
+    if (!piece || piece.state !== 'alive') return 0;
+    piece.hp = Math.min(piece.maxHp, piece.hp + amount);
+    const share = piece.hp / piece.maxHp;
+    piece.step = HIT_STEPS.filter((s) => share <= s).length;
+    return piece.hp;
+  }
+
+  /** A broken door is raised again with `hp` (its collider comes back, it is no longer "gone"). Returns true when it was rebuilt. */
+  rebuildDoor(piece, hp) {
+    if (!piece || piece.state !== 'broken' || piece.kind !== 'door') return false;
+    const g = this.game;
+    piece.state = 'alive';
+    piece.hp = Math.max(1, Math.min(piece.maxHp, hp));
+    piece.step = HIT_STEPS.filter((s) => piece.hp / piece.maxHp <= s).length;
+    g.field.add(piece.collider);
+    this.gone.delete(piece.id);
+    g.emit('doorUp', { id: piece.id, hp: Math.ceil(piece.hp), maxHp: piece.maxHp, x: round2(piece.x), z: round2(piece.z) });
+    return true;
+  }
+
+  /** Door HP for the snapshot, in WORLD.doors order: 0 = broken. */
+  doorHps() {
+    return WORLD.doors.map((d) => {
+      const p = this.pieces.get(`door:${d.id}`);
+      if (!p) return this.game.config.doorHp[d.id] ?? this.game.config.doorHp.default; // no round yet: full health
+      return p.state === 'alive' ? Math.max(1, Math.ceil(p.hp)) : 0;
+    });
   }
 
   /** Blast damage on every piece within `radius` (falls off to 40 % at the rim), skipping pieces the blast's team owns. */

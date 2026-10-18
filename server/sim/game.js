@@ -14,6 +14,7 @@ import { emptySlots, initGarden, stepGarden, stepSun, tryPlant, tryUpgrade, potG
 import { createMower, stepMower } from './mower.js';
 import { createRack, stepEquipment } from './equipment.js';
 import { planWaves, stepRules } from './rules.js';
+import { stepRepair } from './repair.js';
 import { stepBots } from './bots.js';
 import { sanitizeName } from './names.js';
 
@@ -29,7 +30,7 @@ export function normalizeDifficulty(v) {
 }
 const KEY_NAMES = ['f', 'b', 'l', 'r', 'jump'];
 // Optional entity fields copied verbatim into snapshots when defined.
-const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains', 'carry', 'partKind', 'powered'];
+const OPTIONAL_FIELDS = ['weapon', 'tier', 'state', 'name', 'plantKind', 'level', 'sunshine', 'progress', 'streak', 'projKind', 'seq', 'driver', 'item', 'itemHp', 'itemId', 'available', 'heldBy', 'brains', 'carry', 'partKind', 'powered', 'repairing', 'rebuild'];
 const MAX_PENDING_EVENTS = 500;
 const MAX_PLANT_QUEUE = 4; // plant presses buffered between ticks
 const MAX_BUILD_QUEUE = 4; // build presses buffered between ticks
@@ -393,6 +394,7 @@ export class Game {
       }
       stepBots(this, dt);
       this._stepActors(dt);
+      stepRepair(this, dt);
       stepParts(this);
       stepMower(this, dt);
       stepEquipment(this, dt);
@@ -646,6 +648,7 @@ export class Game {
       round: this.cover.round,
       headStart: round(this.headStart, 1),
       fridge: { m: round(this.fridge.meter, 3), n: this.fridge.n },
+      doors: this.cover.doorHps(), // HP of front, side, back, garage (0 = broken)
       winner: this.winner,
       roundTime: round(this.roundTime, 2),
       roundLength: this.config.roundLength,
