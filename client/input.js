@@ -6,6 +6,8 @@
 //   Q  put the equipment you are holding down (sent as `drop`; the server edge-detects it)
 //   1-9  plant the nth unlocked plant (seed bar)     U  upgrade the garden plant you are next to (sent as `upgrade`)
 //   B  build wheel (1-5 pick, click places, R turns, scroll cycles, B / Esc cancel)
+//   P  plants: put a flower pot down inside the house (the build wheel's pot, shortcut)
+//   E (hold, plants)  repair the door at a repair pile (stand still)
 //   M  mute     H  help     O  look settings (invert, mouse speed)
 
 import { settings } from './settings.js';
@@ -118,6 +120,8 @@ export class Input {
     this.onBuildPlace = null;
     this.onBuildRotate = null;
     this.onBuildScroll = null;
+    this.onPotKey = null;
+    this.buildPot = false; // the selected build is a flower pot (no turning)
     this.seq = 0;
     this.onToggleMute = null;
     this.onToggleHelp = null;
@@ -225,6 +229,7 @@ export class Input {
       case 'KeyQ': this.drop = down; if (down) this._dropPending = true; break;
       case 'KeyU': this.upgrade = down; if (down) this._upgradePending = true; break;
       case 'KeyB': if (down && !e.repeat && this.onBuildToggle) this.onBuildToggle(); break;
+      case 'KeyP': if (down && !e.repeat && this.onPotKey) this.onPotKey(); break;
       case 'KeyR':
         if (this.buildActive && this.buildKind) {
           if (down && !e.repeat && this.onBuildRotate) this.onBuildRotate();

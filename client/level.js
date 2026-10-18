@@ -116,6 +116,8 @@ export class Level {
     this._statics();
     this._house();
     this._doors();
+    this._piles();
+    this._doorBars();
     this._fence();
     this._scenery();
     this._decorInstances();
@@ -612,6 +614,148 @@ export class Level {
     }
     // planks left behind by a broken door share one set of meshes
     this.plankMat = toon(0xa9774a);
+  }
+
+  /**
+   * Repair piles: planks leaning on a crate, a stack of boards, a red toolbox, a hammer and a little yellow sign - one just
+   * inside every door. Plain coloured boxes only, so the four piles cost no extra draw call (they merge with the props).
+   */
+  _piles() {
+    const P = this.props;
+    for (const r of this.cfg.repairPiles || []) {
+      const d = this.cfg.doors.find((x) => x.id === r.door);
+      if (!d) continue;
+      const g = new THREE.Group();
+      g.position.set(r.x, this.map.groundHeight(r.x, r.z), r.z);
+      g.rotation.y = Math.atan2(-d.nx, -d.nz); // local -z points out through the door: the planks lean on the wall side
+      const wood = [0xc59a62, 0xa9774a, 0xd9b27c];
+      this._P(P, G.box, toon(0xb98a5a), -0.15, 0.21, -0.1, { sx: 0.6, sy: 0.42, sz: 0.46 }); // crate
+      this._P(P, G.box, toon(0x8d6240), -0.15, 0.43, -0.1, { sx: 0.64, sy: 0.05, sz: 0.5 });
+      for (let i = 0; i < 3; i++) this._P(P, G.box, toon(wood[i]), -0.3 + i * 0.17, 0.72, -0.4, { sx: 0.14, sy: 1.25, sz: 0.04, rx: -0.3 }); // planks leaning on the wall
+      for (let i = 0; i < 3; i++) this._P(P, G.box, toon(wood[(i + 1) % 3]), 0.28, 0.03 + i * 0.05, 0.38, { sx: 1.0, sy: 0.045, sz: 0.17, ry: 0.15 * (i - 1) }); // boards on the floor
+      this._P(P, G.box, toon(0xe53935), 0.5, 0.11, -0.12, { sx: 0.46, sy: 0.22, sz: 0.24 }); // toolbox
+      this._P(P, G.box, toon(0xb71c1c), 0.5, 0.23, -0.12, { sx: 0.48, sy: 0.04, sz: 0.26 });
+      this._P(P, G.box, toon(0x424242), 0.5, 0.29, -0.12, { sx: 0.3, sy: 0.03, sz: 0.04 }); // handle
+      this._P(P, G.box, toon(0xcfd8dc), 0.5, 0.2, -0.0, { sx: 0.08, sy: 0.06, sz: 0.02 }); // latch
+      this._P(P, G.box, toon(0x8d5a2b), 0.26, 0.17, 0.38, { sx: 0.5, sy: 0.04, sz: 0.04, ry: 0.7 }); // hammer
+      this._P(P, G.box, toon(0x78909c), 0.43, 0.2, 0.3, { sx: 0.13, sy: 0.1, sz: 0.07, ry: 0.7 });
+      this._P(P, G.box, toon(0x8d6240), -0.62, 0.55, 0.3, { sx: 0.06, sy: 1.1, sz: 0.06 }); // sign post
+      this._P(P, G.box, toon(0xffd54f), -0.62, 1.08, 0.3, { sx: 0.56, sy: 0.3, sz: 0.05 });
+      this._P(P, G.box, toon(0xe53935), -0.62, 1.08, 0.33, { sx: 0.34, sy: 0.07, sz: 0.03, rz: 0.78 });
+      this._P(P, G.box, toon(0xe53935), -0.62, 1.08, 0.33, { sx: 0.34, sy: 0.07, sz: 0.03, rz: -0.78 });
+      P.add(g);
+    }
+  }
+
+  /**
+   * Health bars on both faces of every door: one canvas atlas (a row per door), one merged mesh (8 quads), one draw call.
+   * `updateDoorBars` redraws a row only when its bar changes by at least a pixel or the door breaks / is rebuilt.
+   */
+  _doorBars() {
+    const pieces = this.cfg.doorPieces;
+    const W = 256;
+    const ROW = 48;
+    const canvas = document.createElement('canvas');
+    canvas.width = W;
+    canvas.height = ROW * pieces.length;
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    const pos = [];
+    const uv = [];
+    const idx = [];
+    const N = pieces.length;
+    pieces.forEach((piece, i) => {
+      const d = this.cfg.doors.find((x) => `door:${x.id}` === piece.id);
+      const w = Math.max(2.0, d.w * 0.85);
+      const h = (w * ROW) / W;
+      const cx = (piece.minX + piece.maxX) / 2;
+      const cz = (piece.minZ + piece.maxZ) / 2;
+      const y = piece.y1 - 0.45;
+      for (const side of [1, -1]) {
+        const nx = d.nx * side;
+        const nz = d.nz * side;
+        const rx = nz;
+        const rz = -nx; // the viewer's right while looking at the face
+        const px = cx + nx * 0.17;
+        const pz = cz + nz * 0.17;
+        const base = pos.length / 3;
+        for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          pos.push(px + rx * (w / 2) * su, y + (h / 2) * sv, pz + rz * (w / 2) * su);
+          uv.push((su + 1) / 2, 1 - (i + 1 - (sv + 1) / 2) / N);
+        }
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.35, toneMapped: false }));
+    mesh.renderOrder = 3;
+    mesh.frustumCulled = true;
+    this.group.add(mesh);
+    this.bars = { canvas, ctx: canvas.getContext('2d'), tex, W, ROW, key: pieces.map(() => -2) };
+    this.updateDoorBars(this.map.doors);
+  }
+
+  /** Redraw the bars of doors whose health changed. doors: MapData.doors (id -> { hp, maxHp, alive }). */
+  updateDoorBars(doors) {
+    const b = this.bars;
+    if (!b) return;
+    let dirty = false;
+    this.cfg.doorPieces.forEach((piece, i) => {
+      const d = doors.get(piece.id);
+      if (!d) return;
+      const frac = d.alive ? Math.max(0.02, Math.min(1, d.hp / Math.max(1, d.maxHp))) : 0;
+      const key = d.alive ? Math.round(frac * 60) : -1; // a pixel or so of bar
+      if (b.key[i] === key) return;
+      b.key[i] = key;
+      dirty = true;
+      const g = b.ctx;
+      const y0 = i * b.ROW;
+      g.clearRect(0, y0, b.W, b.ROW);
+      const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+      rr(3, y0 + 4, b.W - 6, b.ROW - 8, 14);
+      g.fillStyle = 'rgba(25, 20, 40, 0.92)';
+      g.fill();
+      g.lineWidth = 4;
+      g.strokeStyle = '#ffffff';
+      g.stroke();
+      if (d.alive) {
+        const inner = b.W - 24;
+        rr(12, y0 + 12, Math.max(8, inner * frac), b.ROW - 24, 9);
+        g.fillStyle = frac > 0.6 ? '#5ad04a' : frac > 0.3 ? '#ffc83a' : '#ff4a3a';
+        g.fill();
+      } else {
+        rr(12, y0 + 12, b.W - 24, b.ROW - 24, 9);
+        g.fillStyle = '#c62828';
+        g.fill();
+        g.font = `bold ${b.ROW - 22}px "Trebuchet MS", sans-serif`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillStyle = '#ffffff';
+        g.fillText('BROKEN', b.W / 2, y0 + b.ROW / 2 + 1);
+      }
+      const v = this.doorViews.get(piece.id);
+      if (v && d.alive && !v.broken) v.panel.rotation.z = (1 - frac) * 0.05;
+    });
+    if (dirty) b.tex.needsUpdate = true;
+  }
+
+  /** A broken door goes back up (the planks vanish, the door pops back in). Returns where, for the dust. */
+  doorRebuild(id) {
+    const v = this.doorViews.get(id);
+    if (!v || !v.broken) return null;
+    v.broken = false;
+    if (v.planks) this.group.remove(v.planks);
+    v.planks = null;
+    this.group.add(v.group);
+    v.shake = 0.5;
+    return { x: (v.piece.minX + v.piece.maxX) / 2, y: v.piece.y1 / 2, z: (v.piece.minZ + v.piece.maxZ) / 2 };
   }
 
   /** Door damage / break from events (client/map.js keeps the numbers). */

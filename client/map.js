@@ -5,12 +5,49 @@
 
 const STEP = 0.5;
 
+function distSeg(px, pz, ax, az, bx, bz) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const l2 = dx * dx + dz * dz;
+  const t = l2 > 0 ? Math.max(0, Math.min(1, ((px - ax) * dx + (pz - az) * dz) / l2)) : 0;
+  return Math.hypot(px - (ax + t * dx), pz - (az + t * dz));
+}
+
+/**
+ * Where a flower pot may stand, from the map alone: null when fine, 'house' (not on the interior floor) or 'lane' (a walkway,
+ * doorway, repair pile or the fridge front would be blocked). Mirrors server/sim/pots.js potProblem; `rules` = config.potRules.
+ */
+export function potProblem(rules, gx, gz) {
+  const cx = gx + 0.5;
+  const cz = gz + 0.5;
+  const i = rules.inset;
+  let inside = false;
+  for (const r of rules.rooms) {
+    if (gx >= r.minX + i && gx + 1 <= r.maxX - i && gz >= r.minZ + i && gz + 1 <= r.maxZ - i) {
+      inside = true;
+      break;
+    }
+  }
+  if (!inside) return 'house';
+  for (const [ax, az, bx, bz] of rules.lanes) if (distSeg(cx, cz, ax, az, bx, bz) < rules.laneClear) return 'lane';
+  if (Math.hypot(cx - rules.fridge.x, cz - rules.fridge.z) < rules.fridge.clear) return 'lane';
+  for (const p of rules.piles) if (Math.hypot(cx - p.x, cz - p.z) < p.clear) return 'lane';
+  return null;
+}
+
 const num = (v, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 
 export class MapData {
-  /** cfg = welcome.config.map; builds = welcome.config.builds (the kinds); state = welcome.state (or null). */
-  constructor(cfg, builds, state = null) {
+  /**
+   * cfg = welcome.config.map; builds = welcome.config.builds (the kinds); state = welcome.state (or null);
+   * extra = { potRules, pots, doorHp } from the welcome config (pot placement rules, the pot cap, door maximum HP).
+   */
+  constructor(cfg, builds, state = null, extra = {}) {
     this.cfg = cfg;
+    this.potRules = extra.potRules || null;
+    this.potCfg = extra.pots || { max: 10, spacing: 2.2 };
+    this.doorHp = extra.doorHp || {};
+    this.doorOrder = (cfg.doors || []).map((d) => `door:${d.id}`);
     this.bounds = cfg.bounds;
     const t = cfg.terrain;
     this.t = t;
@@ -40,7 +77,10 @@ export class MapData {
     this.doors.clear();
     this.placed.clear();
     for (const c of this.cfg.cover || []) this.cover.set(c.id, { def: c, hp: hp[c.kind] ?? 1, maxHp: hp[c.kind] ?? 1, alive: true });
-    for (const d of this.cfg.doorPieces || []) this.doors.set(d.id, { def: d, hp: 1, maxHp: 1, alive: true });
+    for (const d of this.cfg.doorPieces || []) {
+      const max = this.doorHp[d.id.slice(5)] ?? this.doorHp.default ?? 1;
+      this.doors.set(d.id, { def: d, hp: max, maxHp: max, alive: true });
+    }
     if (state) this.applyState(state);
   }
 
@@ -90,7 +130,58 @@ export class MapData {
     }
     if (ev.type === 'coverBreak') return this.setAlive(ev.id, false);
     if (ev.type === 'build') return this.addBuild(ev);
+    if (ev.type === 'doorUp') {
+      const p = this.doors.get(ev.id);
+      if (p) {
+        p.alive = true;
+        p.hp = ev.hp;
+        p.maxHp = ev.maxHp ?? p.maxHp;
+      }
+      return p || null;
+    }
     return null;
+  }
+
+  /**
+   * Door HP from a snapshot (`snap.doors`, in config.map.doors order, 0 = broken). Returns true when any door's HP or state
+   * changed (the bars above the doors redraw only then).
+   */
+  setDoorHps(arr) {
+    if (!Array.isArray(arr)) return false;
+    let changed = false;
+    for (let i = 0; i < this.doorOrder.length; i++) {
+      const p = this.doors.get(this.doorOrder[i]);
+      const hp = arr[i];
+      if (!p || typeof hp !== 'number') continue;
+      const alive = hp > 0;
+      if (p.hp !== hp || p.alive !== alive) {
+        p.hp = hp;
+        p.alive = alive;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  /** Id of the door nearest to (x, z) within maxD metres (centre of its opening), or null. No allocation. */
+  nearestDoorId(x, z, maxD) {
+    let best = null;
+    let bd = maxD;
+    for (const [id, p] of this.doors) {
+      const d = Math.hypot((p.def.minX + p.def.maxX) / 2 - x, (p.def.minZ + p.def.maxZ) / 2 - z);
+      if (d < bd) {
+        bd = d;
+        best = id;
+      }
+    }
+    return best;
+  }
+
+  /** Flower pots standing (alive): [{ x, z (centre), rec }]. */
+  potCentres(out = []) {
+    out.length = 0;
+    for (const b of this.placed.values()) if (b.alive && b.kind === 'pot') out.push({ x: b.x + 0.5, z: b.z + 0.5, rec: b });
+    return out;
   }
 
   /** Terrain height (same triangles as the server). */
@@ -162,6 +253,7 @@ export class MapData {
    * { ok, reason: 'spot' | 'far' | 'blocked' | 'busy', rect }. `me` = { x, z } the builder, `others` = [{ x, z, radius }] fighters + turrets.
    */
   placement(def, gx, gz, rot, me, others = []) {
+    if (def.pot) return this.potPlacement(def, gx, gz, me, others);
     const f = MapData.footprint(def, rot ? 1 : 0);
     const rect = { minX: gx, maxX: gx + f.w, minZ: gz, maxZ: gz + f.d };
     const B = this.bounds;
@@ -199,6 +291,46 @@ export class MapData {
       if (dx * dx + dz * dz < r * r) return bad('busy');
     }
     return { ok: true, rect, lo, hi };
+  }
+
+  /** Placement of a flower pot (see server/sim/build.js): { ok, reason: 'spot'|'far'|'house'|'lane'|'crowd'|'blocked'|'busy', rect }. */
+  potPlacement(def, gx, gz, me, others = []) {
+    const rect = { minX: gx, maxX: gx + 1, minZ: gz, maxZ: gz + 1 };
+    const bad = (reason) => ({ ok: false, reason, rect });
+    const B = this.bounds;
+    if (rect.minX < B.minX + 1 || rect.maxX > B.maxX - 1 || rect.minZ < B.minZ + 1 || rect.maxZ > B.maxZ - 1) return bad('spot');
+    const cx = gx + 0.5;
+    const cz = gz + 0.5;
+    if (me && Math.hypot(me.x - cx, me.z - cz) > this.builds.reach) return bad('far');
+    const rules = this.potRules;
+    if (!rules) return bad('house');
+    const why = potProblem(rules, gx, gz);
+    if (why) return bad(why);
+    const h = rules.house;
+    if (me && !(me.x >= h.minX - 0.5 && me.x <= h.maxX + 0.5 && me.z >= h.minZ - 0.5 && me.z <= h.maxZ + 0.5)) return bad('house');
+    for (const b of this.placed.values()) if (b.alive && b.kind === 'pot' && Math.hypot(b.x + 0.5 - cx, b.z + 0.5 - cz) < rules.spacing) return bad('crowd');
+    const slab = this.cfg.cellar && this.cfg.cellar.slab;
+    const lo = slab && cx >= slab.minX && cx <= slab.maxX && cz >= slab.minZ && cz <= slab.maxZ ? 0 : this.groundHeight(cx, cz);
+    const hits = (c) => {
+      if (c.y1 <= lo + 0.3 || c.y0 >= lo + def.h) return false;
+      if (c.s === 'box') return c.minX < rect.maxX && c.maxX > rect.minX && c.minZ < rect.maxZ && c.maxZ > rect.minZ;
+      const dx = Math.max(rect.minX - c.x, 0, c.x - rect.maxX);
+      const dz = Math.max(rect.minZ - c.z, 0, c.z - rect.maxZ);
+      return dx * dx + dz * dz < c.r * c.r;
+    };
+    for (const c of this.statics) if (c.blocks !== false && hits(c)) return bad('blocked');
+    for (const p of this.cover.values()) if (p.alive && hits(p.def)) return bad('blocked');
+    for (const p of this.doors.values()) if (p.alive && hits(p.def)) return bad('blocked');
+    for (const b of this.placed.values()) {
+      if (b.alive && b.x < rect.maxX && b.x + b.w > rect.minX && b.z < rect.maxZ && b.z + b.d > rect.minZ) return bad('blocked');
+    }
+    for (const o of others) {
+      const dx = Math.max(rect.minX - o.x, 0, o.x - rect.maxX);
+      const dz = Math.max(rect.minZ - o.z, 0, o.z - rect.maxZ);
+      const r = num(o.radius, 0.5) + 0.1;
+      if (dx * dx + dz * dz < r * r) return bad('busy');
+    }
+    return { ok: true, rect, lo, hi: lo };
   }
 
   /** The build kinds for a team ('zombie' or anything else = plant). */

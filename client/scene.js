@@ -271,9 +271,9 @@ export class World {
     this.slotRing = ring;
   }
 
-  showSlot(x, z, ok) {
+  showSlot(x, z, ok, y = 0.16) {
     this.slotRing.visible = true;
-    this.slotRing.position.set(x, 0.16, z);
+    this.slotRing.position.set(x, y, z);
     this.slotRing.material.color.set(ok ? 0xb9f57d : 0xfff176);
   }
 

@@ -33,7 +33,7 @@ export class HUD {
       help: $('help'), pause: $('pausehint'), mute: $('mutebtn'),
       end: $('endscreen'), endTitle: $('endtitle'), endSub: $('endsub'), endCount: $('endcount'), endLeave: $('endleave'),
       vignette: $('vignette'), hitmark: $('hitmark'),
-      doorsBox: $('doorsbox'), doorCount: $('doorcount'), brainsBox: $('brainsbox'), brainsCount: $('brainscount'),
+      doorsBox: $('doorsbox'), doorCount: $('doorcount'), doorInfo: $('doorinfo'), doorInfoName: $('doorinfoname'), doorInfoFill: $('doorinfofill'), doorInfoTxt: $('doorinfotxt'), brainsBox: $('brainsbox'), brainsCount: $('brainscount'),
       fridgeBox: $('fridgebox'), fridgeFill: $('fridgefill'), fridgeText: $('fridgetext'), fridgeIco: $('fridgeico'),
       cd: $('countdown'), cdTitle: $('cdtitle'), cdNum: $('cdnum'), cdSub: $('cdsub'),
       partsBox: $('partsbox'), partsCarry: $('partscarry'),
@@ -132,6 +132,21 @@ export class HUD {
   }
 
   setPrompt(text) { this.promptText = text || ''; }
+
+  /**
+   * The little door card below the crosshair: name, a health bar and "180 / 220" (or BROKEN) for the door you are close to.
+   * Pass null to hide it. Does nothing when the numbers have not changed.
+   */
+  setDoorInfo(info) {
+    const e = this.el;
+    const on = !!info;
+    if (this._cache.dio !== on) { this._cache.dio = on; e.doorInfo.classList.toggle('hidden', !on); }
+    if (!on) return;
+    this._set('dii', e.doorInfoName, 'text', info.name);
+    this._set('dif', e.doorInfoFill, 'width', (info.frac * 100).toFixed(0) + '%');
+    this._set('dic', e.doorInfoFill, 'class', info.broken ? 'broken' : info.frac < 0.3 ? 'low' : info.frac < 0.6 ? 'mid' : '');
+    this._set('dit', e.doorInfoTxt, 'text', info.broken ? 'BROKEN' : `${Math.ceil(info.hp)} / ${info.max}`);
+  }
 
   hit(head = false) {
     const h = this.el.hitmark;

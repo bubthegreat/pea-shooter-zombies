@@ -154,6 +154,16 @@ function makeGeos() {
     ...[-0.46, -0.23, 0, 0.23, 0.46].map((x) => ({ geo: box, color: 0xe6c592, m: M(x, 0.65, 0, 0.1, 1.3, 0.34) })),
     ...[-0.5, 0.5].map((x) => ({ geo: box, color: 0xb98a5a, m: M(x, 0.75, 0, 0.1, 1.5, 0.5) })),
   ]);
+  // a flower pot: terracotta with a cream band and painted dots, a fat rim and dark soil (unit height 1 = 0.7 m once scaled)
+  g.pot = mergeParts([
+    { geo: new THREE.CylinderGeometry(0.4, 0.4, 0.06, 14), color: 0xa8512c, m: M(0, 0.03, 0) }, // foot
+    { geo: new THREE.CylinderGeometry(0.46, 0.34, 0.7, 14), color: 0xc8643a, m: M(0, 0.4, 0) }, // body
+    { geo: new THREE.CylinderGeometry(0.455, 0.425, 0.12, 14), color: 0xf3e0c0, m: M(0, 0.42, 0) }, // cream band
+    ...[0, 1, 2, 3, 4].map((i) => ({ geo: new THREE.SphereGeometry(0.05, 6, 5), color: 0xc8643a, m: M(Math.sin(i * 1.256) * 0.445, 0.42, Math.cos(i * 1.256) * 0.445) })),
+    { geo: new THREE.CylinderGeometry(0.5, 0.46, 0.17, 14), color: 0xd9784a, m: M(0, 0.9, 0) }, // rim
+    { geo: new THREE.CylinderGeometry(0.41, 0.41, 0.03, 14), color: 0x4e342e, m: M(0, 0.97, 0) }, // soil
+    ...[[0.18, 0.1], [-0.2, -0.05], [0.02, -0.22]].map(([x, z]) => ({ geo: new THREE.SphereGeometry(0.07, 6, 4), color: 0x6d4c41, m: M(x, 0.99, z, 1, 0.5, 1) })), // soil lumps
+  ]);
   g.tombwall = mergeParts([
     { geo: box, color: 0x9aa5ae, m: M(0, 0.4, 0, 1, 0.8, 1) },
     { geo: box, color: 0xb6c0c8, m: M(0, 1.0, 0, 0.94, 0.4, 0.94) },
@@ -187,7 +197,7 @@ const COVER_DRAW = {
   shedwall: { box: true, geoH: 1 },
 };
 const BUILD_DRAW = {
-  hedgewall: { color: 0xffffff }, fence: { color: 0xffffff }, tombwall: { color: 0xffffff }, junk: { color: 0xffffff }, cantower: { color: 0xffffff },
+  hedgewall: { color: 0xffffff }, fence: { color: 0xffffff }, pot: { color: 0xffffff }, tombwall: { color: 0xffffff }, junk: { color: 0xffffff }, cantower: { color: 0xffffff },
 };
 
 const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
@@ -319,6 +329,7 @@ export class CoverLayer {
       if (!d.alive) this.level.doorBreak(id);
       else if (d.hp < d.maxHp) this.level.doorHit(id, d.hp / d.maxHp);
     }
+    this.level.updateDoorBars(this.map.doors);
     for (const b of this.map.placed.values()) if (b.alive) this._addBuild(b, false);
   }
 
@@ -404,6 +415,10 @@ export class CoverLayer {
       if (b) this._addBuild(b, true);
       return null;
     }
+    if (ev.type === 'doorUp') {
+      this.level.updateDoorBars(this.map.doors);
+      return this.level.doorRebuild(ev.id);
+    }
     return null;
   }
 
@@ -417,18 +432,25 @@ export class CoverLayer {
     this.ghostEdges = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0)), new THREE.LineBasicMaterial({ color: 0xffffff }));
     this.ghostEdges.visible = false;
     this.ghostEdges.renderOrder = 7;
-    this.group.add(this.ghost, this.ghostEdges);
+    // a pot gets a round ghost
+    this.ghostPot = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.4, 1, 14).translate(0, 0.5, 0), this.ghostMat);
+    this.ghostPot.visible = false;
+    this.ghostPot.renderOrder = 6;
+    this.group.add(this.ghost, this.ghostEdges, this.ghostPot);
   }
 
   /** Show / move the ghost: def = build kind, rect = footprint, ok = placement allowed; null hides it. */
   setGhost(def, rect, ok, y = 0) {
     if (!def || !rect) {
-      this.ghost.visible = this.ghostEdges.visible = false;
+      this.ghost.visible = this.ghostEdges.visible = this.ghostPot.visible = false;
       return;
     }
-    this.ghost.visible = this.ghostEdges.visible = true;
+    const round = !!def.pot;
+    this.ghost.visible = !round;
+    this.ghostEdges.visible = !round;
+    this.ghostPot.visible = round;
     const w = rect.maxX - rect.minX, d = rect.maxZ - rect.minZ;
-    for (const m of [this.ghost, this.ghostEdges]) {
+    for (const m of [this.ghost, this.ghostEdges, this.ghostPot]) {
       m.position.set((rect.minX + rect.maxX) / 2, y, (rect.minZ + rect.maxZ) / 2);
       m.scale.set(w, def.h, d);
     }

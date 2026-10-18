@@ -72,7 +72,7 @@ h1 .t-ico:last-child { animation-delay: -1.1s; }
 .choice.mode.selected, .choice.diff.selected { border-color: var(--sun-d); background: #fff6c4; box-shadow: 0 0 0 4px rgba(255, 217, 59, 0.4); }
 /* the seven difficulty levels: a 4 + 3 grid whose selected button heats up from green (Easy) to purple (Insane) */
 .row.levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
-.row.levels .choice { padding: 5px 3px 7px; border-radius: 16px; min-width: 0; }
+.row.levels .choice { padding: 5px 3px 7px; border-radius: 16px; min-width: 0; overflow: hidden; }
 .row.levels .choice .nm { font-size: 17px; white-space: nowrap; }
 .choice.diff.lv0.selected { border-color: var(--green); background: #e9ffd9; box-shadow: 0 0 0 4px rgba(95, 209, 58, 0.3); }
 .choice.diff.lv1.selected { border-color: var(--sun-d); background: #fff6c4; box-shadow: 0 0 0 4px rgba(255, 217, 59, 0.4); }
@@ -444,8 +444,8 @@ button.bigbtn { margin-top: 8px; width: 100%; }
 @media (max-width: 520px) {
   .lname, .lsub { white-space: normal; overflow-wrap: anywhere; }
   .row.levels { gap: 4px; }
-  .row.levels .choice { padding: 4px 2px 6px; }
-  .row.levels .choice .nm { font-size: 14px; }
+  .row.levels .choice { padding: 4px 1px 6px; }
+  .row.levels .choice .nm { font-size: 13px; letter-spacing: -0.2px; }
   .bar { flex-direction: column; align-items: stretch; gap: 4px; }
   .card { padding-left: 14px; padding-right: 14px; }
   .joinbtn { min-width: 72px; padding: 6px 12px 9px; }
@@ -464,12 +464,13 @@ button.bigbtn { margin-top: 8px; width: 100%; }
   #screen-browse > #status { grid-area: 4 / 1; }
   #screen-browse > .g-foot { grid-area: 5 / 1; }
   #screen-room > .g-head { grid-area: 1 / 1; }
-  #screen-room > .g-list { grid-area: 1 / 2 / 8 / 3; }
+  #screen-room > .g-list { grid-area: 1 / 2; }
   #screen-room > .g-team { grid-area: 2 / 1; }
-  #screen-room > .g-host { grid-area: 3 / 1; }
+  #screen-room > .g-host { grid-area: 2 / 2 / 5 / 3; } /* the host's options sit under the players: the right half is wide enough for the 7 levels */
   #screen-room > .waitmsg { grid-area: 3 / 1; }
   #screen-room > #room-status { grid-area: 4 / 1; }
   #screen-room > .g-foot { grid-area: 5 / 1; }
+  #roomplayers { max-height: 74px; }
   #lobbylist, #roomplayers { max-height: calc(100vh - 80px); }
   .lobby-card h1 { font-size: 28px; }
   .lobby-card .tag { font-size: 15px; margin: 0 0 4px; }
@@ -489,16 +490,12 @@ button.bigbtn { margin-top: 8px; width: 100%; }
   .waitmsg { font-size: 16px; margin: 4px 0 0; }
   .lobby-card h2 { font-size: 22px; margin-bottom: 2px; }
   .chip { font-size: 13px; padding: 0 10px 1px; border-width: 2px; }
-  #hostctl { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
-  #hostctl > :nth-child(1) { grid-area: 1 / 1; }
-  #hostctl > :nth-child(2) { grid-area: 2 / 1; }
-  #hostctl > :nth-child(3) { grid-area: 1 / 2; }
-  #hostctl > :nth-child(4) { grid-area: 2 / 2; }
-  #hostctl > :nth-child(5) { grid-area: 3 / 1 / 4 / 3; }
+  #hostctl { display: block; }
   #hostctl .choice { padding: 4px 4px 6px; }
   #hostctl .choice .nm { font-size: 16px; }
+  .row.levels .choice .nm { font-size: 14px; }
   #roomteamrow .choice { padding: 3px 8px 5px; }
-  #screen-create { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; width: min(640px, 100%); }
+  #screen-create { display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); column-gap: 12px; width: min(640px, 100%); }
   #screen-create > :nth-child(1) { grid-area: 1 / 1 / 2 / 3; }
   #screen-create > :nth-child(2) { grid-area: 2 / 1 / 3 / 3; }
   #screen-create > :nth-child(3) { grid-area: 3 / 1; }
@@ -586,3 +583,17 @@ button.bigbtn { margin-top: 8px; width: 100%; }
 .loadteams .zombie b { color: var(--purple-d); }
 .loadmsg { margin-top: 10px; font-size: 18px; font-weight: 800; color: #6c5a8f; animation: bump 1.4s infinite; }
 .rulebox { margin: 0 0 6px; font-size: 18px; font-weight: 800; color: var(--ink); line-height: 1.15; }
+
+/* the door card under the crosshair, and the pot / repair additions */
+#doorinfo {
+  left: 50%; top: calc(50% + 62px); transform: translateX(-50%); min-width: 150px; padding: 2px 14px 4px; text-align: center; pointer-events: none;
+  background: rgba(255, 253, 245, 0.9); border: 3px solid #fff; border-radius: 16px; box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2), 0 6px 14px rgba(0, 0, 0, 0.22);
+}
+#doorinfo b { display: block; font-size: 15px; font-weight: 800; color: #8d5a2b; line-height: 1.15; }
+#hud.zombie #doorinfo b { color: var(--purple-d); }
+#doorinfotrack { height: 11px; margin: 2px 0 1px; border-radius: 8px; background: #d9d2ea; border: 2px solid #fff; box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.22); overflow: hidden; }
+#doorinfofill { display: block; height: 100%; width: 100%; background: linear-gradient(#9dff6a, #3fc21d); transition: width 0.15s; }
+#doorinfofill.mid { background: linear-gradient(#ffe36a, #f5a800); }
+#doorinfofill.low { background: linear-gradient(#ff8a8a, #e53950); }
+#doorinfofill.broken { width: 100% !important; background: linear-gradient(#e57373, #b71c1c); }
+#doorinfotxt { font-size: 14px; font-weight: 800; color: var(--ink); }

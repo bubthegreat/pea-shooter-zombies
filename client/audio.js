@@ -166,7 +166,7 @@ export class Sound {
   /**
    * name: pea | snow | spike | melon | housepea | goo | slime | bone | sludge | brain | boing | bloom | chime | plant | sun |
    *       crunch | wilt | hurt | tick | headshot | splat | squish | deflect | pickup | drop | thunk | mower_break | respawn |
-   *       levelup | unlock | wave | win | lose | hitme | click
+   *       levelup | unlock | wave | win | lose | hitme | click | hammer
    */
   play(name, pos, vol = 1) {
     if (!this.ctx) return;
@@ -289,6 +289,13 @@ export class Sound {
         this._tone(out, { type: 'sine', f0: 240 * r, f1: 100, dur: 0.1, vol: 0.45, delay: 0.11 });
         this._tone(out, { type: 'triangle', f0: 520, f1: 880, dur: 0.14, vol: 0.2, delay: 0.24 });
         secs = 0.5;
+        break;
+      case 'hammer': // tap-tap of a repair
+        this._tone(out, { type: 'sine', f0: 320 * r, f1: 140, dur: 0.07, vol: 0.45 });
+        this._noiseBurst(out, { dur: 0.04, type: 'highpass', f0: 2600, vol: 0.28 });
+        this._tone(out, { type: 'sine', f0: 360 * r, f1: 150, dur: 0.07, vol: 0.4, delay: 0.14 });
+        this._noiseBurst(out, { dur: 0.04, type: 'highpass', f0: 2400, vol: 0.24, delay: 0.14 });
+        secs = 0.3;
         break;
       case 'doorbreak': // a door crashes in
         this._noiseBurst(out, { dur: 0.35, type: 'lowpass', f0: 1400, f1: 120, vol: 0.6 });

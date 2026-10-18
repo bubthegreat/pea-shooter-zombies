@@ -84,3 +84,65 @@ test('events keep the client state in step: hits, breaks, builds, round reset', 
   assert.equal(m.piece(stone.id).alive, true);
   assert.equal(m.placed.size, 0);
 });
+
+const extra = { potRules: cfg.potRules, pots: cfg.pots, doorHp: cfg.doorHp };
+
+test('the pot ghost agrees with the server about where a pot may stand (random cells, builder in and out of the house, pots, people)', () => {
+  const game = makeGame({ features: { cover: false } });
+  const p = game.addPlayer('p', { team: 'plant', mode: 'versus' });
+  const q = game.addPlayer('q', { team: 'plant', mode: 'versus' });
+  p.sunshine = 1e6;
+  const potDef = cfg.builds.plant.find((b) => b.id === 'pot');
+  const idx = cfg.builds.plant.indexOf(potDef) + 1;
+  // a few pots already standing (placed the real way)
+  for (const [gx, gz] of [[-5, 10], [-9, 18], [3, 12], [-5, 20]]) {
+    p.x = gx;
+    p.z = gz - 2;
+    game.handleInput('p', { build: idx, bx: gx, bz: gz, br: 0, buildSeq: p.buildSeqSeen + 1 });
+    game.tick(1 / 30);
+  }
+  assert.equal(game.cover.buildsOf('p', 'pot'), 4);
+  const m = new MapData(cfg.map, cfg.builds, game.mapState(), extra);
+  assert.equal(m.placed.size, 4);
+  const rnd = mulberry32(21);
+  let ok = 0;
+  let bad = 0;
+  const reasons = new Set();
+  for (let i = 0; i < 3000; i++) {
+    const inside = rnd() < 0.8;
+    p.x = inside ? -13 + rnd() * 20.5 : -20 + rnd() * 40;
+    p.z = inside ? 6.5 + rnd() * 17 : -2 + rnd() * 30;
+    p.y = 0;
+    q.x = -13 + rnd() * 20;
+    q.z = 7 + rnd() * 16;
+    const gx = Math.round(-14 + rnd() * 23);
+    const gz = Math.round(5 + rnd() * 20);
+    const server = checkBuild(game, p, { ...potDef, team: 'plant' }, gx, gz, 0, { free: true });
+    const others = [...game.entities.values()].filter((e) => (e.kind === 'player' || e.kind === 'bot' || e.kind === 'garden'));
+    const client = m.placement(potDef, gx, gz, 0, p, others);
+    assert.equal(client.ok, server.ok, `(${gx}, ${gz}) builder ${p.x.toFixed(1)}, ${p.z.toFixed(1)}: client ${client.reason} server ${server.reason}`);
+    if (!server.ok) assert.equal(client.reason, server.reason, `(${gx}, ${gz}) reason`);
+    if (server.ok) ok++;
+    else bad++;
+    reasons.add(server.reason ?? 'ok');
+  }
+  assert.ok(ok > 150 && bad > 150, `a mix of cells: ${ok} ok, ${bad} refused`);
+  for (const r of ['house', 'lane', 'crowd', 'blocked', 'busy']) assert.ok(reasons.has(r), `saw ${r}: ${[...reasons]}`);
+});
+
+test('door HP from snapshots and the doorUp event keep the client doors in step', () => {
+  const m = new MapData(cfg.map, cfg.builds, null, extra);
+  assert.equal(m.doors.get('door:garage').maxHp, 360);
+  assert.equal(m.doors.get('door:front').hp, 220);
+  assert.equal(m.setDoorHps([220, 220, 220, 360]), false, 'nothing changed');
+  assert.equal(m.setDoorHps([150, 220, 0, 360]), true);
+  assert.equal(m.doors.get('door:front').hp, 150);
+  assert.equal(m.doors.get('door:back').alive, false);
+  assert.equal(m.doors.get('door:side').alive, true);
+  m.onEvent({ type: 'doorUp', id: 'door:back', hp: 55, maxHp: 220 });
+  assert.equal(m.doors.get('door:back').alive, true);
+  assert.equal(m.doors.get('door:back').hp, 55);
+  assert.equal(m.setDoorHps([150, 220, 55, 360]), false);
+  assert.equal(m.nearestDoorId(5, 3, 9), 'door:front');
+  assert.equal(m.nearestDoorId(30, -40, 9), null);
+});

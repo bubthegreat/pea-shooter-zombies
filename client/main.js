@@ -313,7 +313,7 @@ function loadMap(state) {
   const key = `${m.terrain.data.length}:${m.terrain.data.slice(0, 48)}:${m.statics.length}:${(m.cover || []).length}`;
   if (!S.map || S.mapKey !== key) {
     S.mapKey = key;
-    S.map = new MapData(m, S.config.builds, null);
+    S.map = new MapData(m, S.config.builds, null, { potRules: S.config.potRules, pots: S.config.pots, doorHp: S.config.doorHp });
     S.map.slots = S.config.gardenSlots || [];
     world.setMap(S.map);
     renderer.shadowMap.needsUpdate = true;
@@ -494,10 +494,11 @@ function onSnap(snap) {
     world.cover.sync();
     buildCancel();
   } else if (typeof snap.round === 'number' && S.round === null) S.round = snap.round;
+  if (S.map && snap.doors && S.map.setDoorHps(snap.doors) && world.level) world.level.updateDoorBars(S.map.doors);
   for (const ev of evs) {
     if (!ev || typeof ev.type !== 'string') continue;
     // static-map changes are applied to the data right away (the ghost needs them); their visuals follow with the delay below
-    if (S.map && (ev.type === 'coverHit' || ev.type === 'coverBreak' || ev.type === 'build')) S.map.onEvent(ev);
+    if (S.map && (ev.type === 'coverHit' || ev.type === 'coverBreak' || ev.type === 'build' || ev.type === 'doorUp')) S.map.onEvent(ev);
     // things about me react instantly
     if (ev.type === 'hit' && me !== null) {
       if (ev.by !== null && ev.by !== undefined && String(ev.by) === me && String(ev.id) !== me) {
@@ -688,6 +689,25 @@ function runEvent(ev) {
       }
       break;
     }
+    case 'repair': {
+      // tap-tap and a few wood chips at the pile
+      const p = have ? { x, y: 0.8, z } : pos;
+      if (p) {
+        fx.sparkle(p.x, 0.9, p.z, 0xffe0a0, 4, 0.7);
+        sfx('hammer', { x: p.x, y: 0.8, z: p.z }, 0.8, 200);
+      }
+      break;
+    }
+    case 'doorUp': {
+      const d = world.cover.onEvent(ev);
+      if (d) {
+        fx.buildPuff(d.x, 0, d.z);
+        fx.sparkle(d.x, 1.6, d.z, 0xfff59d, 12, 1.4);
+        sfx('build', d, 1, 80);
+      }
+      hud.toast(`The ${doorName(String(ev.id).slice(5))} is back up!`, 2000);
+      break;
+    }
     case 'buildFail':
       if (me !== null && String(ev.by) === me && performance.now() - S.buildFailAt > 400) {
         S.buildFailAt = performance.now();
@@ -727,11 +747,14 @@ function runEvent(ev) {
 
 const BUILD_FAIL = {
   cost: 'Not enough to build that yet!',
-  cap: 'You have too many forts standing already!',
+  cap: 'You have too many forts (or pots) standing already!',
   spot: "That's not a good spot to build!",
   far: 'Too far away to build there!',
   blocked: 'Something is in the way (doors, gardens and the house need room)!',
   busy: 'Somebody is standing there!',
+  house: 'Flower pots go on the floor inside the house - step in first!',
+  lane: 'Keep the way clear: doors, hallways, the fridge and the repair piles need room!',
+  crowd: 'Pots need a little room between them!',
 };
 
 /* ------------------------------------------------------------------ */
@@ -742,19 +765,75 @@ const PLANT_RANGE = 4;
 const plantInfo = (kind) => plantList(S.config).find((p) => p.id === kind) || null;
 const plantName = (kind) => (plantInfo(kind) ? plantInfo(kind).name : 'Plant');
 
-/** Nearest empty garden slot within planting range (any plant fits any slot). */
+/** True when a garden plant already grows within 1.2 m of (x, z). */
+function plantAtSpot(entities, x, z) {
+  for (const e of entities.values()) if (e.kind === 'garden' && Math.abs(e.x - x) < 1.2 && Math.abs(e.z - z) < 1.2) return true;
+  return false;
+}
+
+/** Nearest empty garden slot - a plot slot or a flower pot - within planting range (any plant fits any slot). */
 function nearestEmptySlot(entities, px, pz) {
   let best = null, bd = PLANT_RANGE;
   for (const s of SLOTS) {
     const d = Math.hypot(s.x - px, s.z - pz);
     if (d > bd) continue;
-    let taken = false;
-    for (const e of entities.values()) {
-      if (e.kind === 'garden' && Math.abs(e.x - s.x) < 1.2 && Math.abs(e.z - s.z) < 1.2) { taken = true; break; }
+    if (!plantAtSpot(entities, s.x, s.z)) { best = s; bd = d; }
+  }
+  if (S.map) {
+    for (const b of S.map.placed.values()) {
+      if (!b.alive || b.kind !== 'pot') continue;
+      const x = b.x + 0.5, z = b.z + 0.5;
+      const d = Math.hypot(x - px, z - pz);
+      if (d > bd) continue;
+      if (!plantAtSpot(entities, x, z)) { best = b.slot || (b.slot = { x, z, kind: 'pot', pot: true }); bd = d; }
     }
-    if (!taken) { best = s; bd = d; }
   }
   return best;
+}
+
+/* ---- door repair prompts and the door card ---- */
+
+const doorName = (id) => {
+  const d = S.config.map && S.config.map.doors && S.config.map.doors.find((x) => x.id === id);
+  return d && d.name ? d.name.replace(/\b\w/g, (c) => c.toUpperCase()) : 'Door';
+};
+let repairKey = '', repairText = '';
+
+/** "Hold E to repair Back Door" when a plant kid stands at a pile whose door needs mending (text cached: no garbage per frame). */
+function repairPrompt(own) {
+  if (!S.map || !S.config.map || !S.config.map.repairPiles) return '';
+  const range = num(S.config.repair && S.config.repair.range, 1.8);
+  for (const p of S.config.map.repairPiles) {
+    if (Math.hypot(p.x - own.x, p.z - own.z) > range) continue;
+    const d = S.map.doors.get(`door:${p.door}`);
+    if (!d) return '';
+    const working = own.repairing === p.door;
+    if (d.alive && d.hp >= d.maxHp) return '';
+    const key = `${p.door}|${d.alive ? Math.ceil(d.hp) : -1}|${working ? Math.round(num(own.rebuild, 0) * 100) : -1}`;
+    if (key !== repairKey) {
+      repairKey = key;
+      const nm = doorName(p.door);
+      if (!d.alive) repairText = working ? `Rebuilding the ${nm}… ${Math.round(num(own.rebuild, 0) * 100)}% (stay still!)` : `Hold E to rebuild the ${nm}`;
+      else repairText = working ? `Repairing the ${nm}… ${Math.ceil(d.hp)} / ${d.maxHp} (stay still!)` : `Hold E to repair the ${nm} — ${Math.ceil(d.hp)} / ${d.maxHp}`;
+    }
+    return repairText;
+  }
+  return '';
+}
+
+let doorCard = { name: '', hp: 0, max: 1, frac: 1, broken: false };
+/** The door card under the crosshair for the door within 8 m (both teams); hidden otherwise. */
+function doorInfo(own) {
+  if (!S.map) { hud.setDoorInfo(null); return; }
+  const id = S.map.nearestDoorId(own.x, own.z, 8);
+  if (!id) { hud.setDoorInfo(null); return; }
+  const d = S.map.doors.get(id);
+  doorCard.name = doorName(id.slice(5));
+  doorCard.broken = !d.alive;
+  doorCard.hp = d.hp;
+  doorCard.max = Math.round(d.maxHp);
+  doorCard.frac = d.alive ? Math.max(0, Math.min(1, d.hp / Math.max(1, d.maxHp))) : 1;
+  hud.setDoorInfo(doorCard);
 }
 
 let lastView = null;
@@ -776,7 +855,7 @@ function onPlantKey(n) {
     return;
   }
   if (!nearestEmptySlot(lastView.entities, own.x, own.z)) {
-    hud.toast(`Walk next to an empty garden spot to plant a ${info.name}!`, 2600);
+    hud.toast(`Walk next to an empty garden spot (or a flower pot) to plant a ${info.name}!`, 2600);
     sfx('hurt', null, 0.5);
   }
 }
@@ -786,7 +865,7 @@ function onPlantKey(n) {
 /* ------------------------------------------------------------------ */
 
 const B = { active: false, kind: 0, rot: 0, wallnut: 0, last: null };
-const BUILD_ICONS = { hedgewall: '\u{1F33F}', fence: '\u{1F6A7}', tombwall: '\u{1F9F1}', junk: '\u{1F6E2}\uFE0F', cantower: '\u{1F5D1}\uFE0F', wallnut: '\u{1F330}' };
+const BUILD_ICONS = { hedgewall: '\u{1F33F}', fence: '\u{1F6A7}', pot: '\u{1FAB4}', tombwall: '\u{1F9F1}', junk: '\u{1F6E2}\uFE0F', cantower: '\u{1F5D1}\uFE0F', wallnut: '\u{1F330}' };
 
 /** The wheel: the team's build kinds (plants get the Wall-nut as a last slot: it is still a plant). */
 function buildWheelItems(team, own) {
@@ -805,6 +884,8 @@ function buildWheelItems(team, own) {
 function buildSync() {
   input.buildActive = B.active;
   input.buildKind = B.kind;
+  const def = B.kind && S.map ? S.map.listFor(S.team)[B.kind - 1] : null;
+  input.buildPot = !!(def && def.pot);
 }
 
 function buildCancel() {
@@ -870,8 +951,21 @@ function buildScroll(dir) {
   }
 }
 
+/** P: straight to the flower pot ghost (or put it away again). Plant kids only. */
+function potKey() {
+  if (!S.joined || S.team !== 'plant' || !lastView || !lastView.self || !S.map) return;
+  const idx = S.map.listFor('plant').findIndex((d) => d.pot) + 1;
+  if (!idx) return;
+  if (B.active && B.kind === idx) {
+    buildCancel();
+    return;
+  }
+  if (!B.active) buildToggle();
+  if (B.active) buildPick(idx);
+}
+
 function buildRotate() {
-  if (!B.active || !B.kind) return;
+  if (!B.active || !B.kind || input.buildPot) return; // a round pot has no front
   B.rot ^= 1;
   sfx('tick');
 }
@@ -907,18 +1001,21 @@ function buildFrame(own, entities) {
   const me = { x: own.x, z: own.z };
   const pl = S.map.placement(def, gx, gz, B.rot, me, others.filter((o) => Math.hypot(o.x - own.x, o.z - own.z) > 0.01));
   const have = team === 'zombie' ? num(own.brains, 0) : num(own.sunshine, 0);
-  let mine = 0;
-  for (const b of S.map.placed.values()) if (b.alive && String(b.by) === myId()) mine++;
+  let mine = 0, minePots = 0;
+  for (const b of S.map.placed.values()) if (b.alive && String(b.by) === myId()) { if (b.kind === 'pot') minePots++; else mine++; }
   let reason = pl.ok ? null : pl.reason;
   if (pl.ok && have < def.cost) reason = 'cost';
-  else if (pl.ok && mine >= S.map.builds.maxPerPlayer) reason = 'cap';
+  else if (pl.ok && (def.pot ? minePots >= S.map.potCfg.max : mine >= S.map.builds.maxPerPlayer)) reason = 'cap';
   const ok = !reason;
   B.last = { gx, gz, ok, reason };
   const cx = (pl.rect.minX + pl.rect.maxX) / 2, cz = (pl.rect.minZ + pl.rect.maxZ) / 2;
   world.cover.setGhost(def, pl.rect, ok, S.map.supportY(cx, cz, 5) - 0.02);
   const unit = team === 'zombie' ? 'brains' : 'sunshine';
-  const hint = isTouch() ? 'Tap PLACE \u2022 TURN spins it \u2022 BACK cancels' : 'Click to build \u2022 R turns it \u2022 B cancels';
-  hud.setBuildBar(`${def.name}  (${def.cost} ${unit})`, ok ? hint : (BUILD_FAIL[reason] || "Can't build there!"), !ok);
+  const hint = def.pot
+    ? (isTouch() ? 'Tap PLACE \u2022 BACK cancels' : 'Click to put it down \u2022 P or B cancels')
+    : (isTouch() ? 'Tap PLACE \u2022 TURN spins it \u2022 BACK cancels' : 'Click to build \u2022 R turns it \u2022 B cancels');
+  const title = def.pot ? `${def.name}  (${def.cost} ${unit}) \u2022 ${minePots} / ${S.map.potCfg.max}` : `${def.name}  (${def.cost} ${unit})`;
+  hud.setBuildBar(title, ok ? hint : (BUILD_FAIL[reason] || "Can't build there!"), !ok);
 }
 
 input.onBuildToggle = buildToggle;
@@ -926,6 +1023,7 @@ input.onBuildPick = buildPick;
 input.onBuildPlace = buildPlace;
 input.onBuildRotate = buildRotate;
 input.onBuildScroll = buildScroll;
+input.onPotKey = potKey;
 
 /* ------------------------------------------------------------------ */
 /* lobby backdrop: a cozy stage with a few friends                      */
@@ -1308,6 +1406,7 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
           : `Someone else has the ${info.name}!`;
       }
     }
+    if (team === 'plant') prompt = repairPrompt(own) || prompt;
     if (team === 'plant' && !prompt) {
       const slot = nearestEmptySlot(entities, own.x, own.z);
       const sun = num(own.sunshine, 0);
@@ -1323,14 +1422,16 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
       } else if (slot) {
         nearSlotInfo = slot;
         const ok = sun >= cheapest;
-        world.showSlot(slot.x, slot.z, ok);
+        world.showSlot(slot.x, slot.z, ok, slot.pot ? 0.8 : 0.16);
+        const where = slot.pot ? 'in this pot' : 'here';
         prompt = ok
-          ? (mine.length > 2 ? `Press 1-${mine.length} to plant here!` : 'Press 1 or 2 to plant here!')
+          ? (mine.length > 2 ? `Press 1-${mine.length} to plant ${where}!` : `Press 1 or 2 to plant ${where}!`)
           : `Planting needs ☀️ ${cheapest} — grab some sunshine!`;
       }
     }
   }
   hud.setPrompt(prompt);
+  if (alive) doorInfo(own); else hud.setDoorInfo(null);
   S.nearSlot = nearSlotInfo;
 
   // doors left standing and the mower's parts (HUD)
