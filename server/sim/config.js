@@ -159,7 +159,7 @@ export const DEFAULT_CONFIG = {
   // reaction = seconds before a freshly spotted target is shot at; waveBase + wave number = wave size.
   difficulties: {
     easy: { aimError: 0.15, fireScale: 0.3, reaction: 0.8, waveBase: 2 },
-    normal: { aimError: 0.14, fireScale: 0.3, reaction: 0.4, waveBase: 3 },
+    normal: { aimError: 0.14, fireScale: 0.3, reaction: 0.4, waveBase: 4 },
   },
   zombieBotSpeed: 3,
   botThinkInterval: 0.25,
@@ -170,7 +170,7 @@ export const DEFAULT_CONFIG = {
   mowerBotStopDistance: 1.2,
 
   // Doors: HP of each (a zombie shot does 8). Plants walk and shoot through their own doors; zombies must break them.
-  doorHp: { front: 150, side: 150, back: 150, garage: 260, default: 150 },
+  doorHp: { front: 220, side: 220, back: 220, garage: 360, default: 220 },
   // Destructible cover by kind: hp (a pea does 1, a goo shot 8; rocks are tough, stones and fences medium).
   cover: {
     gravestone: { hp: 60 },

@@ -15,14 +15,14 @@ function wavesGame(difficulty = 'normal', extra = {}) {
   return game;
 }
 
-test('wave 1 spawns 4 zombies at the gate at t=5', () => {
+test('wave 1 spawns 5 zombies at the gate at t=5 (normal: 4 + wave)', () => {
   const game = wavesGame('normal');
   run(game, 4.9);
   assert.equal(zombieBots(game).length, 0);
   assert.equal(game.wave, 0);
   run(game, 0.2);
   const bots = zombieBots(game);
-  assert.equal(bots.length, 4);
+  assert.equal(bots.length, 5);
   for (const b of bots) {
     assert.ok(Math.abs(b.z - WORLD.gate.z) < 1, `bot z=${b.z}`);
     assert.ok(b.x >= WORLD.gate.minX && b.x <= WORLD.gate.maxX);
@@ -33,7 +33,7 @@ test('wave 1 spawns 4 zombies at the gate at t=5', () => {
   const ev = game.drainEvents().filter((e) => e.type === 'wave');
   assert.equal(ev.length, 1);
   assert.equal(ev[0].wave, 1);
-  assert.equal(ev[0].size, 4);
+  assert.equal(ev[0].size, 5);
   assert.equal(game.snapshot().wave, 1);
 });
 
@@ -45,7 +45,7 @@ test('easy waves are 2 + wave, later waves come every 45 s and grow', () => {
   const game = wavesGame('normal');
   run(game, 50.5);
   assert.equal(game.wave, 2);
-  assert.equal(zombieBots(game).length, 4 + 5);
+  assert.equal(zombieBots(game).length, 5 + 6);
 });
 
 test('waves are planned from t=5 (+ the 15 s head start) every 45 s, with the last wave 60 s before sunrise', () => {
@@ -76,7 +76,7 @@ test('the final wave is flagged and no wave follows it', () => {
 test('zombie bot count is capped', () => {
   const game = wavesGame('normal', { config: { maxZombieBots: 6 } });
   run(game, 5.2);
-  assert.equal(zombieBots(game).length, 4);
+  assert.equal(zombieBots(game).length, 5);
   game.roundTime = 50;
   run(game, 0.2);
   assert.equal(zombieBots(game).length, 6);

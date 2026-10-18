@@ -124,8 +124,8 @@ box(BR.maxX - 0.2, BR.maxX, BR.minZ, BR.maxZ, BR.top, 1.25, 'rail');
   const S = CL.slab;
   const lo = CL.floor - 0.1;
   // trench side walls, basement walls, and the slab (the living room floor above the basement)
-  box(R.minX, R.maxX, R.minZ - 0.2, R.minZ + 0.2, lo, 0.3, 'concrete');
-  box(R.minX, R.maxX, R.maxZ - 0.2, R.maxZ + 0.4, lo, 0.3, 'concrete');
+  box(R.minX, R.maxX, R.minZ - 0.2, R.minZ + 0.2, lo, 1.0, 'concrete'); // a 1 m parapet: nobody wanders into the stairwell by accident
+  box(R.minX, R.maxX, R.maxZ - 0.2, R.maxZ + 0.4, lo, 1.0, 'concrete');
   box(S.minX, S.maxX, S.minZ + 0.8, S.minZ + 1.2, lo, 0.0, 'concrete'); // north wall of the room
   box(S.minX, S.maxX, S.maxZ - 0.4, S.maxZ + 0.4, lo, 0.0, 'concrete'); // south
   box(S.maxX - 0.2, S.maxX + 0.2, S.minZ, S.maxZ + 0.4, lo, 0.0, 'concrete'); // east
@@ -169,7 +169,7 @@ const NODES = {
   living: [-10, 15], in_side: [-12.6, 15], fridge: [-2, 21.6],
   hall_g: [8, 15], gar1: [11.5, 15], gar_in: [18.4, 15], gar_mower: [13.5, 12.5], gar_rack: [14, 19.8],
   // basement
-  cel_top: [-20.4, 22.4], cel_bot: [-14.8, 22.4], cel_room: [-10, 21.6],
+  cel_out: [-25, 22.6], cel_top: [-20.4, 22.4], cel_bot: [-14.8, 22.4], cel_room: [-10, 21.6],
   // shed
   shed_door: [36.8, -9.5], shed_in: [30.5, -9.5],
 };
@@ -184,7 +184,7 @@ const EDGES = [
   ['hall', 'hall_w'], ['hall_w', 'kit_e'], ['kit_e', 'kitchen'], ['kitchen', 'kit_w'], ['kit_w', 'lk'], ['lk', 'living'], ['living', 'in_side'], ['in_side', 'out_side'],
   ['kitchen', 'fridge'], ['kit_e', 'fridge'], ['hall', 'hall_g'], ['hall_g', 'gar1'], ['gar1', 'gar_in'], ['gar_in', 'out_garage'], ['gar1', 'gar_mower'], ['gar1', 'gar_rack'],
   ['l_side', 'l6'],
-  ['out_side', 'cel_top'], ['cel_top', 'cel_bot'], ['cel_bot', 'cel_room'],
+  ['l6', 'cel_out'], ['out_side', 'cel_out'], ['cel_out', 'cel_top'], ['cel_top', 'cel_bot'], ['cel_bot', 'cel_room'],
   ['r_shed', 'shed_door'], ['shed_door', 'shed_in'],
 ];
 

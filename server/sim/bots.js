@@ -36,7 +36,7 @@ export function ensureAI(game, bot) {
     moving: false,
   };
   if (bot.team === 'zombie') {
-    bot.fireScale = bot.kind === 'player' ? 1 : game.difficultyConfig().fireScale; // an autopilot kid shoots at full rate
+    bot.fireScale = bot.kind === 'player' ? bot.autopilotFireScale ?? 1 : game.difficultyConfig().fireScale; // an autopilot kid shoots at its own rate
     const itin = chooseItinerary(game.rng);
     const errand = game.rng() < c.parts.botChance ? {} : null; // fetch a part, install it, use what it powers
     bot.ai = { ...base, role: 'zombie', itin, mode: 'route', errand, coin: game.rng(), goal: null, goalKey: null };

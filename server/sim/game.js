@@ -521,14 +521,15 @@ export class Game {
     // Walls, cover and doors push the body out; a terrain face taller than a step cannot be walked up (try sliding).
     const feet = e.y;
     const h0 = terrainHeight(e.x, e.z);
+    const onTerrain0 = this.field.groundAt(e.x, e.z, feet) <= h0 + 1e-6;
     const place = (tx, tz) => {
       const p = { x: tx, z: tz };
       this.field.resolve(p, e.radius, feet, feet + e.height, e.team);
       const h1 = terrainHeight(p.x, p.z);
       if (h1 > feet + STEP + 1e-6) return null; // a terrain wall
-      // a face too steep to climb is a wall too (only when the feet would really be on the terrain, not on a slab or step)
+      // a terrain face too steep to walk up or down is a wall too (only between two spots on the terrain, not on a slab or step)
       const run = Math.hypot(p.x - e.x, p.z - e.z);
-      if (h1 - h0 > MAX_SLOPE * run + 0.01 && this.field.groundAt(p.x, p.z, feet) <= h1 + 1e-6) return null;
+      if (Math.abs(h1 - h0) > MAX_SLOPE * run + 0.01 && onTerrain0 && this.field.groundAt(p.x, p.z, feet) <= h1 + 1e-6) return null;
       return p;
     };
     const p = place(nx, nz) ?? place(nx, e.z) ?? place(e.x, nz) ?? place(e.x, e.z);

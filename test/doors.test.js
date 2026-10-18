@@ -46,12 +46,13 @@ test('four doors with HP, listed in config, standing at round start', () => {
 
 test('zombie shots hurt a door (events at 75, 50, 25 %), plant shots pass through', () => {
   const { game } = setup();
-  const piece = shootDoor(game, 'front', 8, 6); // 48 of 150
-  assert.equal(piece.hp, 150 - 48);
+  const max = DEFAULT_CONFIG.doorHp.front;
+  const piece = shootDoor(game, 'front', 8, 8); // 64 of the door's HP
+  assert.equal(piece.hp, max - 64);
   const hits = game.drainEvents().filter((e) => e.type === 'coverHit' && e.id === 'door:front');
-  assert.deepEqual(hits.map((e) => e.maxHp), [150], 'one event as it crossed 75 %');
-  shootDoor(game, 'front', 8, 6);
-  shootDoor(game, 'front', 8, 6);
+  assert.deepEqual(hits.map((e) => e.maxHp), [max], 'one event as it crossed 75 %');
+  shootDoor(game, 'front', 8, 8);
+  shootDoor(game, 'front', 8, 8);
   const more = game.drainEvents().filter((e) => e.type === 'coverHit' && e.id === 'door:front');
   assert.equal(more.length, 2, '50 % and 25 %');
   assert.deepEqual(game.mapState().hurt, { 'door:front': piece.hp });
@@ -66,7 +67,7 @@ test('zombie shots hurt a door (events at 75, 50, 25 %), plant shots pass throug
 test('a door at 0 HP breaks: planks event, collider gone, stays broken, resets next round', () => {
   const { game, z } = setup();
   const d = WORLD.doors.find((x) => x.id === 'side');
-  const piece = shootDoor(game, 'side', 80, 2);
+  const piece = shootDoor(game, 'side', 120, 2);
   assert.equal(piece.state, 'broken');
   const ev = game.drainEvents().find((e) => e.type === 'coverBreak');
   assert.ok(ev && ev.id === 'door:side' && ev.kind === 'door' && Math.abs(ev.x - d.x) < 0.5 && Math.abs(ev.z - d.z) < 1);
@@ -96,7 +97,7 @@ test('splash damage reaches doors; the garage door takes a lot more', () => {
   const { game } = setup();
   const d = WORLD.doors.find((x) => x.id === 'front');
   game.cover.splash(d.x, 1, d.z - 0.5, 3.5, 40, null, 'zombie');
-  assert.ok(game.cover.get('door:front').hp < 150);
+  assert.ok(game.cover.get('door:front').hp < DEFAULT_CONFIG.doorHp.front);
   game.cover.splash(d.x, 1, d.z - 0.5, 3.5, 40, null, 'plant');
   const hp = game.cover.get('door:front').hp;
   game.cover.splash(d.x, 1, d.z - 0.5, 3.5, 40, null, 'plant');
