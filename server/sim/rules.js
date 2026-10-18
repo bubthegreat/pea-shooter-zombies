@@ -20,9 +20,12 @@ function zombieBotCount(game) {
   return n;
 }
 
+/** Zombies still in the fight. A converted kid (sprout) digs back up after a few seconds, so it counts. */
 function anyZombieAlive(game) {
   for (const e of game.entities.values()) {
-    if ((e.kind === 'player' || e.kind === 'bot') && e.team === 'zombie' && e.state === 'alive') return true;
+    if (e.team !== 'zombie') continue;
+    if (e.kind === 'bot' && e.state === 'alive') return true;
+    if (e.kind === 'player' && (e.state === 'alive' || e.state === 'sprout')) return true;
   }
   return false;
 }

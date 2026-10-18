@@ -143,7 +143,7 @@ test('final wave cleared -> plant win', () => {
   assert.equal(game.winner, 'plant');
 });
 
-test('a zombie human blocks the clear-win until converted (sprouts count as converted)', () => {
+test('a zombie human blocks the clear-win, including while sprouting', () => {
   const { game } = winGame({ features: { waves: true } });
   const z = game.addPlayer('z', { team: 'zombie' });
   game.roundTime = DEFAULT_CONFIG.roundLength - 60 - 0.01;
@@ -153,8 +153,12 @@ test('a zombie human blocks the clear-win until converted (sprouts count as conv
   game.tick(1 / 30);
   assert.equal(game.phase, 'playing', 'zombie player is still in the fight');
   applyDamage(game, z, 99, game.entities.get('a'));
+  assert.equal(z.state, 'sprout');
   game.tick(1 / 30);
-  assert.equal(game.winner, 'plant');
+  assert.equal(game.phase, 'playing', 'a sprouting kid is about to dig back up: the wave is not cleared');
+  run(game, 6); // sprout time is 5 s: the kid is back
+  assert.equal(z.state, 'alive');
+  assert.equal(game.phase, 'playing');
 });
 
 test('no plant win from an empty field before the final wave', () => {
