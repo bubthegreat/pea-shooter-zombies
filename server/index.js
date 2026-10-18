@@ -3,11 +3,12 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { DEFAULT_CONFIG } from './sim/config.js';
 import { sanitizeName } from './sim/names.js';
-import { LobbyManager, MAX_LOBBIES, MAX_PLAYERS_PER_LOBBY } from './lobby.js';
+import { LobbyManager, MAX_LOBBIES, MAX_LOBBIES_PER_IP, MAX_PLAYERS_PER_LOBBY, IDLE_LOBBY_MS } from './lobby.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_CLIENT_DIR = path.join(ROOT, 'client');
@@ -17,8 +18,15 @@ const DEFAULT_PORT = 8080;
 const MAX_MESSAGE_BYTES = 4096; // larger client messages are ignored
 const HARD_MAX_PAYLOAD = 16 * 1024; // ws closes connections that exceed this
 const LIST_PUSH_MS = 500; // how often the live lobby list is re-checked (round timers tick every second)
+const LIST_MIN_GAP_MS = 100; // message-triggered list rebuilds are at most this frequent (the timer above catches up)
 const MANAGE_PER_SEC = 10; // lobby-management messages per client: sustained rate...
 const MANAGE_BURST = 20; // ...and burst
+const INPUT_PER_SEC = 60; // `input` messages per client (the real client sends 30/s): sustained rate; extras are dropped
+const INPUT_BURST = 60;
+const MESSAGES_PER_SEC = 200; // every message of any kind, per socket: sustained rate; going over it terminates the socket
+const MESSAGES_BURST = 200;
+export const MAX_SOCKETS_PER_IP = 8; // concurrent sockets from one address
+const MAX_IP_LENGTH = 64;
 export const HEARTBEAT_MS = 3000; // ping period; a client that misses one ping round is dropped, so ~6 s worst case
 const MAX_CID_LENGTH = 64;
 const MAX_BUFFERED_BYTES = 1024 * 1024;
@@ -126,6 +134,26 @@ function lanUrls(port) {
   return urls;
 }
 
+/**
+ * The caller's address, for the per-address caps. We sit behind a trusted gateway, so the first X-Forwarded-For entry
+ * is the client; without the header it is the socket's own address.
+ */
+export function clientIp(req) {
+  const raw = req.headers?.['x-forwarded-for'];
+  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(',')[0].trim();
+  const ip = first || req.socket?.remoteAddress || 'unknown';
+  return ip.replace(/^::ffff:/i, '').slice(0, MAX_IP_LENGTH);
+}
+
+/** Token bucket: true when one more event fits the rate (and uses it up). */
+function take(bucket, now, perSec, burst) {
+  bucket.tokens = Math.min(burst, bucket.tokens + ((now - bucket.at) / 1000) * perSec);
+  bucket.at = now;
+  if (bucket.tokens < 1) return false;
+  bucket.tokens -= 1;
+  return true;
+}
+
 function parsePort(value) {
   const n = Number.parseInt(value ?? '', 10);
   return Number.isInteger(n) && n >= 0 && n <= 65535 ? n : DEFAULT_PORT;
@@ -134,7 +162,8 @@ function parsePort(value) {
 /**
  * Start the game server. Resolves once listening.
  * Options: port (default $PORT or 8080), host (default 0.0.0.0), clientDir, config, rng, log, heartbeatMs,
- * maxLobbies / maxPlayersPerLobby (hidden safety caps, tests lower them).
+ * maxLobbies / maxPlayersPerLobby / maxLobbiesPerIp / maxSocketsPerIp / idleLobbyMs (hidden safety caps, tests
+ * change them).
  */
 export function startServer(opts = {}) {
   const {
@@ -147,14 +176,32 @@ export function startServer(opts = {}) {
     heartbeatMs = HEARTBEAT_MS,
     maxLobbies = MAX_LOBBIES,
     maxPlayersPerLobby = MAX_PLAYERS_PER_LOBBY,
+    maxLobbiesPerIp = MAX_LOBBIES_PER_IP,
+    maxSocketsPerIp = MAX_SOCKETS_PER_IP,
+    idleLobbyMs = IDLE_LOBBY_MS,
   } = opts;
 
-  const manager = new LobbyManager({ config, rng, log, maxLobbies, maxPlayers: maxPlayersPerLobby });
+  const manager = new LobbyManager({
+    config,
+    rng,
+    log,
+    maxLobbies,
+    maxPlayers: maxPlayersPerLobby,
+    maxLobbiesPerIp,
+    idleLobbyMs,
+    // a room the manager closed on its own (idle): say why and put the kids back in the browser
+    onEvict: (client, res) => {
+      client.send({ t: 'error', reason: res.error, message: res.message });
+      sendList(client);
+    },
+  });
   const server = http.createServer(makeHttpHandler(path.resolve(clientDir)));
   const wss = new WebSocketServer({ server, maxPayload: HARD_MAX_PAYLOAD });
   const clients = new Set();
+  const socketsByIp = new Map(); // address -> open sockets
   let nextClientId = 1;
   let lastListJson = '';
+  let lastListAt = -Infinity;
 
   /** Forget a client; if it was in a lobby, take it out (and remember it, so the same page can slip back in). */
   function dropClient(client) {
@@ -179,12 +226,15 @@ export function startServer(opts = {}) {
     evictGhosts(client, cid);
   }
 
-  /** Send the lobby list to everyone who is browsing, but only when it changed. */
-  function pushList(force = false) {
+  /** Send the lobby list to everyone who is browsing, but only when it changed (and not more than once per minGap). */
+  function pushList(minGap = LIST_MIN_GAP_MS) {
+    const now = performance.now();
+    if (now - lastListAt < minGap) return;
+    lastListAt = now;
     const json = JSON.stringify({ t: 'lobbies', lobbies: manager.list() });
-    if (!force && json === lastListJson) return;
+    if (json === lastListJson) return;
     lastListJson = json;
-    for (const c of clients) if (c.browsing && !c.lobby && c.ws.readyState === c.ws.OPEN) c.ws.send(json);
+    for (const c of clients) if (c.browsing && !c.lobby) c.raw(json);
   }
 
   function sendList(client) {
@@ -198,21 +248,13 @@ export function startServer(opts = {}) {
     else client.browsing = false;
   }
 
-  /** Lobby-management messages are rate limited (input is not): ~10/s sustained. */
-  function allowManagement(client, now) {
-    client.tokens = Math.min(MANAGE_BURST, client.tokens + ((now - client.tokensAt) / 1000) * MANAGE_PER_SEC);
-    client.tokensAt = now;
-    if (client.tokens < 1) return false;
-    client.tokens -= 1;
-    return true;
-  }
-
   function onMessage(client, msg) {
+    const now = performance.now();
     if (msg.t === 'input') {
-      manager.input(client, msg);
+      if (take(client.inputBucket, now, INPUT_PER_SEC, INPUT_BURST)) manager.input(client, msg); // extras are dropped
       return;
     }
-    if (!allowManagement(client, performance.now())) return;
+    if (!take(client.manageBucket, now, MANAGE_PER_SEC, MANAGE_BURST)) return; // lobby management: ~10/s sustained
     switch (msg.t) {
       case 'listLobbies': {
         identify(client, msg.cid);
@@ -258,10 +300,29 @@ export function startServer(opts = {}) {
     pushList();
   }
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    ws.on('error', () => {});
+    const ip = clientIp(req);
+    const open = socketsByIp.get(ip) ?? 0;
+    if (open >= maxSocketsPerIp) {
+      ws.close(1013, 'Too many connections'); // 1013: try again later
+      setTimeout(() => ws.terminate(), 1000).unref(); // don't wait on a peer that never answers the close
+      return;
+    }
+    socketsByIp.set(ip, open + 1);
     const t0 = performance.now();
+    // every send path goes through here: a socket that cannot drain is cut off instead of buffering without bound
+    const out = (str) => {
+      if (ws.readyState !== ws.OPEN) return;
+      if (ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+        ws.terminate();
+        return;
+      }
+      ws.send(str);
+    };
     const client = {
       ws,
+      ip,
       id: `p${nextClientId++}`,
       cid: null,
       name: 'Player',
@@ -271,25 +332,41 @@ export function startServer(opts = {}) {
       lastInputAt: 0,
       inputActive: false,
       alive: true,
-      tokens: MANAGE_BURST,
-      tokensAt: t0,
-      send(obj) {
-        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
+      pingNonce: null, // the payload of the ping we are waiting for a pong to; only an echo of it counts
+      dead: false,
+      manageBucket: { tokens: MANAGE_BURST, at: t0 },
+      inputBucket: { tokens: INPUT_BURST, at: t0 },
+      messageBucket: { tokens: MESSAGES_BURST, at: t0 },
+      /** obj is encoded here unless the caller already has the JSON (a broadcast encodes its payload once). */
+      send(obj, json) {
+        out(json ?? JSON.stringify(obj));
       },
-      raw(str) {
-        if (ws.readyState === ws.OPEN && ws.bufferedAmount <= MAX_BUFFERED_BYTES) ws.send(str);
-      },
+      raw: out,
     };
     clients.add(client);
-    ws.on('pong', () => {
-      client.alive = true;
+    ws.on('pong', (data) => {
+      // unsolicited pongs (or ones that don't echo our nonce) say nothing about the connection being alive
+      if (client.pingNonce && Buffer.isBuffer(data) && data.equals(client.pingNonce)) {
+        client.alive = true;
+        client.pingNonce = null;
+      }
     });
-    ws.on('error', () => {});
     ws.on('close', () => {
+      const n = (socketsByIp.get(ip) ?? 1) - 1;
+      if (n > 0) socketsByIp.set(ip, n);
+      else socketsByIp.delete(ip);
+      client.dead = true;
       dropClient(client);
       pushList();
     });
     ws.on('message', (data, isBinary) => {
+      if (client.dead) return;
+      if (!take(client.messageBucket, performance.now(), MESSAGES_PER_SEC, MESSAGES_BURST)) {
+        client.dead = true;
+        log(`player ${client.id} flooded messages; dropped`);
+        ws.terminate();
+        return;
+      }
       try {
         if (isBinary || !data || data.length > MAX_MESSAGE_BYTES) return;
         let msg;
@@ -312,7 +389,7 @@ export function startServer(opts = {}) {
   }, Math.max(1, Math.floor(1000 / config.tickRate / 2)));
   const listTimer = setInterval(() => {
     try {
-      pushList();
+      pushList(0);
     } catch (err) {
       log(`list error: ${err?.message ?? err}`);
     }
@@ -325,8 +402,9 @@ export function startServer(opts = {}) {
         continue;
       }
       c.alive = false;
+      c.pingNonce = crypto.randomBytes(8); // a client that isn't reading can't echo this back
       try {
-        c.ws.ping();
+        c.ws.ping(c.pingNonce);
       } catch {
         // socket already closing
       }

@@ -24,6 +24,7 @@ function setup(opts = {}) {
     config: { ...DEFAULT_CONFIG, features: { ...NO_FEATURES, ...(opts.features ?? {}) } },
     rng: mulberry32(7),
     now: () => clock.t,
+    stateIntervalMs: 0, // lobbyState synchronously, so these tests can read it right after each action (coalescing: lobby-hardening.test.js)
     ...opts.manager,
   });
   /** Advance wall time by `sec` seconds in tick-sized slices, stepping the manager. */
@@ -338,8 +339,11 @@ test('reconnect: a dropped member rejoins the same lobby by client token; explic
   mgr.leave(b2); // pressed Leave
   assert.equal(mgr.rejoin(member('p9', 'x', 'tok-b')), null);
 
-  mgr.leave(a, { remember: true }); // last one out: lobby closes at once
-  assert.equal(mgr.lobbies.size, 0);
+  mgr.leave(a, { remember: true }); // last one out, socket dropped: the empty lobby is held for the rejoin window
+  assert.equal(mgr.lobbies.size, 1);
+  clock.t += 120_000;
+  mgr.step(clock.t);
+  assert.equal(mgr.lobbies.size, 0, 'nobody came back in time');
   assert.equal(mgr.rejoin(member('p10', 'Ann', 'tok-a')), null, 'lobby is gone');
 
   const c = member('p11', 'Cy', 'tok-c');

@@ -7,14 +7,22 @@
 //   waiting room --host Start--> playing --round over + result screen--> waiting room (teams kept)
 //
 // The first member in lobby.members (insertion order = how long they have been present) is the host; when the host
-// leaves the next one takes over, and the lobby closes the moment it is empty. Game state lives in memory only.
+// leaves the next one takes over, and the lobby closes the moment it is empty (unless the last member's socket
+// dropped; see below). Game state lives in memory only.
+//
+// Hardening (the server is public): lobbyState is coalesced to ~10 broadcasts/s per lobby and encoded once per
+// broadcast; waiting rooms nobody touches for 15 min are closed; one address can own at most 3 lobbies; a lobby
+// emptied by a dropped socket (not a clean Leave) is held for the rejoin window so the host can come back to it.
 import { DEFAULT_CONFIG, publicConfig } from './sim/config.js';
 import { Game, TEAMS, MODES, DIFFICULTIES, neutralInput } from './sim/game.js';
 import { sanitizeName, sanitizeLobbyName } from './sim/names.js';
 
 export const MAX_PLAYERS_PER_LOBBY = 50; // hidden safety caps, not shown to kids
 export const MAX_LOBBIES = 20;
+export const MAX_LOBBIES_PER_IP = 3; // live lobbies one address may have created
 export const REJOIN_WINDOW_MS = 90_000; // a dropped member can slip back into their lobby this long
+export const IDLE_LOBBY_MS = 15 * 60_000; // a waiting room nobody touches for this long is closed
+export const STATE_INTERVAL_MS = 100; // lobbyState goes out at most this often per lobby
 export const STALE_INPUT_MS = 500; // no input for this long => release all keys
 const MAX_CATCHUP_STEPS = 5;
 const MAX_REMEMBERED = 500;
@@ -23,14 +31,17 @@ const MESSAGES = {
   gone: 'That lobby just closed. Pick another one!',
   lobby_full: 'That lobby is full. Try another one!',
   too_many_lobbies: 'There are too many lobbies right now. Join one instead!',
+  too_many_yours: 'You already have a few lobbies open. Join one of them instead!',
   not_host: 'Only the host can do that.',
   busy: 'The game has already started.',
+  idle: 'That lobby closed because nobody did anything for a while.',
 };
 const fail = (error) => ({ error, message: MESSAGES[error] ?? error });
 
 class Lobby {
-  constructor(id, name, game, mode, difficulty, publicCfg) {
+  constructor(id, name, game, mode, difficulty, publicCfg, ownerIp = null, now = 0) {
     this.id = id;
+    this.ownerIp = ownerIp; // address that created it (null = unknown), for the per-address cap
     this.name = name;
     this.game = game;
     this.mode = mode;
@@ -43,6 +54,10 @@ class Lobby {
     this.snapAcc = 0;
     this.last = null; // wall time of the previous step; null = first step after Start
     this.errors = 0;
+    this.activeAt = now; // last time a member did something in the waiting room
+    this.stateAt = -Infinity; // when lobbyState last went out
+    this.stateDirty = false; // a change is waiting for the next flush
+    this.reservedUntil = 0; // an empty lobby is held (for a dropped host to return to) until this time
   }
 
   get host() {
@@ -51,7 +66,10 @@ class Lobby {
 }
 
 export class LobbyManager {
-  /** Options: config, rng, log, now (ms clock), maxLobbies, maxPlayers. */
+  /**
+   * Options: config, rng, log, now (ms clock), maxLobbies, maxPlayers, maxLobbiesPerIp, idleLobbyMs, stateIntervalMs,
+   * onEvict(member, { error, message }) - called for each member of a lobby the manager closes on its own (idle).
+   */
   constructor({
     config = DEFAULT_CONFIG,
     rng = Math.random,
@@ -59,6 +77,10 @@ export class LobbyManager {
     now = () => performance.now(),
     maxLobbies = MAX_LOBBIES,
     maxPlayers = MAX_PLAYERS_PER_LOBBY,
+    maxLobbiesPerIp = MAX_LOBBIES_PER_IP,
+    idleLobbyMs = IDLE_LOBBY_MS,
+    stateIntervalMs = STATE_INTERVAL_MS,
+    onEvict = () => {},
   } = {}) {
     this.config = { ...config, autoRestart: false }; // a finished round goes back to the waiting room
     this.rng = rng;
@@ -66,6 +88,10 @@ export class LobbyManager {
     this.now = now;
     this.maxLobbies = maxLobbies;
     this.maxPlayers = maxPlayers;
+    this.maxLobbiesPerIp = maxLobbiesPerIp;
+    this.idleLobbyMs = idleLobbyMs;
+    this.stateIntervalMs = stateIntervalMs;
+    this.onEvict = onEvict;
     this.lobbies = new Map();
     this.recent = new Map(); // client token -> { lobbyId, name, team, until }
     this.nextId = 1;
@@ -79,6 +105,7 @@ export class LobbyManager {
   list() {
     const out = [];
     for (const l of this.lobbies.values()) {
+      if (l.members.size === 0) continue; // held for a dropped host: not offered to anyone else
       const playing = l.status === 'playing';
       out.push({
         id: l.id,
@@ -110,9 +137,48 @@ export class LobbyManager {
     };
   }
 
+  /**
+   * Tell the room its state changed. Bursts are coalesced: the first goes out now, the rest wait for step().
+   * Returns true when it went out now.
+   */
   _broadcastState(l) {
+    const t = this.now();
+    if (t - l.stateAt < this.stateIntervalMs) {
+      l.stateDirty = true;
+      return false;
+    }
+    this._flushState(l, t);
+    return true;
+  }
+
+  /** Encode the room once and give every member their own `you` by splicing it in front of the shared JSON. */
+  _flushState(l, t) {
+    l.stateAt = t;
+    l.stateDirty = false;
+    if (l.members.size === 0) return;
     const lobby = this._view(l);
-    for (const m of l.members.values()) m.send({ t: 'lobbyState', you: m.id, lobby });
+    const json = JSON.stringify(lobby);
+    for (const m of l.members.values()) this._sendState(m, lobby, json);
+  }
+
+  _sendState(m, lobby, json) {
+    m.send({ t: 'lobbyState', you: m.id, lobby }, `{"t":"lobbyState","you":${JSON.stringify(m.id)},"lobby":${json}}`);
+  }
+
+  /** Only `m` gets the room state (a new arrival, or someone asking again). */
+  _sendStateTo(l, m) {
+    const lobby = this._view(l);
+    this._sendState(m, lobby, JSON.stringify(lobby));
+  }
+
+  _touch(l) {
+    l.activeAt = this.now();
+  }
+
+  _ownedBy(ip) {
+    let n = 0;
+    for (const l of this.lobbies.values()) if (l.ownerIp === ip) n++;
+    return n;
   }
 
   // ---- membership ------------------------------------------------------------
@@ -131,19 +197,29 @@ export class LobbyManager {
     member.inputActive = false;
     member.lastInputAt = t;
     if (l.hostId === null) l.hostId = member.id;
+    l.reservedUntil = 0;
+    this._touch(l);
     if (l.status === 'playing') {
       // dropping into a game already under way
       l.game.addPlayer(member.id, { name: member.name, team: member.team });
       member.send({ t: 'welcome', id: member.id, config: l.publicConfig });
     }
-    this._broadcastState(l);
+    if (!this._broadcastState(l)) this._sendStateTo(l, member); // the newcomer does not wait for the coalesced flush
   }
 
-  /** Make a new lobby with `member` as host. opts: { lobbyName, mode, difficulty, team, name }. */
+  /**
+   * Make a new lobby with `member` as host. opts: { lobbyName, mode, difficulty, team, name }.
+   * The caps are checked before the member leaves their current lobby (a refusal must not kick them out); a lobby
+   * they are the last member of is about to close, so it does not count against them.
+   */
   create(member, opts = {}) {
     const o = opts && typeof opts === 'object' ? opts : {};
+    const freed = member.lobby && member.lobby.members.size === 1 ? member.lobby : null;
+    if (this.lobbies.size - (freed ? 1 : 0) >= this.maxLobbies) return fail('too_many_lobbies');
+    if (member.ip && this._ownedBy(member.ip) - (freed?.ownerIp === member.ip ? 1 : 0) >= this.maxLobbiesPerIp) {
+      return fail('too_many_yours');
+    }
     if (member.lobby) this.leave(member);
-    if (this.lobbies.size >= this.maxLobbies) return fail('too_many_lobbies');
     this._profile(member, o);
     const c = this.config;
     const id = `L${this.nextId++}`;
@@ -155,6 +231,8 @@ export class LobbyManager {
       MODES.has(o.mode) ? o.mode : c.defaultMode,
       DIFFICULTIES.has(o.difficulty) ? o.difficulty : c.defaultDifficulty,
       publicConfig(c),
+      member.ip ?? null,
+      this.now(),
     );
     this.lobbies.set(id, l);
     this.log(`lobby ${id} "${l.name}" created by ${member.name}`);
@@ -164,11 +242,15 @@ export class LobbyManager {
 
   /** Put `member` in lobby `lobbyId` (waiting room, or straight into a running game). opts: { team, name }. */
   join(member, lobbyId, opts = {}) {
-    const o = opts && typeof opts === 'object' ? opts : {};
     const l = typeof lobbyId === 'string' ? this.lobbies.get(lobbyId) : undefined;
-    if (!l) return fail('gone');
+    if (!l || l.members.size === 0) return fail('gone'); // an empty lobby is only reachable through rejoin()
+    return this._join(member, l, opts);
+  }
+
+  _join(member, l, opts) {
+    const o = opts && typeof opts === 'object' ? opts : {};
     if (member.lobby === l) {
-      this._broadcastState(l);
+      this._sendStateTo(l, member); // already in: just answer the asker, not the whole room
       return { lobby: l };
     }
     if (l.members.size >= this.maxPlayers) return fail('lobby_full');
@@ -195,13 +277,25 @@ export class LobbyManager {
       else this.recent.delete(member.cid);
     }
     if (l.members.size === 0) {
-      this.lobbies.delete(l.id);
-      this.log(`lobby ${l.id} closed`);
+      if (remember && member.cid) {
+        // the socket dropped: hold the empty lobby (paused, hidden) so the same page can slip back in as host
+        l.status = 'waiting';
+        l.hostId = null;
+        l.last = null;
+        l.acc = 0;
+        l.stateDirty = false;
+        l.reservedUntil = this.now() + REJOIN_WINDOW_MS;
+        this.log(`lobby ${l.id} empty, held for ${REJOIN_WINDOW_MS / 1000}s`);
+      } else {
+        this.lobbies.delete(l.id);
+        this.log(`lobby ${l.id} closed`);
+      }
     } else {
       if (l.hostId === member.id) {
         l.hostId = l.members.keys().next().value;
         this.log(`lobby ${l.id}: ${l.host.name} is the host now`);
       }
+      this._touch(l);
       this._broadcastState(l);
     }
     member.send({ t: 'lobbyState', you: member.id, lobby: null });
@@ -223,7 +317,9 @@ export class LobbyManager {
     if (!r) return null;
     this.recent.delete(member.cid);
     if (r.until < this.now()) return null;
-    const res = this.join(member, r.lobbyId, { team: r.team, name: member.name || r.name });
+    const l = this.lobbies.get(r.lobbyId);
+    if (!l) return null;
+    const res = this._join(member, l, { team: r.team, name: member.name || r.name });
     return res.error ? null : res.lobby;
   }
 
@@ -233,6 +329,7 @@ export class LobbyManager {
     const l = member.lobby;
     if (!l || l.status !== 'waiting' || !TEAMS.has(team)) return;
     member.team = team;
+    this._touch(l);
     this._broadcastState(l);
   }
 
@@ -241,6 +338,7 @@ export class LobbyManager {
     const l = member.lobby;
     if (!l) return;
     if (l.status === 'playing') l.game.renamePlayer(member.id, member.name);
+    this._touch(l);
     this._broadcastState(l);
   }
 
@@ -252,6 +350,7 @@ export class LobbyManager {
     if (l.status !== 'waiting') return fail('busy');
     if (MODES.has(mode)) l.mode = mode;
     if (DIFFICULTIES.has(difficulty)) l.difficulty = difficulty;
+    this._touch(l);
     this._broadcastState(l);
     return { lobby: l };
   }
@@ -293,16 +392,31 @@ export class LobbyManager {
 
   // ---- ticking -------------------------------------------------------------------
 
-  /** Advance every playing lobby to wall-clock time `now` (ms). A failing lobby never stops the others. */
+  /**
+   * Advance every playing lobby to wall-clock time `now` (ms) and do the housekeeping: flush coalesced lobbyState,
+   * close held lobbies nobody came back to, close idle waiting rooms. A failing lobby never stops the others.
+   */
   step(now) {
     for (const l of this.lobbies.values()) {
-      if (l.status !== 'playing') continue;
       try {
-        this._stepLobby(l, now);
+        this._stepOne(l, now);
       } catch (err) {
         if (l.errors++ % 100 === 0) this.log(`lobby ${l.id} tick error (#${l.errors}): ${err?.stack ?? err}`);
       }
     }
+  }
+
+  _stepOne(l, now) {
+    if (l.members.size === 0) {
+      if (now >= l.reservedUntil) {
+        this.lobbies.delete(l.id);
+        this.log(`lobby ${l.id} closed (nobody came back)`);
+      }
+      return;
+    }
+    if (l.stateDirty && now - l.stateAt >= this.stateIntervalMs) this._flushState(l, now);
+    if (l.status === 'waiting' && now - l.activeAt > this.idleLobbyMs) this._expire(l);
+    else if (l.status === 'playing') this._stepLobby(l, now);
   }
 
   _stepLobby(l, now) {
@@ -318,6 +432,11 @@ export class LobbyManager {
       l.acc -= this.tickStep; // consume first so a throwing tick can't wedge the loop
       l.game.tick(this.tickStep);
       steps++;
+      if (l.game.phase === 'lobby') {
+        // the result screen just ended: the game is empty now, so no snapshot of it (see _roundOver)
+        l.acc = 0;
+        break;
+      }
       l.snapAcc += this.tickStep;
       if (l.snapAcc >= this.snapStep - 1e-9) {
         l.snapAcc -= this.snapStep;
@@ -348,8 +467,28 @@ export class LobbyManager {
   _roundOver(l) {
     l.status = 'waiting';
     for (const m of l.members.values()) m.inputActive = false;
+    this._touch(l);
     this._broadcastState(l);
     this.log(`lobby ${l.id} back in the waiting room`);
+  }
+
+  /** Nobody has touched this waiting room for a long time: close it and send everyone back to the browser. */
+  _expire(l) {
+    this.lobbies.delete(l.id);
+    this.log(`lobby ${l.id} closed (idle)`);
+    const res = fail('idle');
+    for (const m of l.members.values()) {
+      m.lobby = null;
+      m.inputActive = false;
+      if (m.cid) this.recent.delete(m.cid);
+      m.send({ t: 'lobbyState', you: m.id, lobby: null });
+      try {
+        this.onEvict(m, res);
+      } catch (err) {
+        this.log(`evict error: ${err?.message ?? err}`);
+      }
+    }
+    l.members.clear();
   }
 
   close() {

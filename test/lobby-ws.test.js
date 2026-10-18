@@ -132,7 +132,8 @@ test('host leaves: the next player is host; last one out closes the lobby; list 
     const list = await waitFor(a, (m) => m.t === 'lobbies' && a.messages.indexOf(m) > out);
     assert.equal(list.lobbies.length, 1);
     b.close();
-    await until(() => srv.lobbies.lobbies.size === 0);
+    // b's socket dropped (not a clean Leave): the empty lobby is held for the rejoin window but hidden from the list
+    await until(() => srv.lobbies.lobbies.get(id)?.members.size === 0);
     await waitFor(watcher, (m) => m.t === 'lobbies' && m.lobbies.length === 0 && watcher.messages.filter((x) => x.t === 'lobbies' && x.lobbies.length === 1).length > 0);
   });
 });
