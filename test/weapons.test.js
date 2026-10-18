@@ -22,10 +22,8 @@ function setup(dist = 8, zombieTeam = 'zombie') {
 
 const sum = (xs) => xs.reduce((s, x) => s + x, 0);
 
-test('both ladders have 8 tiers with the planned weapons', () => {
-  assert.deepEqual(PLANT_LADDER.map((w) => w.id), [
-    'pea_blaster', 'double_pea', 'pea_rifle', 'snow_pea', 'spike_shotgun', 'repeater', 'melon_lobber', 'house_gun',
-  ]);
+test('the zombie ladder has 8 tiers; plant kids have a single gun (their upgrades are plants)', () => {
+  assert.deepEqual(PLANT_LADDER.map((w) => w.id), ['pea_blaster']);
   assert.deepEqual(ZOMBIE_LADDER.map((w) => w.id), [
     'goo_blaster', 'slime_pistol', 'zombie_rifle', 'bone_burst', 'zombie_shotgun', 'sludge_sprayer', 'brain_cannon', 'auto_shot_rifle',
   ]);
@@ -39,20 +37,15 @@ test('both ladders have 8 tiers with the planned weapons', () => {
     for (const k of ['id', 'name', 'damage', 'rate', 'pellets', 'spread', 'speed', 'projKind']) assert.ok(w[k] !== undefined, `${w.id}.${k}`);
     assert.ok(getWeapon(w.id) === w);
   }
-  assert.equal(new Set([...PLANT_LADDER, ...ZOMBIE_LADDER].map((w) => w.id)).size, 16);
-  assert.equal(getWeapon('house_gun').damage, 5, 'one-hit convert');
-  assert.equal(PLANT_LADDER.at(-1).id, 'house_gun');
+  assert.equal(new Set([...PLANT_LADDER, ...ZOMBIE_LADDER].map((w) => w.id)).size, 9);
   assert.equal(ZOMBIE_LADDER.at(-1).id, 'auto_shot_rifle');
-  assert.equal(PLANT_LADDER[3].projKind, 'snow');
-  assert.equal(getWeapon('double_pea').pellets, 2);
-  assert.ok(getWeapon('repeater').rate >= 12);
-  assert.ok(getWeapon('melon_lobber').splash > 1 && getWeapon('melon_lobber').gravity > 0);
+  for (const gone of ['double_pea', 'pea_rifle', 'snow_pea', 'spike_shotgun', 'repeater', 'melon_lobber', 'house_gun']) assert.equal(getWeapon(gone), null, `${gone} is retired`);
   assert.ok(getWeapon('brain_cannon').splash > 1);
 });
 
-test('publicConfig carries all 8 tiers of both ladders and per-kind projectile radii', () => {
+test('publicConfig carries the plant gun, all 8 zombie tiers and per-kind projectile radii', () => {
   const cfg = publicConfig();
-  assert.equal(cfg.weapons.plant.length, 8);
+  assert.equal(cfg.weapons.plant.length, 1);
   assert.equal(cfg.weapons.zombie.length, 8);
   assert.equal(cfg.tierThresholds.length, 8);
   for (const k of ['pea', 'snow', 'spike', 'melon', 'housepea', 'bullet', 'slime', 'bone', 'sludge', 'brain']) {
@@ -61,47 +54,6 @@ test('publicConfig carries all 8 tiers of both ladders and per-kind projectile r
   assert.equal(cfg.headshotMultiplier, 3);
   assert.equal(cfg.headHeight, 0.4);
   JSON.parse(JSON.stringify(cfg));
-});
-
-test('shotgun: 8 pellets, tight spread, and the whole blast converts a zombie under 10 m', () => {
-  const sg = getWeapon('spike_shotgun');
-  assert.equal(sg.pellets, 8);
-  assert.ok(sg.spread <= 0.05 && sg.spread >= 0.04, `spread ${sg.spread}`);
-  for (const dist of [3, 6, 9.5]) {
-    const { game, a, z } = setup(dist);
-    a.weapon = 'spike_shotgun';
-    game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
-    game.tick(1 / 30);
-    game.handleInput('a', { fire: false });
-    run(game, 1);
-    assert.equal(game.entities.has(z.id), false, `one blast converts at ${dist} m`);
-    assert.equal(game.drainEvents().filter((e) => e.type === 'convert').length, 1);
-  }
-});
-
-test('shotgun clearly out-damages the rifle up close (single shot vs rifle burst of the same time)', () => {
-  const dmgIn = (weapon, seconds) => {
-    const { game, a, z } = setup(6);
-    z.hp = z.maxHp = 1e6;
-    a.weapon = weapon;
-    game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
-    run(game, seconds);
-    return 1e6 - z.hp;
-  };
-  const shotgun = dmgIn('spike_shotgun', 1);
-  const rifle = dmgIn('pea_rifle', 1);
-  assert.ok(shotgun > rifle * 0.7, `shotgun ${shotgun} vs rifle ${rifle} in 1 s at 6 m`);
-  // the first blast alone beats the rifle's first half second
-  const first = (() => {
-    const { game, a, z } = setup(6);
-    z.hp = z.maxHp = 1e6;
-    a.weapon = 'spike_shotgun';
-    fireWeapon(game, a);
-    run(game, 0.5);
-    return 1e6 - z.hp;
-  })();
-  const rifleHalf = dmgIn('pea_rifle', 0.5);
-  assert.ok(first >= 7 && first > rifleHalf * 1.4, `blast ${first} vs rifle half-second ${rifleHalf}`);
 });
 
 test('zombie shotgun: 8 pellets and far more close-range damage than the zombie rifle', () => {
@@ -138,7 +90,8 @@ test('enemy bullets are slow, big and visible; plant turret peas stay fast', () 
   }
   assert.ok(DEFAULT_CONFIG.plantTypes.peashooter.speed >= 40);
   assert.ok(DEFAULT_CONFIG.plantTypes.cactus.speed >= 40);
-  for (const w of PLANT_LADDER.filter((x) => x.id !== 'melon_lobber')) assert.ok(w.speed >= 40, `${w.id} stays fast`);
+  for (const w of PLANT_LADDER) assert.ok(w.speed >= 40, `${w.id} stays fast`);
+  for (const [k, t] of Object.entries(DEFAULT_CONFIG.plantTypes)) if (!t.noAttack && !t.gravity) assert.ok(t.speed >= 40, `${k} stays fast`);
 });
 
 test('zombie bots fire 40-50% less often than before', () => {
@@ -219,31 +172,34 @@ test('garden turret shots never headshot', () => {
 });
 
 test('pellets headshot independently', () => {
-  const { game, a, z } = setup(5);
-  z.hp = z.maxHp = 100;
-  a.weapon = 'spike_shotgun';
-  a.pitch = 0.0;
-  // aim at the head: eye 1.6 is already in the head zone of a 1.8 m target at distance
-  fireWeapon(game, a);
-  run(game, 0.5);
-  const hits = game.events.filter((e) => e.type === 'hit' && e.id === z.id);
-  assert.ok(hits.length >= 6);
+  const game = makeGame();
+  const p = game.addPlayer('p', { team: 'plant', mode: 'versus' });
+  p.x = 0;
+  p.z = -5;
+  p.hp = p.maxHp = 1000;
+  const z = game.addPlayer('z', { team: 'zombie' });
+  z.x = 0;
+  z.z = 0;
+  z.weapon = 'zombie_shotgun';
+  z.yaw = 0;
+  z.pitch = 0; // the 1.6 m eye line is inside the head zone of a 1.8 m target
+  fireWeapon(game, z);
+  run(game, 1);
+  const hits = game.events.filter((e) => e.type === 'hit' && e.id === 'p');
+  assert.ok(hits.length >= 6, `pellets landed: ${hits.length}`);
   const heads = hits.filter((h) => h.head).length;
   assert.ok(heads >= 1, 'some pellets land in the head zone');
-  assert.equal(sum(hits.map((h) => h.dmg)), 100 - z.hp);
+  assert.ok(heads < hits.length || hits.length === 8, 'body and head pellets are scored one by one');
+  assert.equal(sum(hits.map((h) => h.dmg)), p.maxHp - p.hp);
 });
 
 // ---- snow pea ----------------------------------------------------------------------
 
-test('snow pea slows zombies to half speed for 2 s', () => {
-  const { game, a, z } = setup(10);
+test('a snow shot slows zombies to half speed for 2 s', () => {
+  const { game, z } = setup(10);
   z.hp = z.maxHp = 100;
-  z.team = 'zombie';
-  a.weapon = 'snow_pea';
   const base = game.moveSpeedFor(z);
-  game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
-  game.tick(1 / 30);
-  game.handleInput('a', { fire: false });
+  spawnProjectile(game, { team: 'plant', owner: 'a', projKind: 'snow', damage: 1, speed: 55, x: 0, y: 1, z: -2, dir: { x: 0, y: 0, z: -1 }, slow: { factor: 0.5, secs: 2 } });
   run(game, 0.5);
   assert.ok(z.slowTimer > 0, 'slowed');
   assert.equal(game.moveSpeedFor(z), base * 0.5);
@@ -253,46 +209,15 @@ test('snow pea slows zombies to half speed for 2 s', () => {
   assert.ok(!('slowed' in game.snapshot().entities.find((e) => e.id === z.id)));
 });
 
-test('only snow peas slow', () => {
+test('the Pea Blaster does not slow', () => {
   const { game, a, z } = setup(10);
   z.hp = z.maxHp = 100;
-  a.weapon = 'pea_rifle';
   game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
   run(game, 0.5);
   assert.ok(!(z.slowTimer > 0));
 });
 
 // ---- splash weapons ----------------------------------------------------------------
-
-test('melon lobber arcs, and its splash converts a whole clump of zombies', () => {
-  const game = makeGame();
-  const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  a.x = 0;
-  a.z = 0;
-  a.weapon = 'melon_lobber';
-  const zs = [[0, -18], [1.2, -18.5], [-1, -17.5], [0.5, -19.5]].map(([x, z]) => game.spawnBot('zombie', x, z));
-  const far = game.spawnBot('zombie', 15, -18); // out of the blast
-  fireWeapon(game, a);
-  const melon = entitiesOfKind(game, 'projectile')[0];
-  assert.equal(melon.projKind, 'melon');
-  assert.ok(melon.gravity > 0);
-  let peak = melon.y;
-  let landed = false;
-  for (let i = 0; i < 120 && !landed; i++) {
-    stepProjectiles(game, 1 / 30);
-    if (game.entities.has(melon.id)) peak = Math.max(peak, melon.y);
-    else landed = true;
-  }
-  assert.ok(landed, 'melon came down');
-  assert.ok(peak > melon.y || peak > 1.7, 'it arcs');
-  const ex = game.events.find((e) => e.type === 'explode');
-  assert.ok(ex && ex.projKind === 'melon' && ex.radius > 1 && ex.team === 'plant');
-  const gone = zs.filter((z) => !game.entities.has(z.id)).length;
-  assert.ok(gone >= 3, `splash converted ${gone}/4`);
-  assert.equal(game.entities.has(far.id), true, 'zombie 15 m away is untouched');
-  assert.equal(far.hp, 5);
-  assert.equal(a.progress, gone, 'each conversion counts');
-});
 
 test('splash never hurts the shooter team, does not headshot, and falls off with distance', () => {
   const game = makeGame();

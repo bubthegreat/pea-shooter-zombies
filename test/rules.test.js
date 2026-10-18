@@ -173,7 +173,6 @@ test('ended restarts after 10 s with tiers reset', () => {
   a.tier = 2;
   a.progress = 8;
   a.streak = 4;
-  a.weapon = 'spike_shotgun';
   a.sunshine = 7;
   game.roundTime = DEFAULT_CONFIG.roundLength;
   game.tick(1 / 30);

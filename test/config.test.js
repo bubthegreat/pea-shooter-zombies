@@ -17,7 +17,13 @@ test('publicConfig is plain JSON with everything the client needs', () => {
   assert.equal(cfg.gardenSlots.length, 36);
   assert.equal(cfg.plantTypes.peashooter.cost, 50);
   assert.equal(cfg.plantTypes.cactus.cost, 100);
-  assert.equal(cfg.weapons.plant.at(-1).id, 'house_gun');
+  assert.deepEqual(cfg.weapons.plant.map((w) => w.id), ['pea_blaster'], 'plant kids keep one gun');
+  assert.deepEqual(Object.keys(cfg.plantTypes), ['peashooter', 'cactus', 'repeater', 'snowpea', 'spikesquash', 'melonpult', 'wallnut', 'gatling', 'houseplant']);
+  assert.equal(cfg.plantTypes.snowpea.tier, 2);
+  assert.equal(cfg.plantTypes.snowpea.name, 'Snow Pea');
+  assert.equal(cfg.plantTypes.wallnut.hp, DEFAULT_CONFIG.plantTypes.wallnut.hp);
+  assert.deepEqual(cfg.plantLevels.cost, [0.75, 1.25]);
+  assert.equal(cfg.plantLevels.max, 3);
   assert.equal(cfg.weapons.zombie.at(-1).id, 'auto_shot_rifle');
   assert.equal(cfg.waves.times[0], 5);
   assert.equal(cfg.world.garage.doorMinX, 14);

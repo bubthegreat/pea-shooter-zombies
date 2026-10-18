@@ -2,7 +2,7 @@
 // (keys, fire, use) and the normal movement/weapon code does the rest. Steering is simple:
 // walk straight at a goal, detouring through the garage door when the mower is involved.
 import { WORLD } from './world.js';
-import { tryPlant } from './garden.js';
+import { tryPlant, tryUpgrade, upgradeCost } from './garden.js';
 import { dist2D, rightVec, forwardVec, yawTo } from './vec.js';
 
 const isFighter = (e) => e.kind === 'player' || e.kind === 'bot';
@@ -36,7 +36,7 @@ export function ensureAI(game, bot) {
     bot.ai = { ...base, role: 'zombie', goalId: null, seeksMower, seeksItem: seeksMower ? null : rollItem(game), strafe: 0, strafeTimer: 0 };
   } else {
     bot.fireScale = c.gardener.fireScale;
-    bot.ai = { ...base, role: bot.isGardener ? 'gardener' : 'inert', slotIdx: -1 };
+    bot.ai = { ...base, role: bot.isGardener ? 'gardener' : 'inert', slotIdx: -1, upId: null, upTimer: c.gardener.upgradeInterval };
   }
   return bot.ai;
 }
@@ -300,7 +300,22 @@ function gardenerBrain(game, b, ai, ctx, dt) {
         ai.slotIdx = i;
       }
     });
+    // Nothing to replant: spend the spare sunshine now and then on levelling up the plant it is closest to.
+    ai.upId = null;
+    if (ai.slotIdx < 0 && ai.upTimer <= 0) {
+      let bestUp = Infinity;
+      for (const g of ctx.gardenPlants) {
+        const cost = upgradeCost(c, g.plantKind, g.level ?? 1);
+        if (g.state !== 'alive' || cost === null || b.sunshine < cost + gc.upgradeReserve) continue;
+        const d = dist2D(b.x, b.z, g.x, g.z);
+        if (d < bestUp) {
+          bestUp = d;
+          ai.upId = g.id;
+        }
+      }
+    }
   }
+  ai.upTimer -= dt;
   let target = ai.targetId ? game.entities.get(ai.targetId) : null;
   if (!target || target.state !== 'alive' || target.team !== 'zombie') {
     target = null;
@@ -310,16 +325,23 @@ function gardenerBrain(game, b, ai, ctx, dt) {
   // Walk to the slot it wants to fill (or rest behind the garden) and plant when close enough.
   let dest = { x: 0, z: gc.restZ };
   const slot = ai.slotIdx >= 0 ? game.slots[ai.slotIdx] : null;
+  const upPlant = ai.upId ? game.entities.get(ai.upId) : null;
   if (slot && !slot.plantId) {
     dest = slot;
     if (dist2D(b.x, b.z, slot.x, slot.z) <= gc.plantReach) {
-      tryPlant(game, b, slot.kind);
+      tryPlant(game, b, slot.kind, ai.slotIdx);
       ai.slotIdx = -1;
+    }
+  } else if (upPlant && upPlant.state === 'alive') {
+    dest = upPlant;
+    if (dist2D(b.x, b.z, upPlant.x, upPlant.z) <= gc.plantReach) {
+      if (tryUpgrade(game, b, upPlant)) ai.upTimer = gc.upgradeInterval;
+      ai.upId = null;
     }
   }
   let dir = { x: 0, z: 0 };
   let moving = false;
-  const reach = slot ? gc.plantReach * 0.6 : 1.5;
+  const reach = slot || upPlant ? gc.plantReach * 0.6 : 1.5;
   if (dist2D(b.x, b.z, dest.x, dest.z) > reach) {
     dir = walkToward(b, dest.x, dest.z);
     moving = true;

@@ -76,16 +76,16 @@ test('tryPlant succeeds near an empty peashooter slot and costs 50', () => {
   assert.equal(tryPlant(game, p, 'peashooter'), null);
 });
 
-test('tryPlant only plants a kind in its own row (cactus goes to cactus rows)', () => {
+test('tryPlant takes the nearest empty slot of any row (a cactus goes in the front row too)', () => {
   const { game, p } = plantGame();
   initGarden(game);
   p.sunshine = 500;
   p.x = -12;
-  p.z = 0.5; // front (peashooter) row slot at (-12,0) is empty, but cactus rows are 3.5 m+ away
+  p.z = 0.5; // the empty front-row slot at (-12,0) is the nearest one
   const cactus = tryPlant(game, p, 'cactus');
   assert.ok(cactus);
   assert.equal(cactus.plantKind, 'cactus');
-  assert.equal(cactus.z, 4);
+  assert.equal(cactus.z, 0);
   assert.equal(p.sunshine, 500 - 100);
 });
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
 import { WORLD } from '../server/sim/world.js';
-import { fireWeapon, stepProjectiles, applyDamage } from '../server/sim/combat.js';
+import { fireWeapon, stepProjectiles, applyDamage, spawnProjectile } from '../server/sim/combat.js';
 import { makeGame, run, keys, entitiesOfKind } from './helpers.js';
 
 const SPAWN = WORLD.plantSpawn;
@@ -40,18 +40,6 @@ test('zombie bot converts after 5 pea hits', () => {
   assert.equal(ev.human, false);
   assert.equal(entitiesOfKind(game, 'bot').length, 0, 'no plant soldier takes its place');
   assert.equal(entitiesOfKind(game, 'sun').length, 1, 'it leaves a sunshine pickup');
-});
-
-test('house gun converts in one hit', () => {
-  const { game, a, zombie } = setup();
-  a.weapon = 'house_gun';
-  game.handleInput('a', { fire: true, yaw: 0, pitch: 0 });
-  game.tick(1 / 30);
-  game.handleInput('a', { fire: false });
-  assert.ok(ticksUntil(game, () => !game.entities.has(zombie.id), 2));
-  const events = game.drainEvents();
-  assert.equal(hitsOn(events, zombie.id), 1);
-  assert.equal(events.filter((e) => e.type === 'convert').length, 1);
 });
 
 test('human zombie converted becomes sprout then respawns at the gate after 5 s with same tier', () => {
@@ -104,7 +92,6 @@ test('plant player wilts at 0 hp, respawns at plant spawn after 4 s with full hp
   const game = makeGame();
   const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
   a.tier = 2;
-  a.weapon = 'spike_shotgun';
   const shooter = game.spawnBot('zombie', SPAWN.x, SPAWN.z - 10);
   shooter.yaw = Math.PI; // face +z toward the plant
   shooter.input.fire = true;
@@ -121,7 +108,7 @@ test('plant player wilts at 0 hp, respawns at plant spawn after 4 s with full hp
   assert.equal(a.x, SPAWN.x);
   assert.equal(a.z, SPAWN.z);
   assert.equal(a.tier, 2);
-  assert.equal(a.weapon, 'spike_shotgun');
+  assert.equal(a.weapon, 'pea_blaster');
 });
 
 test('plant bot that wilts is removed', () => {
@@ -142,30 +129,29 @@ test('fire rate respected: holding fire 1 s with pea_blaster spawns 4 +/- 1 proj
   assert.ok(n >= 3 && n <= 5, `projectiles: ${n}`);
 });
 
-test('fire rate scales with weapon (pea rifle ~9/s, auto-shot ~12/s)', () => {
+test('fire rate scales with weapon (auto-shot rifle ~12/s)', () => {
   const game = makeGame({ projectileLife: 5 });
-  const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  a.weapon = 'pea_rifle';
-  a.y = 0;
-  game.handleInput('a', { fire: true, yaw: 0, pitch: 1.2 }); // aim up so shots stay alive
+  const z = game.addPlayer('z', { team: 'zombie', mode: 'versus' });
+  z.weapon = 'auto_shot_rifle';
+  game.handleInput('z', { fire: true, yaw: 0, pitch: 1.2 }); // aim up so shots stay alive
   let shots = 0;
   const before = new Set();
   for (let i = 0; i < 30; i++) {
     game.tick(1 / 30);
     for (const e of entitiesOfKind(game, 'projectile')) if (!before.has(e.id)) { before.add(e.id); shots++; }
   }
-  assert.ok(shots >= 8 && shots <= 10, `rifle shots/s: ${shots}`);
+  assert.ok(shots >= 11 && shots <= 13, `rifle shots/s: ${shots}`);
 });
 
 test('shotgun fires all pellets in a cone', () => {
   const game = makeGame();
-  const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  a.weapon = 'spike_shotgun';
-  const n = fireWeapon(game, a);
+  const z = game.addPlayer('z', { team: 'zombie', mode: 'versus' });
+  z.weapon = 'zombie_shotgun';
+  const n = fireWeapon(game, z);
   assert.equal(n, 8);
   const ps = entitiesOfKind(game, 'projectile');
   assert.equal(ps.length, 8);
-  assert.ok(ps.every((p) => p.projKind === 'spike' && p.team === 'plant'));
+  assert.ok(ps.every((p) => p.projKind === 'bullet' && p.team === 'zombie'));
   const yaws = new Set(ps.map((p) => p.yaw.toFixed(4)));
   assert.ok(yaws.size > 1, 'pellets spread');
 });
@@ -197,11 +183,10 @@ test('no friendly fire', () => {
 
 test('fast projectiles do not tunnel through thin targets', () => {
   const game = makeGame({ projectileStep: 0.4 });
-  const a = game.addPlayer('a', { team: 'plant', mode: 'coop' });
-  a.weapon = 'pea_rifle'; // 70 m/s => 2.3 m per tick
+  game.addPlayer('a', { team: 'plant', mode: 'coop' });
   const zombie = game.spawnBot('zombie', SPAWN.x, SPAWN.z - 20);
-  a.pitch = -0.03; // body height at 20 m
-  fireWeapon(game, a);
+  // 70 m/s => 2.3 m per tick, at body height
+  spawnProjectile(game, { team: 'plant', owner: 'a', projKind: 'pea', damage: 1, speed: 70, x: SPAWN.x, y: 0.9, z: SPAWN.z - 1, dir: { x: 0, y: 0, z: -1 } });
   for (let i = 0; i < 30 && zombie.hp === DEFAULT_CONFIG.zombieHp; i++) stepProjectiles(game, 1 / 30);
   assert.equal(zombie.hp, DEFAULT_CONFIG.zombieHp - 1);
 });

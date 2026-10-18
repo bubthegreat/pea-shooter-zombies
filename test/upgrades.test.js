@@ -20,7 +20,7 @@ function killsWithoutBonus(game, p, n) {
   }
 }
 
-test('2 kills -> tier 1 Double Pea, upgrade event', () => {
+test('2 kills -> tier 1 unlocks the Repeater, upgrade event', () => {
   const { game, p } = plantGame();
   assert.equal(p.weapon, 'pea_blaster');
   killsWithoutBonus(game, p, 1);
@@ -28,29 +28,31 @@ test('2 kills -> tier 1 Double Pea, upgrade event', () => {
   assert.deepEqual(game.drainEvents().filter((e) => e.type === 'upgrade'), []);
   killsWithoutBonus(game, p, 1);
   assert.equal(p.tier, 1);
-  assert.equal(p.weapon, 'double_pea');
+  assert.equal(p.weapon, 'pea_blaster', 'plant kids keep their gun');
   assert.equal(p.progress, 2);
   const ev = game.drainEvents().filter((e) => e.type === 'upgrade');
   assert.equal(ev.length, 1);
   assert.equal(ev[0].id, 'a');
   assert.equal(ev[0].tier, 1);
-  assert.equal(ev[0].weapon, 'double_pea');
-  assert.equal(ev[0].name, 'Double Pea');
+  assert.equal(ev[0].plantKind, 'repeater');
+  assert.equal(ev[0].name, 'Repeater');
   assert.equal(ev[0].bonus, false);
 });
 
-test('every threshold gives the next weapon, and the top tier (23 kills) is the House Gun', () => {
+test('every threshold unlocks the next plant, and the top tier (23 kills) is the House Plant', () => {
   const { game, p } = plantGame();
   const th = DEFAULT_CONFIG.tierThresholds;
+  const order = Object.keys(DEFAULT_CONFIG.plantTypes);
   for (let t = 1; t < th.length; t++) {
     killsWithoutBonus(game, p, th[t] - p.progress);
     assert.equal(p.tier, t, `tier at ${th[t]} kills`);
-    assert.equal(p.weapon, PLANT_LADDER[t].id);
+    assert.equal(p.weapon, 'pea_blaster');
+    assert.equal(game.drainEvents().filter((e) => e.type === 'upgrade').at(-1).plantKind, order[t + 1]);
   }
-  assert.equal(p.weapon, 'house_gun');
+  assert.equal(order.at(-1), 'houseplant');
   killsWithoutBonus(game, p, 10);
   assert.equal(p.tier, 7, 'top tier is capped');
-  assert.equal(p.weapon, 'house_gun');
+  assert.equal(p.weapon, 'pea_blaster');
 });
 
 test('10 kills without being hurt -> extra tier jump and streak resets', () => {
@@ -61,7 +63,7 @@ test('10 kills without being hurt -> extra tier jump and streak resets', () => {
   game.drainEvents();
   recordKill(game, p); // 10th: threshold tier is 4, bonus jumps to 5
   assert.equal(p.tier, 5);
-  assert.equal(p.weapon, PLANT_LADDER[5].id);
+  assert.equal(p.weapon, 'pea_blaster');
   assert.equal(p.streak, 0);
   const ev = game.drainEvents().filter((e) => e.type === 'upgrade');
   assert.equal(ev.length, 1);
@@ -77,7 +79,7 @@ test('streak bonus skips ahead one tier (tier = min(top, thresholdTier + 1))', (
   assert.equal(p.tier, 1);
   recordKill(game, p); // streak 3: threshold tier 1, bonus => tier 2
   assert.equal(p.tier, 2);
-  assert.equal(p.weapon, 'pea_rifle');
+  assert.equal(p.weapon, 'pea_blaster');
   assert.equal(p.streak, 0);
   // tiers never go down and normal thresholds keep working
   assert.equal(p.progress, 4, 'the kill meter follows the jump');
@@ -96,7 +98,7 @@ test('getting hit resets streak but not tier', () => {
   applyDamage(game, p, 8, shooter);
   assert.equal(p.streak, 0);
   assert.equal(p.tier, 1);
-  assert.equal(p.weapon, 'double_pea');
+  assert.equal(p.weapon, 'pea_blaster');
   assert.equal(p.progress, 3);
 });
 
@@ -108,7 +110,7 @@ test('zombie ladder: top is auto_shot_rifle', () => {
   assert.equal(z.tier, 7);
   assert.equal(z.weapon, 'auto_shot_rifle');
   assert.equal(ZOMBIE_LADDER.at(-1).id, 'auto_shot_rifle');
-  assert.equal(PLANT_LADDER.at(-1).id, 'house_gun');
+  assert.equal(PLANT_LADDER.length, 1);
 });
 
 test('bots do not upgrade', () => {
@@ -132,7 +134,7 @@ test('converting zombies through combat counts as kills', () => {
   }
   assert.equal(a.progress, 3);
   assert.equal(a.tier, 1);
-  assert.equal(a.weapon, 'double_pea');
+  assert.equal(a.weapon, 'pea_blaster');
 });
 
 test('zombie player earns progress by wilting plant bots and players', () => {
@@ -160,7 +162,7 @@ test('dying or wilting does not take upgrades away', () => {
   run(game, 4.5);
   assert.equal(p.state, 'alive');
   assert.equal(p.tier, 3);
-  assert.equal(p.weapon, 'snow_pea');
+  assert.equal(p.weapon, 'pea_blaster');
   assert.equal(p.progress, 8);
 });
 

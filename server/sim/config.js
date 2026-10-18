@@ -55,11 +55,24 @@ export const DEFAULT_CONFIG = {
   gardenPlantHp: 60,
   gardenPlantRadius: 0.6,
   gardenPlantHeight: 1.2,
+  // Plant types in unlock order (key order = planting key 1..9). tier = kill-meter tier that unlocks it.
+  // range in m, rate in shots/s, speed in m/s, aimError = random cone half-angle (rad).
+  // Optional: pellets + spread (shotgun volley), splash / gravity / life (lobbed shots), slow ({factor, secs}),
+  // hp / radius / height / muzzle (default gardenPlant* / turretMuzzleHeight), noAttack, blocks (solid for walking).
   plantTypes: {
-    // range in m, rate in shots/s, speed in m/s, aimError = random cone half-angle (rad)
-    peashooter: { cost: 50, range: 25, rate: 1.5, damage: 1, speed: 50, projKind: 'pea', aimError: 0.14 },
-    cactus: { cost: 100, range: 50, rate: 0.8, damage: 3, speed: 60, projKind: 'spike', aimError: 0.12 },
+    peashooter: { tier: 0, name: 'Peashooter', cost: 50, range: 25, rate: 1.5, damage: 1, speed: 50, projKind: 'pea', aimError: 0.14 },
+    cactus: { tier: 0, name: 'Cactus', cost: 100, range: 50, rate: 0.8, damage: 3, speed: 60, projKind: 'spike', aimError: 0.12 },
+    repeater: { tier: 1, name: 'Repeater', cost: 125, range: 25, rate: 3, damage: 1, speed: 55, projKind: 'pea', aimError: 0.13 },
+    snowpea: { tier: 2, name: 'Snow Pea', cost: 150, range: 25, rate: 1.5, damage: 1, speed: 55, projKind: 'snow', aimError: 0.13, slow: { factor: 0.5, secs: 2 } },
+    spikesquash: { tier: 3, name: 'Spike Squash', cost: 175, range: 12, rate: 0.9, damage: 1, speed: 55, projKind: 'spike', aimError: 0.08, pellets: 8, spread: 0.05 },
+    melonpult: { tier: 4, name: 'Melon-pult', cost: 200, range: 32, rate: 0.5, damage: 7, speed: 26, projKind: 'melon', aimError: 0.03, splash: 3.5, gravity: 12, life: 3.5 },
+    wallnut: { tier: 5, name: 'Wall-nut', cost: 150, hp: 400, radius: 0.8, height: 1.5, noAttack: true, blocks: true },
+    gatling: { tier: 6, name: 'Gatling Pea', cost: 250, range: 28, rate: 6, damage: 1, speed: 70, projKind: 'pea', aimError: 0.1 },
+    houseplant: { tier: 7, name: 'House Plant', cost: 300, range: 35, rate: 0.6, damage: 5, speed: 40, projKind: 'housepea', aimError: 0.06, hp: 150, radius: 1.1, height: 3, muzzle: 2.4 },
   },
+  // Planted plants level up 1 -> 3 (U near one): each level above 1 adds this share of the base stat.
+  // cost = multiple of the plant's cost per step (level 1 -> 2, 2 -> 3); reach = metres from the kid; lookCone = half-angle (rad) of "looking at".
+  plantLevels: { max: 3, damage: 0.4, rate: 0.25, hp: 0.5, cost: [0.75, 1.25], reach: 3, lookCone: 0.5 },
   turretMuzzleHeight: 1.0,
   turretAimHeight: 0.6, // fraction of target height to aim at
   turretLag: 0.5, // seconds: turrets aim at where a moving target was this long ago
@@ -159,9 +172,13 @@ export const DEFAULT_CONFIG = {
     fireScale: 0.25,
     reaction: 0.6,
     plantReach: 2.5, // walks to within this distance of a slot before planting
+    upgradeInterval: 25, // seconds between plant upgrades (it replants first)
+    upgradeReserve: 50, // sunshine it keeps back after an upgrade, for replanting
     restZ: 16, // idles behind the garden
   },
 };
+
+const PUBLIC_PLANT_FIELDS = ['tier', 'name', 'cost', 'range', 'rate', 'damage', 'projKind', 'pellets', 'splash', 'slow', 'hp', 'radius', 'height', 'noAttack', 'blocks'];
 
 /** Config subset sent to clients in the welcome message (plain JSON). */
 export function publicConfig(config = DEFAULT_CONFIG) {
@@ -193,8 +210,9 @@ export function publicConfig(config = DEFAULT_CONFIG) {
     weapons: { plant: PLANT_LADDER, zombie: ZOMBIE_LADDER },
     // Garden and sunshine
     plantTypes: Object.fromEntries(
-      Object.entries(c.plantTypes).map(([k, t]) => [k, { cost: t.cost, range: t.range, rate: t.rate, damage: t.damage, projKind: t.projKind }]),
+      Object.entries(c.plantTypes).map(([k, t]) => [k, Object.fromEntries(PUBLIC_PLANT_FIELDS.filter((f) => t[f] !== undefined).map((f) => [f, t[f]]))]),
     ),
+    plantLevels: c.plantLevels,
     plantRange: c.plantRange,
     startSunshine: c.startSunshine,
     sunValue: c.sunValue,

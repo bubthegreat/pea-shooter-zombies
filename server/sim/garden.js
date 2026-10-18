@@ -8,30 +8,59 @@ export function emptySlots() {
   return gardenSlots().map((s) => ({ ...s, plantId: null }));
 }
 
-/** Put a plant in slot `idx` (no cost, no checks besides the slot being free). */
-export function plantAt(game, idx) {
+/** Stat multipliers for a plant level (1 = base): +damage, +fire rate, +max HP per level above 1. */
+export function levelScale(c, level = 1) {
+  const L = c.plantLevels;
+  const k = Math.max(0, Math.min(L.max, level) - 1);
+  return { damage: 1 + k * L.damage, rate: 1 + k * L.rate, hp: 1 + k * L.hp };
+}
+
+/** Max HP of a plant kind at a level. */
+export function plantMaxHp(c, kind, level = 1) {
+  const base = c.plantTypes[kind]?.hp ?? c.gardenPlantHp;
+  return Math.round(base * levelScale(c, level).hp);
+}
+
+/** Sunshine to raise a plant of `kind` from `level` to level + 1, or null at the top level. */
+export function upgradeCost(c, kind, level = 1) {
+  const type = c.plantTypes[kind];
+  const mult = c.plantLevels.cost[level - 1];
+  if (!type || level >= c.plantLevels.max || mult === undefined) return null;
+  return Math.round(type.cost * mult);
+}
+
+/**
+ * Put a plant in slot `idx` (no cost, no checks besides the slot being free). `kind` defaults to the slot's own kind
+ * (used by the pre-planted garden and the Gardener); any kind fits any slot.
+ */
+export function plantAt(game, idx, kind) {
   const c = game.config;
   const slot = game.slots[idx];
   if (!slot || slot.plantId) return null;
-  const type = c.plantTypes[slot.kind];
+  kind = kind ?? slot.kind;
+  const type = c.plantTypes[kind];
+  if (!type) return null;
+  const hp = plantMaxHp(c, kind, 1);
   const e = {
     id: game.newId('g'),
     kind: 'garden',
     team: 'plant',
-    plantKind: slot.kind,
+    plantKind: kind,
+    level: 1,
     x: slot.x,
     y: 0,
     z: slot.z,
     yaw: 0,
     pitch: 0,
-    hp: c.gardenPlantHp,
-    maxHp: c.gardenPlantHp,
+    hp,
+    maxHp: hp,
     state: 'alive',
-    radius: c.gardenPlantRadius,
-    height: c.gardenPlantHeight,
+    radius: type.radius ?? c.gardenPlantRadius,
+    height: type.height ?? c.gardenPlantHeight,
     slot: idx,
-    cooldown: (game.rng() / type.rate) * 2, // desynchronize turrets
+    cooldown: type.rate ? (game.rng() / type.rate) * 2 : 0, // desynchronize turrets
   };
+  if (type.blocks) e.blocks = true;
   slot.plantId = e.id;
   game.entities.set(e.id, e);
   return e;
@@ -46,20 +75,22 @@ export function initGarden(game) {
 }
 
 /**
- * A plant player spends sunshine to plant `kind` ("peashooter" | "cactus") in the nearest empty slot
- * of that kind within plantRange. Returns the new plant, or null (and changes nothing).
+ * A plant player spends sunshine to plant `kind` in the nearest empty slot within plantRange (any kind fits any slot).
+ * Plant kids may only plant what their kill-meter tier has unlocked; the Gardener plants tier-0 kinds. `only` limits
+ * the choice to one slot index. Returns the new plant, or null (and changes nothing).
  */
-export function tryPlant(game, player, kind) {
+export function tryPlant(game, player, kind, only = -1) {
   const c = game.config;
   const type = c.plantTypes[kind];
   if (!type || !player || player.team !== 'plant') return null;
   if (player.kind !== 'player' && !player.isGardener) return null;
   if (player.state !== 'alive' || game.phase !== 'playing') return null;
+  if ((type.tier ?? 0) > (player.kind === 'player' ? player.tier ?? 0 : 0)) return null;
   if (!(player.sunshine >= type.cost)) return null;
   let best = -1;
   let bestDist = Infinity;
   game.slots.forEach((s, i) => {
-    if (s.plantId || s.kind !== kind) return;
+    if (s.plantId || (only >= 0 && i !== only)) return;
     const d = dist2D(player.x, player.z, s.x, s.z);
     if (d <= c.plantRange && d < bestDist) {
       best = i;
@@ -67,13 +98,73 @@ export function tryPlant(game, player, kind) {
     }
   });
   if (best < 0) return null;
-  const plant = plantAt(game, best);
+  const plant = plantAt(game, best, kind);
   player.sunshine -= type.cost;
   game.emit('plant', { id: plant.id, plantKind: kind, x: plant.x, z: plant.z, by: player.id });
   return plant;
 }
 
-/** Turrets: each garden plant shoots the nearest living zombie in range. */
+/**
+ * The garden plant a kid would upgrade: within `reach` metres, preferring the one they look at (inside the look cone,
+ * smallest angle), otherwise the nearest. Client prompts use the same rule (client/plants.js).
+ */
+export function pickUpgradeTarget(game, player) {
+  const L = game.config.plantLevels;
+  const fx = -Math.sin(player.yaw);
+  const fz = -Math.cos(player.yaw);
+  let looked = null;
+  let lookAngle = L.lookCone;
+  let nearest = null;
+  let nearestDist = L.reach;
+  for (const g of game.entities.values()) {
+    if (g.kind !== 'garden' || g.state !== 'alive') continue;
+    const d = dist2D(player.x, player.z, g.x, g.z);
+    if (d > L.reach) continue;
+    if (d < nearestDist) {
+      nearest = g;
+      nearestDist = d;
+    }
+    if (d < 0.05) continue;
+    const angle = Math.acos(Math.max(-1, Math.min(1, (fx * (g.x - player.x) + fz * (g.z - player.z)) / d)));
+    if (angle <= lookAngle) {
+      looked = g;
+      lookAngle = angle;
+    }
+  }
+  return looked ?? nearest;
+}
+
+/**
+ * Spend sunshine to raise a garden plant one level (max 3): the one the kid looks at or is nearest to, or `target`.
+ * Heals it to its new full HP. Returns the plant, or null (and changes nothing).
+ */
+export function tryUpgrade(game, player, target = null) {
+  const c = game.config;
+  if (!player || player.team !== 'plant') return null;
+  if (player.kind !== 'player' && !player.isGardener) return null;
+  if (player.state !== 'alive' || game.phase !== 'playing') return null;
+  const plant = target ?? pickUpgradeTarget(game, player);
+  if (!plant || plant.kind !== 'garden' || plant.state !== 'alive') return null;
+  if (dist2D(player.x, player.z, plant.x, plant.z) > c.plantLevels.reach) return null;
+  const cost = upgradeCost(c, plant.plantKind, plant.level ?? 1);
+  if (cost === null || !(player.sunshine >= cost)) return null;
+  player.sunshine -= cost;
+  plant.level = (plant.level ?? 1) + 1;
+  plant.maxHp = plantMaxHp(c, plant.plantKind, plant.level);
+  plant.hp = plant.maxHp;
+  game.emit('plantUp', { id: plant.id, plantKind: plant.plantKind, level: plant.level, x: plant.x, z: plant.z, by: player.id });
+  return plant;
+}
+
+/** Pitch (rad) that lobs a shot of `speed` under `gravity` onto a point `d` metres away and `dy` higher (low arc). */
+function lobPitch(speed, gravity, d, dy) {
+  const v2 = speed * speed;
+  const disc = v2 * v2 - gravity * (gravity * d * d + 2 * dy * v2);
+  if (disc < 0 || d < 1e-6) return Math.PI / 4; // out of reach: throw as far as it goes
+  return Math.atan((v2 - Math.sqrt(disc)) / (gravity * d));
+}
+
+/** Turrets: each garden plant shoots the nearest living zombie in range (wall-nuts just stand there). */
 export function stepGarden(game, dt) {
   const c = game.config;
   const zombies = [];
@@ -84,6 +175,9 @@ export function stepGarden(game, dt) {
   }
   for (const g of plants) {
     const type = c.plantTypes[g.plantKind];
+    if (!type || type.noAttack) continue;
+    const scale = levelScale(c, g.level ?? 1);
+    const rate = type.rate * scale.rate;
     g.cooldown -= dt;
     let target = null;
     let best = type.range;
@@ -99,35 +193,44 @@ export function stepGarden(game, dt) {
       continue;
     }
     const ox = g.x;
-    const oy = g.y + c.turretMuzzleHeight;
+    const oy = g.y + (type.muzzle ?? c.turretMuzzleHeight);
     const oz = g.z;
     // Turrets are a bit slow on the draw: they aim where the target was a moment ago.
     let dx = target.x - (target.vx ?? 0) * c.turretLag - ox;
     let dy = target.y + target.height * c.turretAimHeight - oy;
     let dz = target.z - (target.vz ?? 0) * c.turretLag - oz;
+    const horiz = Math.hypot(dx, dz);
     const len = Math.hypot(dx, dy, dz) || 1;
     dx /= len;
     dy /= len;
     dz /= len;
     g.yaw = Math.atan2(-dx, -dz);
-    g.pitch = Math.asin(dy);
+    g.pitch = type.gravity > 0 ? lobPitch(type.speed, type.gravity, horiz, (len * dy)) : Math.asin(dy);
     if (g.cooldown > 0) continue;
-    const dir = forwardVec(
-      g.yaw + (game.rng() * 2 - 1) * type.aimError,
-      g.pitch + (game.rng() * 2 - 1) * type.aimError,
-    );
-    spawnProjectile(game, {
-      team: 'plant',
-      owner: g.id,
-      projKind: type.projKind,
-      damage: type.damage,
-      speed: type.speed,
-      x: ox,
-      y: oy,
-      z: oz,
-      dir,
-    });
-    g.cooldown += 1 / type.rate;
+    const yaw = g.yaw + (game.rng() * 2 - 1) * type.aimError;
+    const pitch = g.pitch + (game.rng() * 2 - 1) * type.aimError;
+    for (let i = 0; i < (type.pellets ?? 1); i++) {
+      const spread = type.spread ?? 0;
+      const dir = spread > 0
+        ? forwardVec(yaw + (game.rng() * 2 - 1) * spread, pitch + (game.rng() * 2 - 1) * spread)
+        : forwardVec(yaw, pitch);
+      spawnProjectile(game, {
+        team: 'plant',
+        owner: g.id,
+        projKind: type.projKind,
+        damage: type.damage * scale.damage,
+        speed: type.speed,
+        x: ox,
+        y: oy,
+        z: oz,
+        dir,
+        gravity: type.gravity,
+        splash: type.splash,
+        slow: type.slow,
+        life: type.life,
+      });
+    }
+    g.cooldown += 1 / rate;
   }
 }
 

@@ -1,4 +1,4 @@
-// Weapon ladders. Index in the array is the upgrade tier (0 = starting gun), 8 tiers each.
+// Weapons. The zombie ladder has 8 tiers (index = upgrade tier, 0 = starting gun); plants have the single Pea Blaster.
 // rate = shots per second, speed = projectile m/s, spread = random cone half-angle (rad).
 // Optional: splash (blast radius m; damage falls off with distance), gravity (m/s^2, arcing shots),
 // lob (rad added to the aim pitch so a lobber is on target at medium range), slow ({factor, secs}), life (s).
@@ -7,16 +7,9 @@ function weapon(id, name, damage, rate, pellets, spread, speed, projKind, extra 
   return Object.freeze({ id, name, damage, rate, pellets, spread, speed, projKind, ...extra });
 }
 
-export const PLANT_LADDER = Object.freeze([
-  weapon('pea_blaster', 'Pea Blaster', 1, 4, 1, 0, 50, 'pea'),
-  weapon('double_pea', 'Double Pea', 1, 3.5, 2, 0.03, 50, 'pea'),
-  weapon('pea_rifle', 'Pea Rifle', 1, 9, 1, 0, 70, 'pea'),
-  weapon('snow_pea', 'Snow Pea', 1, 6, 1, 0, 55, 'snow', { slow: Object.freeze({ factor: 0.5, secs: 2 }) }),
-  weapon('spike_shotgun', 'Spike Shotgun', 1, 1.4, 8, 0.045, 55, 'spike'),
-  weapon('repeater', 'Repeater', 1, 14, 1, 0.01, 75, 'pea'),
-  weapon('melon_lobber', 'Melon Lobber', 7, 1.2, 1, 0.01, 26, 'melon', { splash: 3.5, gravity: 12, lob: 0.18, life: 3 }),
-  weapon('house_gun', 'House Gun', 5, 1.5, 1, 0, 40, 'housepea'),
-]);
+// Plant kids keep this one gun all round. Their kill meter unlocks plant types (see config.plantTypes), not guns.
+export const PLANT_GUN = weapon('pea_blaster', 'Pea Blaster', 1, 4, 1, 0, 50, 'pea');
+export const PLANT_LADDER = Object.freeze([PLANT_GUN]);
 
 // Zombie shots are slow and chunky on purpose: kids can see them coming and dodge.
 export const ZOMBIE_LADDER = Object.freeze([
