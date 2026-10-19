@@ -6,6 +6,8 @@ import { publicConfig } from '../server/sim/config.js';
 import { MapData } from '../client/map.js';
 import { buildField } from '../client/predict.js';
 import { walkerStep } from '../shared/walker.js';
+import { plantAt } from '../server/sim/garden.js';
+import { SLOTS } from './helpers.js';
 
 const finalGap = (r) => {
   const f = r.frames[r.frames.length - 1];
@@ -106,4 +108,17 @@ test('the client field (built from the welcome map) walks exactly like the serve
     }
   }
   assert.ok(worst < 0.03, `paths drifted ${worst.toFixed(4)} m`);
+});
+
+test('prediction: a wall-nut is solid on both sides', () => {
+  const slot = SLOTS[0];
+  const r = simulate({
+    seconds: 5, latency: 60, jitter: 10, seed: 12, features: { cover: true },
+    setup: (g, me) => { plantAt(g, 0, 'wallnut'); me.x = slot.x; me.z = slot.z + 5; me.y = slot.y ?? 0; me.yaw = 0; },
+    script: (t) => ({ keys: { f: t > 0.3, b: false, l: false, r: false, jump: false }, yaw: 0 }),
+  });
+  const f = r.frames[r.frames.length - 1];
+  const d = Math.hypot(f.sx - slot.x, f.sz - slot.z);
+  assert.ok(d > 1.2 && d < 1.45, `the server stopped us ${d.toFixed(2)} m from the nut`);
+  assert.ok(finalGap(r) < 0.03, `and the client agrees (${finalGap(r).toFixed(3)} m)`);
 });

@@ -109,7 +109,7 @@ export class Predictor {
     for (const e of entities) {
       if (e.kind === 'mower') {
         if (e.state === 'driving' && String(e.driver) === String(own.id)) driving = true;
-      } else if (e.kind === 'garden' && e.state !== 'wilted') {
+      } else if (e.kind === 'garden' && e.state === 'alive') {
         const t = cfg.plantTypes && cfg.plantTypes[e.plantKind];
         // (a plant in a pot stands up on the pot, and the pot is solid already)
         if (t && t.blocks && Math.abs(num(e.y) - map.groundHeight(e.x, e.z)) < 0.25) blockers.push({ x: e.x, z: e.z, radius: num(t.radius, 0.8) });
