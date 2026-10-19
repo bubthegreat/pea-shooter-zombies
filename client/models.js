@@ -119,40 +119,64 @@ export function isPlainToon(m) {
   return Boolean(m && m.isMeshToonMaterial && !m.map && !m.transparent && m.opacity === 1 && m.side === THREE.FrontSide && !m.vertexColors && m.emissive.getHex() === 0 && !m.polygonOffset);
 }
 
+// Baked geometry, shared between models. Building a model is cheap, merging it is not (and every merged geometry is a GPU upload),
+// so the result is remembered by what went in: the source geometries, each part's colour / material and its matrix inside the
+// group. The same builder makes the same signature, so the second zombie of a kind borrows the first one's baked geometry. A
+// shared geometry is flagged `userData.shared` and must never be disposed by whoever is using it. Models that vary per entity
+// (a seeded colour, say) simply make a few signatures; past BAKE_CACHE_MAX we stop remembering and bake per model as before.
+const bakeCache = new Map();
+const BAKE_CACHE_MAX = 600;
+export const bakeStats = { hit: 0, miss: 0 };
+
 /** Merge the meshes under `g` (not inside nested bake/keep groups) into one mesh per material. */
 export function bakeGroup(g) {
   g.updateMatrixWorld(true);
   _inv.copy(g.matrixWorld).invert();
-  const buckets = new Map();
-  const doomed = [];
+  const parts = [];
   const visit = (o) => {
     for (const c of o.children) {
       if (c.userData.bake || c.userData.keep) continue;
-      if (c.isMesh && c.geometry) {
-        const plain = isPlainToon(c.material);
-        const key = plain ? 'vc' : c.material.uuid;
-        let b = buckets.get(key);
-        if (!b) { b = { mat: plain ? vcMat : c.material, plain, pos: [], nor: [], col: [] }; buckets.set(key, b); }
-        const geo = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
-        geo.applyMatrix4(_rel.multiplyMatrices(_inv, c.matrixWorld));
-        b.pos.push(geo.attributes.position.array);
-        b.nor.push(geo.attributes.normal.array);
-        if (plain) {
-          const n = geo.attributes.position.count;
-          const arr = new Float32Array(n * 3);
-          const col = c.material.color;
-          for (let i = 0; i < n; i++) { arr[i * 3] = col.r; arr[i * 3 + 1] = col.g; arr[i * 3 + 2] = col.b; }
-          b.col.push(arr);
-        }
-        geo.dispose();
-        doomed.push(c);
-      } else if (!c.isSprite) {
-        visit(c);
-      }
+      if (c.isMesh && c.geometry) parts.push(c);
+      else if (!c.isSprite) visit(c);
     }
   };
   visit(g);
-  for (const c of doomed) c.parent.remove(c);
+  if (!parts.length) return g;
+  let sig = '';
+  for (const c of parts) {
+    _rel.multiplyMatrices(_inv, c.matrixWorld);
+    const e = _rel.elements;
+    sig += `${c.geometry.uuid}|${isPlainToon(c.material) ? 'c' + c.material.color.getHex() : c.material.uuid}`;
+    for (let i = 0; i < 16; i++) sig += `,${Math.round(e[i] * 10000)}`;
+    sig += ';';
+  }
+  const hit = bakeCache.get(sig);
+  for (const c of parts) c.parent.remove(c);
+  if (hit) {
+    bakeStats.hit++;
+    for (const b of hit) g.add(new THREE.Mesh(b.geo, b.mat));
+    return g;
+  }
+  bakeStats.miss++;
+  const buckets = new Map();
+  for (const c of parts) {
+    const plain = isPlainToon(c.material);
+    const key = plain ? 'vc' : c.material.uuid;
+    let b = buckets.get(key);
+    if (!b) { b = { mat: plain ? vcMat : c.material, plain, pos: [], nor: [], col: [] }; buckets.set(key, b); }
+    const geo = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+    geo.applyMatrix4(_rel.multiplyMatrices(_inv, c.matrixWorld));
+    b.pos.push(geo.attributes.position.array);
+    b.nor.push(geo.attributes.normal.array);
+    if (plain) {
+      const n = geo.attributes.position.count;
+      const arr = new Float32Array(n * 3);
+      const col = c.material.color;
+      for (let i = 0; i < n; i++) { arr[i * 3] = col.r; arr[i * 3 + 1] = col.g; arr[i * 3 + 2] = col.b; }
+      b.col.push(arr);
+    }
+    geo.dispose();
+  }
   const cat = (arrs) => {
     let n = 0;
     for (const a of arrs) n += a.length;
@@ -161,6 +185,7 @@ export function bakeGroup(g) {
     for (const a of arrs) { out.set(a, off); off += a.length; }
     return out;
   };
+  const made = [];
   for (const b of buckets.values()) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cat(b.pos), 3));
@@ -168,9 +193,21 @@ export function bakeGroup(g) {
     if (b.plain) geo.setAttribute('color', new THREE.BufferAttribute(cat(b.col), 3));
     geo.computeBoundingSphere();
     geo.userData.baked = true;
+    made.push({ geo, mat: b.mat });
     g.add(new THREE.Mesh(geo, b.mat));
   }
+  if (bakeCache.size < BAKE_CACHE_MAX) {
+    for (const b of made) b.geo.userData.shared = true;
+    bakeCache.set(sig, made);
+  }
   return g;
+}
+
+/** Free a model's own GPU geometry (the shared baked geometry stays: other models use it). */
+export function disposeModel(root) {
+  root.traverse((o) => {
+    if (o.isMesh && o.geometry.userData.baked && !o.geometry.userData.shared) o.geometry.dispose();
+  });
 }
 
 /** Bake every flagged group in a finished model. */

@@ -6,7 +6,7 @@ import { Input } from './input.js';
 import { World, EntityLayer } from './scene.js';
 import { MapData } from './map.js';
 import { plantList, unlockedPlants, pickUpgradeTarget, upgradePrompt, stars } from './plants.js';
-import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex, PART_INFO } from './models.js';
+import { makeGun, makeItem, makeHands, weaponInfo, setWeaponTable, setEquipmentTable, itemInfo, toon, G, add, getGlowTex, PART_INFO, disposeModel } from './models.js';
 import { ruleText } from './lobbyview.js';
 import { Fx } from './fx.js';
 import { Sound } from './audio.js';
@@ -36,6 +36,7 @@ try {
   lobby.setStatus("Your browser couldn't start 3D graphics. Try the latest Chrome!", true);
   throw err;
 }
+renderer.debug.checkShaderErrors = false; // reading the compile log forces a blocking wait for every program; we compile ahead (warmUp) instead
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch() ? 1 : 1.5)); // phones render at 1x to keep the frame rate up
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -328,6 +329,91 @@ function loadMap(state) {
   S.lastState = state || null;
 }
 
+/* ------------------------------------------------------------------ */
+/* warm-up: compile / upload everything before the first round needs it  */
+/* ------------------------------------------------------------------ */
+
+/** One of every kind of thing the round can put on screen (the sorts that look different: teams, guns, plants, shots, parts...). */
+function warmEntities() {
+  const out = new Map();
+  let n = 0;
+  const put = (e) => {
+    e.id = `warm${n}`;
+    e.x = (n % 12) * 2.5;
+    e.z = -Math.floor(n / 12) * 2.5;
+    e.y = 0;
+    e.yaw = 0;
+    out.set(e.id, e);
+    n++;
+  };
+  const cfg = S.config;
+  for (const team of ['plant', 'zombie']) {
+    const list = cfg.weapons && Array.isArray(cfg.weapons[team]) && cfg.weapons[team].length ? cfg.weapons[team] : [{ id: team === 'zombie' ? 'goo_blaster' : 'pea_blaster' }];
+    for (const w of list) {
+      // slowed (ice shell), hurt (health bar), named (name tag), carrying a part: the things models and tags build on demand
+      put({ kind: 'bot', team, weapon: w.id, name: 'Warm', hp: 3, maxHp: 5, state: 'alive', slowed: true, using: true, carry: team === 'zombie' ? 'battery' : undefined });
+    }
+    put({ kind: 'player', team, weapon: list[0].id, name: 'Warm', hp: 3, maxHp: 5, state: 'alive' });
+  }
+  put({ kind: 'player', team: 'zombie', name: 'Warm', hp: 5, maxHp: 5, state: 'sprout' });
+  for (const k of Object.keys(cfg.plantTypes || {})) put({ kind: 'garden', team: 'plant', plantKind: k, level: 2, hp: 30, maxHp: 60, state: 'alive' });
+  for (const k of Object.keys(cfg.projectileRadius || {})) put({ kind: 'projectile', team: 'plant', projKind: k });
+  put({ kind: 'mower', team: 'zombie', state: 'driving', driver: 'warm0', hp: 40, maxHp: 40 });
+  put({ kind: 'sun', team: 'plant' });
+  for (const k of Object.keys(PART_INFO)) put({ kind: 'part', team: 'zombie', partKind: k });
+  for (const k of Object.keys(cfg.equipment || {})) put({ kind: 'rack_item', team: 'zombie', itemId: k, available: true });
+  return out;
+}
+
+/**
+ * Behind the loading screen: compile the shaders and upload the geometry of everything a round shows, so nothing hitches when
+ * the first zombie, shot, plant or gun upgrade appears. (The renderer caches programs by material shape + lights + fog, so the
+ * real scene is compiled as it is, and the model kinds are compiled against its lights.)
+ */
+async function warmUp() {
+  const key = S.mapKey;
+  if (S.warmKey === key || S.warming) return;
+  S.warmKey = key;
+  S.warming = true;
+  const t0 = performance.now();
+  try {
+    await renderer.compileAsync(world.scene, camera); // the level, sky, fx, cover and their ghosts (hidden things included)
+    const holder = new THREE.Group();
+    holder.position.y = -80; // under the ground
+    const tmp = new EntityLayer(holder);
+    tmp.budget = Infinity;
+    tmp.sync(warmEntities(), null, { t: 0, dt: 0.016, camera, ground: () => 0 });
+    holder.traverse((o) => { o.frustumCulled = false; });
+    world.scene.add(holder);
+    await renderer.compileAsync(holder, camera, world.scene);
+    renderer.render(world.scene, camera); // uploads the buffers
+    world.scene.remove(holder);
+    tmp.clear();
+    // the first-person guns, hands and tools
+    const vh = new THREE.Group();
+    vh.position.y = -80;
+    for (const team of ['plant', 'zombie']) {
+      const list = S.config.weapons && Array.isArray(S.config.weapons[team]) ? S.config.weapons[team] : [];
+      for (const w of list) vh.add(makeGun(w.id, team));
+      vh.add(makeHands(team, GUN_HANDS));
+    }
+    for (const id of Object.keys(S.config.equipment || {})) {
+      try { vh.add(makeItem(id).root); } catch (err) { console.warn('warm-up: tool', id, err); }
+    }
+    vh.traverse((o) => { o.frustumCulled = false; });
+    world.viewScene.add(vh);
+    await renderer.compileAsync(vh, viewCamera, world.viewScene);
+    renderer.render(world.viewScene, viewCamera);
+    world.viewScene.remove(vh);
+    disposeModel(vh);
+  } catch (err) {
+    console.warn('warm-up failed', err);
+  } finally {
+    S.warming = false;
+    S.warmMs = performance.now() - t0;
+  }
+}
+
 function hello() {
   net.send({ t: 'listLobbies', cid: CID, name: profile.name }); // also lets the server put a reconnecting page back
 }
@@ -355,6 +441,7 @@ net.on('welcome', (msg) => {
   }
   loadMap(msg.state);
   enterGame();
+  warmUp();
 });
 net.on('msg', (msg) => {
   if (msg.t === 'lobbies') lobby.setList(msg.lobbies);
@@ -1301,7 +1388,7 @@ function gameplayFrame(dt, t, nowMs, own, snap, entities) {
       : 'Wait for the gate to open, then break a door and raid the fridge! Press B to build a fort.', 6000);
   }
   // fade the loading screen out once we are really playing
-  if (S.loading && performance.now() - S.joinAt > 1800) {
+  if (S.loading && performance.now() - S.joinAt > 1800 && (!S.warming || performance.now() - S.joinAt > 9000)) {
     S.loading = false;
     hud.hideLoading();
   }

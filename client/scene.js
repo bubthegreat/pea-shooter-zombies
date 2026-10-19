@@ -2,7 +2,7 @@
 // server entities into animated models.
 import * as THREE from 'three';
 import {
-  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo, makePartMesh, PART_INFO,
+  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo, makePartMesh, PART_INFO, disposeModel,
 } from './models.js';
 import { tagAlpha } from './tags.js';
 import { Level } from './level.js';
@@ -357,12 +357,16 @@ export class EntityLayer {
     this.frame = 0;
     this.added = [];
     this.removed = [];
+    this.budget = 3; // models built per sync (a crowd spawning at once is spread over a few frames); projectiles are free
+    this.waiting = 0; // entities that did not get a model this sync because of the budget
   }
 
   sync(entities, selfId, ctx) {
     this.frame++;
     this.added.length = 0;
     this.removed.length = 0;
+    this.waiting = 0;
+    let built = 0;
     const mowers = [];
     for (const e of entities.values()) if (e.kind === 'mower' && (e.state === 'driving' || e.state === 'starting')) mowers.push(e);
     for (const [id, e] of entities) {
@@ -378,7 +382,14 @@ export class EntityLayer {
         this._remove(id, rec, true);
         rec = null;
       }
-      if (!rec) rec = this._create(id, e, key);
+      if (!rec) {
+        if (built >= this.budget && !key.startsWith('proj:')) {
+          this.waiting++;
+          continue;
+        }
+        built++;
+        rec = this._create(id, e, key);
+      }
       if (!rec) continue;
       rec.seen = this.frame;
       this._update(rec, e, ctx, mowers);
@@ -417,7 +428,7 @@ export class EntityLayer {
 
   _remove(id, rec, silent = false) {
     this.scene.remove(rec.root);
-    rec.root.traverse((o) => { if (o.isMesh && o.geometry.userData.baked) o.geometry.dispose(); });
+    disposeModel(rec.root);
     if (rec.tag) this.scene.remove(rec.tag);
     if (rec.tagMat) rec.tagMat.dispose();
     this.recs.delete(id);
