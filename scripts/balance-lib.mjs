@@ -276,6 +276,9 @@ export function decentPlant(opts = {}) {
 
 // ---- scenarios ---------------------------------------------------------------------------------------------------------
 
+/** A superhuman zombie kid (for the top of the Gardener ladder): 1.2x fire rate, very sharp aim, instant reactions, full lead. */
+const PRO_KID = { kidFire: 1.2, autopilot: { aimError: 0.03, reaction: 0.1, lead: 1, shootScale: 1.3 } };
+
 /** A good zombie kid: full fire rate, sharp aim, quick reactions. */
 const STRONG_KID = { kidFire: 1, autopilot: { aimError: 0.07, reaction: 0.2, lead: 0.5 } };
 
@@ -291,6 +294,7 @@ export function scenarioFor(kind, level) {
     case 'decent': return { difficulty: level, mode: 'coop', humans: [{ team: 'plant', script: decentPlant() }] };
     case 'good': return { difficulty: level, mode: 'coop', humans: [{ team: 'plant', autoPlant: {} }] }; // the planner as a kid, against the level's bots
     case 'zraid': return { difficulty: level, mode: 'coop', humans: [{ team: 'zombie', auto: true }] };
+    case 'zpro': return { difficulty: level, mode: 'coop', ...PRO_KID, humans: [{ team: 'zombie', auto: true }] }; // a superhuman kid + the Normal bots vs the Gardener(s)
     case 'zsolo': return { difficulty: level, mode: 'coop', features: { waves: false }, ...STRONG_KID, humans: [{ team: 'zombie', auto: true }] }; // the kid alone against the Gardener(s): no zombie bots
     case 'versus': return { difficulty: level, mode: 'versus', humans: [{ team: 'plant', script: decentPlant() }, { team: 'zombie', auto: true }] };
     default: throw new Error(`unknown scenario kind ${kind}`);
@@ -301,7 +305,7 @@ export const SCENARIOS = {
   'clumsy-normal': { difficulty: 'normal', mode: 'coop', humans: [{ team: 'plant', script: decentPlant({ plots: [0], aim: 0.1, wall: false }) }] },
 };
 // afk-easy, decent-hard, zraid-insane, versus-normal ... one per kind and level
-for (const kind of ['afk', 'decent', 'good', 'zraid', 'zsolo', 'versus']) for (const level of LEVEL_IDS) SCENARIOS[`${kind}-${level}`] = scenarioFor(kind, level);
+for (const kind of ['afk', 'decent', 'good', 'zraid', 'zpro', 'zsolo', 'versus']) for (const level of LEVEL_IDS) SCENARIOS[`${kind}-${level}`] = scenarioFor(kind, level);
 
 export function runRound(seed, sc, overrides = {}) {
   const base = makeConfig();

@@ -78,7 +78,7 @@ export class Lobby {
     for (const rowId of ['creatediffrow', 'roomdiffrow']) {
       const row = $(rowId);
       LEVELS.forEach((l, i) => {
-        const b = el('button', `choice diff lv${i}`);
+        const b = el('button', `choice diff lv${i}${l.name.length > 7 ? ' long' : ''}`);
         b.type = 'button';
         b.dataset.diff = l.id;
         b.append(el('span', 'nm', l.name));

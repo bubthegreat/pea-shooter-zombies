@@ -189,12 +189,12 @@ export const DEFAULT_CONFIG = {
       gardener: { brain: 'smart', hp: 125, speed: 5.5, income: 1.4, maxSunshine: 500, aimError: 0.05, fireScale: 0.7, reaction: 0.2, head: 0.4, lead: 0.7, strafe: 0.5, tier: 5, upgradeInterval: 11, forts: 6, pots: 4, retreat: true,  think: 0.15, respawn: 6, repair: 0.7, rebuild: true, collect: 6 },
     },
     nightmare: {
-      name: 'Nightmare', aimError: 0.131, fireScale: 0.338, reaction: 0.374, waveBase: 4.59, waveStep: 1.08, speedScale: 1.03, shootScale: 1.2, lead: 0.8, smart: 0.85, focus: 0.068, errand: 2.0, mower: 2.0, hp: 1.2, maxBots: 40,
+      name: 'Nightmare', aimError: 0.128, fireScale: 0.349, reaction: 0.367, waveBase: 4.77, waveStep: 1.11, speedScale: 1.04, shootScale: 1.2, lead: 0.8, smart: 0.85, focus: 0.088, errand: 2.0, mower: 2.0, hp: 1.2, maxBots: 40,
       tough: { door: 1.8, repair: 1.2, plantHp: 1.4, plantDmg: 1.2, plantRate: 1.1, potHp: 1.8 },
       gardener: { brain: 'smart', hp: 150, speed: 6, income: 0, maxSunshine: 600, aimError: 0.03, fireScale: 0.85, reaction: 0.15, head: 0.65, lead: 0.85, strafe: 0.7, tier: 6, upgradeInterval: 7, forts: 8, pots: 6, retreat: true,  think: 0.12, respawn: 5, repair: 0.8, rebuild: true, collect: 14 },
     },
     insane: {
-      name: 'Insane', aimError: 0.13, fireScale: 0.345, reaction: 0.37, waveBase: 4.7, waveStep: 1.1, speedScale: 1.04, shootScale: 1.3, lead: 1, smart: 1, focus: 0.08, errand: 2.4, mower: 2.4, hp: 1.3, maxBots: 40,
+      name: 'Insane', aimError: 0.122, fireScale: 0.377, reaction: 0.349, waveBase: 5.19, waveStep: 1.17, speedScale: 1.07, shootScale: 1.3, lead: 1, smart: 1, focus: 0.136, errand: 2.4, mower: 2.4, hp: 1.3, maxBots: 40,
       tough: { door: 3, repair: 1.5, plantHp: 2, plantDmg: 1.5, plantRate: 1.25, potHp: 3 },
       gardener: { brain: 'smart', count: 2, hp: 200, speed: 6.5, income: 0.5, maxSunshine: 800, aimError: 0.018, fireScale: 1, reaction: 0.1, head: 0.85, lead: 1, strafe: 0.9, tier: 7, upgradeInterval: 4, forts: 10, pots: 8, retreat: true,  think: 0.1, respawn: 4, repair: 0.9, rebuild: true, collect: 24 },
     },

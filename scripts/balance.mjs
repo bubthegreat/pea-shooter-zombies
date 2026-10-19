@@ -3,9 +3,11 @@
 //   node scripts/balance.mjs [seeds=24]                  the difficulty ladder: every scenario kind at all seven levels (a table)
 //   node scripts/balance.mjs [seeds=24] zraid-insane ...   detail lines (win rates, doors, routes, turrets...) for named scenarios
 //
+// The level toughens the team the kids are fighting (game.recomputeScaling): afk / decent / good scale the zombie bots, zraid / zpro / zsolo the
+// plant side (the kid's own zombie allies stay at Normal), versus both (the plant side at half toughness).
 // Kinds: afk (a plant kid who never plants), decent (the scripted kid), good (a plant kid played by the Gardener's planner: a much
 // better kid), versus (decent kid vs the zombie autopilot kid), zraid (zombie autopilot kid + bots vs the Gardener(s)), zsolo (a
-// strong zombie kid alone vs the Gardener(s), no bots). Levels: easy normal hard veryhard expert nightmare insane.
+// strong zombie kid alone vs the Gardener(s), no bots; zpro: a superhuman kid + Normal bots vs the Gardener(s)). Levels: easy normal hard veryhard expert nightmare insane.
 //
 // Overrides: BAL_CFG='{"fridge":{"fillSeconds":12},"doorHp":{"front":200}}' (top level shallow-merged; nested objects merged
 // one level deep), BAL_KIDFIRE=0.5 (the zombie autopilot kid's fire-rate scale). Everything here is simulated time.
@@ -17,7 +19,7 @@ const wanted = process.argv.slice(3);
 const fmt = (x, d = 1) => x.toFixed(d);
 
 async function ladder() {
-  const kinds = ['afk', 'decent', 'good', 'versus', 'zraid', 'zsolo'];
+  const kinds = ['afk', 'decent', 'good', 'versus', 'zraid', 'zpro', 'zsolo'];
   const jobs = [];
   for (const kind of kinds) for (const level of LEVEL_IDS) for (let seed = 1; seed <= nSeeds; seed++) jobs.push({ kind, level, seed });
   const rs = await playMany(jobs);
@@ -30,7 +32,7 @@ async function ladder() {
     });
     console.log(`${kind.padEnd(28)}${cells.join('')}`);
   }
-  console.log(`\n${nSeeds} seeds per cell. afk/decent/good/versus: plant kid vs bots (versus: a zombie kid too); zraid/zsolo: zombie kid vs the Gardener(s).`);
+  console.log(`\n${nSeeds} seeds per cell. afk/decent/good/versus: plant kid vs bots (versus: a zombie kid too); zraid/zpro/zsolo: zombie kid vs the Gardener(s).\nThe level toughens the team the kids are fighting: plants-only kids -> zombie bots; zombie-only kids -> doors, plants, pots, Gardeners (their allies stay Normal); versus -> both.`);
 }
 
 async function detail() {

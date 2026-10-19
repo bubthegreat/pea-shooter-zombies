@@ -185,7 +185,7 @@ html.touch #set-done, html.touch .setbtns .choice { min-height: 52px; }
 html.touch #touchui { --fire: clamp(88px, 29vh, 140px); --jump: clamp(66px, 21vh, 100px); --use: clamp(60px, 18vh, 88px); }
 #tc-build, #tc-cancel { --bs: clamp(52px, 15vh, 74px); right: calc(14px + var(--fire) + 12px + var(--jump) + 10px); bottom: 14px; }
 #tc-build { background: rgba(255, 152, 0, 0.5); }
-#tc-pot { --bs: clamp(52px, 15vh, 74px); right: calc(14px + var(--fire) + 12px + var(--jump) + 10px + clamp(52px, 15vh, 74px) + 8px); bottom: 14px; background: rgba(205, 110, 60, 0.6); }
+#tc-pot { --bs: clamp(52px, 15vh, 74px); right: calc(14px + var(--fire) + 12px + var(--jump) + 10px); bottom: calc(14px + clamp(52px, 15vh, 74px) + 8px); background: rgba(205, 110, 60, 0.6); } /* stacked on BUILD: the seed cards cover the bottom edge */
 #tc-cancel { background: rgba(229, 57, 80, 0.55); }
 #tc-place { --bs: clamp(60px, 18vh, 88px); right: calc(14px + var(--fire) + 14px); bottom: calc(12px + var(--jump) + 14px); background: rgba(67, 160, 71, 0.6); }
 #tc-rotate { --bs: clamp(52px, 15vh, 74px); right: calc(14px + var(--fire) + 14px + var(--use) + 8px); bottom: calc(12px + var(--jump) + 14px); background: rgba(66, 165, 245, 0.55); }
@@ -215,3 +215,8 @@ html.touch #buildbar small { font-size: 11px; }
 html.touch #loading .load-card { padding: 8px 16px; }
 html.touch .loadrule { font-size: 22px; }
 html.touch .loadteams { font-size: 12px; }
+
+/* the door card: out of the way of the prompt line (right side, under the weapon box) */
+html.touch #doorinfo { left: auto; right: 8px; top: 172px; transform: none; min-width: 120px; padding: 1px 10px 3px; border-width: 3px; border-radius: 14px; }
+html.touch #doorinfo b { font-size: 13px; }
+html.touch #doorinfotxt { font-size: 12px; }

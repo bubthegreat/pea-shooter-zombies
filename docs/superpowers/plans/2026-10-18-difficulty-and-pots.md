@@ -12,3 +12,10 @@ Spec sections: `docs/superpowers/specs/2026-10-18-map-v2-design.md` ("Difficulty
 6. **Balance.** `scripts/balance-lib.mjs` gets scenarios for all seven levels (afk, decent, versus, zraid), `scripts/balance.mjs` prints a table; `test/balance.test.js` adds loose monotonicity guard-rails. Tune the table until the ordering holds.
 7. **Docs.** Spec sections (levels, pots, sounds), README (levels, pot control).
 8. **Verify.** `npm test`, `node --check client/*.js`, headless Chromium desktop + phone on port 8087: create an Insane lobby, alarm stops at match end, place a pot in the kitchen and plant in it, no console errors.
+
+## As built (the plan changed in three places)
+
+- **Repair and door bars** were added mid-way (plants hold E at a pile inside each door; a health bar on both faces of every door and a door card): `server/sim/repair.js`, `client/level.js` (`_piles`, `_doorBars`), snapshots carry `doors` / `doorMax`.
+- **Which side a level toughens.** The first cut scaled both computer sides whatever the kids played; a playtest on Insane as zombies made the kid's own zombie bots tougher, i.e. easier. `game.recomputeScaling()` now toughens the team the kids fight (plants-only kids -> zombie bots incl. HP; zombie-only kids -> doors, plant HP / damage / fire rate, pot HP, Gardeners, with the kid's allies at Normal; versus -> bots in full, plant side at half). The table got `hp` and `tough` per level and the ladders were retuned both ways with the harness (plant kids: afk / decent / good; zombie kids: zraid / zpro / zsolo).
+- **Gardener count**: one from Hard to Nightmare, two at Insane (two at Expert / Nightmare was a step no income tuning could smooth). Hard-and-up Gardeners have a shrinking passive sunshine trickle and a growing ability to earn it (kill pickups).
+- Balance harness: `scripts/balance-lib.mjs` has a `good` kid (the Gardener's planner driving a plant kid), `zpro`, `zsolo`; `scripts/balance-pool.mjs` runs rounds on worker threads; `test/balance.test.js` asserts the monotone ladders both ways.

@@ -679,8 +679,9 @@ export class Level {
         const nz = d.nz * side;
         const rx = nz;
         const rz = -nx; // the viewer's right while looking at the face
-        const px = cx + nx * 0.17;
-        const pz = cz + nz * 0.17;
+        const off = side > 0 ? 0.45 : 0.17; // outside: clear of the white door frame boards that stand against the wall
+        const px = cx + nx * off;
+        const pz = cz + nz * off;
         const base = pos.length / 3;
         for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
           pos.push(px + rx * (w / 2) * su, y + (h / 2) * sv, pz + rz * (w / 2) * su);
