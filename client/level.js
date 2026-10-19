@@ -1056,6 +1056,12 @@ export class Level {
     void H;
   }
 
+  /** Low graphics: the house's lights (and the fridge's glow) are only lit while somebody can see the inside. */
+  setIndoorLights(on) {
+    for (const l of this.houseLights) l.visible = on;
+    if (this.fridge) this.fridge.glow.visible = on;
+  }
+
   /** Night makes the indoor lights glow. */
   setNight(night) {
     this.houseLights[0].intensity = 8 + 18 * night;

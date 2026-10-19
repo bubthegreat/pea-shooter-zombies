@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Settings, sanitize, DEFAULTS, SENS_MIN, SENS_MAX } from '../client/settings.js';
+import { Settings, sanitize, resolveGfx, DEFAULTS, SENS_MIN, SENS_MAX } from '../client/settings.js';
 import { applyLook } from '../client/input.js';
 
 function fakeStorage(init = {}) {
@@ -36,7 +36,7 @@ test('set persists, reload restores, subscribers hear about it, reset restores d
   const off = s.subscribe((v) => seen.push(v));
   s.set({ invertX: true, sens: 2.5 });
   assert.equal(seen.length, 1);
-  assert.deepEqual(new Settings(st).values, { invertX: true, invertY: false, sens: 2.5 });
+  assert.deepEqual(new Settings(st).values, { invertX: true, invertY: false, sens: 2.5, gfx: 'auto' });
   off();
   s.reset();
   assert.equal(seen.length, 1);
@@ -66,4 +66,20 @@ test('applyLook: default directions, inversion, sensitivity, pitch clamp, yaw wr
 
   const wrap = applyLook(-3.1, 0, 100, 0, base);
   assert.ok(wrap.yaw > 0 && wrap.yaw <= Math.PI);
+});
+
+test('graphics: auto follows the pointer (Low on a phone), an explicit choice wins and is saved', () => {
+  assert.equal(DEFAULTS.gfx, 'auto');
+  assert.equal(resolveGfx(DEFAULTS, true), 'low');
+  assert.equal(resolveGfx(DEFAULTS, false), 'high');
+  assert.equal(resolveGfx({ gfx: 'high' }, true), 'high');
+  assert.equal(resolveGfx({ gfx: 'low' }, false), 'low');
+  assert.equal(resolveGfx(undefined, false), 'high');
+  assert.equal(sanitize({ gfx: 'ultra' }).gfx, 'auto');
+  assert.equal(sanitize({ gfx: 'low' }).gfx, 'low');
+  const st = fakeStorage();
+  new Settings(st).set({ gfx: 'low' });
+  assert.equal(new Settings(st).values.gfx, 'low');
+  // an old saved object without the field still loads
+  assert.equal(new Settings(fakeStorage({ 'bb-look': JSON.stringify({ invertX: true, sens: 2 }) })).values.gfx, 'auto');
 });

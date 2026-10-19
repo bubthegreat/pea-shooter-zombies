@@ -17,6 +17,7 @@ import { Options } from './options.js';
 import { profile } from './profile.js';
 import { feedLine } from './feed.js';
 import { TouchControls, isTouch } from './touch.js';
+import { settings, resolveGfx } from './settings.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -29,18 +30,20 @@ const PI = Math.PI;
 
 const canvas = document.getElementById('game');
 const lobby = new Lobby();
+// Graphics: High / Low (settings; phones default to Low). Smooth edges (MSAA) can only be chosen when the canvas is made, so that part
+// follows the setting at page load; the rest (pixel ratio, shadows, house lights) switches live in applyGfx().
+const gfxNow = () => resolveGfx(settings.values, isTouch());
 let renderer;
 try {
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: gfxNow() === 'high', powerPreference: 'high-performance' });
 } catch (err) {
   lobby.setStatus("Your browser couldn't start 3D graphics. Try the latest Chrome!", true);
   throw err;
 }
 renderer.debug.checkShaderErrors = false; // reading the compile log forces a blocking wait for every program; we compile ahead (warmUp) instead
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isTouch() ? 1 : 1.5)); // phones render at 1x to keep the frame rate up
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.shadowMap.autoUpdate = false; // scenery never moves: shadows are rendered once
+renderer.shadowMap.autoUpdate = false; // scenery moves rarely: shadows are rendered once, and again (throttled) after cover breaks / builds
 renderer.autoClear = false;
 
 const world = new World();
@@ -269,6 +272,10 @@ const S = {
   hitAt: new Map(), // per-target throttle for hit sounds / sparks (melee tools hit ~10x per second)
   wasDriving: 0, // performance.now() of the last frame we were driving the mower
   fxAcc: 0,
+  low: false,
+  shadowStale: 0,
+  shadowLast: 0,
+  shadowAt: 0,
 };
 let SLOTS = [];
 const CID = Math.random().toString(36).slice(2, 12) + performance.now().toString(36).replace('.', ''); // names this page to the server
@@ -326,6 +333,7 @@ function loadMap(state) {
   S.round = state && typeof state.round === 'number' ? state.round : null;
   world.cover.reset();
   world.cover.sync();
+  renderer.shadowMap.needsUpdate = true; // everything stands again
   S.lastState = state || null;
 }
 
@@ -377,7 +385,6 @@ async function warmUp() {
   S.warming = true;
   const t0 = performance.now();
   try {
-    await renderer.compileAsync(world.scene, camera); // the level, sky, fx, cover and their ghosts (hidden things included)
     const holder = new THREE.Group();
     holder.position.y = -80; // under the ground
     const tmp = new EntityLayer(holder);
@@ -385,7 +392,12 @@ async function warmUp() {
     tmp.sync(warmEntities(), null, { t: 0, dt: 0.016, camera, ground: () => 0 });
     holder.traverse((o) => { o.frustumCulled = false; });
     world.scene.add(holder);
-    await renderer.compileAsync(holder, camera, world.scene);
+    // Low switches the house lights off outside, and a different set of lights is a different set of shaders: compile both
+    for (const indoor of world.low ? [true, false] : [true]) {
+      world.setIndoor(indoor);
+      await renderer.compileAsync(world.scene, camera); // the level, sky, fx, cover and their ghosts (hidden things included)
+      await renderer.compileAsync(holder, camera, world.scene); // one of every kind of model, against these lights
+    }
     renderer.render(world.scene, camera); // uploads the buffers
     world.scene.remove(holder);
     tmp.clear();
@@ -589,6 +601,7 @@ function onSnap(snap) {
     S.map.reset(null);
     world.cover.reset();
     world.cover.sync();
+    shadowDirty();
     buildCancel();
   } else if (typeof snap.round === 'number' && S.round === null) S.round = snap.round;
   if (S.map && snap.doors && S.map.setDoorHps(snap.doors, snap.doorMax) && world.level) world.level.updateDoorBars(S.map.doors);
@@ -768,6 +781,7 @@ function runEvent(ev) {
       break;
     }
     case 'coverBreak': {
+      shadowDirty();
       const d = world.cover.onEvent(ev);
       if (d) {
         fx.debris(d.kind, d.x, d.y, d.z);
@@ -777,6 +791,7 @@ function runEvent(ev) {
       break;
     }
     case 'build': {
+      shadowDirty();
       world.cover.onEvent(ev);
       const b = S.map && S.map.placed.get(ev.id);
       if (b) {
@@ -796,6 +811,7 @@ function runEvent(ev) {
       break;
     }
     case 'doorUp': {
+      shadowDirty();
       const d = world.cover.onEvent(ev);
       if (d) {
         fx.buildPuff(d.x, 0, d.z);
@@ -1158,6 +1174,29 @@ function resize() {
   fx.setViewport(h * renderer.getPixelRatio(), camera.fov);
 }
 window.addEventListener('resize', resize);
+
+// Graphics: High / Low. Low = pixel ratio 1, no shadows, house lights only while the camera is near the house (scene.js).
+const contextAA = !!(renderer.getContextAttributes() && renderer.getContextAttributes().antialias);
+let gfxApplied = null;
+function applyGfx() {
+  const q = gfxNow();
+  if (q === gfxApplied) return;
+  const first = gfxApplied === null;
+  gfxApplied = q;
+  const low = q === 'low';
+  renderer.setPixelRatio(low ? 1 : Math.min(window.devicePixelRatio || 1, isTouch() ? 1 : 1.5)); // phones render at 1x to keep the frame rate up
+  world.setQuality(low);
+  S.low = low;
+  if (!first) {
+    resize();
+    renderer.shadowMap.needsUpdate = true;
+    S.warmKey = ''; // the shaders for this quality are compiled again, behind the settings panel
+    if (S.joined) warmUp();
+  }
+  options.setGfxNote(!low !== contextAA ? 'Smooth edges change the next time the page loads.' : null);
+}
+applyGfx();
+settings.subscribe(applyGfx);
 resize();
 
 canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
@@ -1179,6 +1218,24 @@ window.addEventListener('resize', () => { const on = lobbyFraming; lobbyFraming 
 const groundFn = (x, z, y) => (world.map ? world.map.supportY(x, z, y) : 0);
 let lastMs = performance.now();
 const camTarget = new THREE.Vector3();
+
+/**
+ * The shadow map is rendered once (the scenery stands still), so a broken tree or a new fort would keep its old shadow. Cover
+ * breaks and builds mark it stale; High renders it again once things have been quiet for a moment (or after 3 s of constant
+ * action), and never more than once per 1.5 s. Low has no shadows.
+ */
+function shadowDirty() {
+  if (!S.shadowStale) S.shadowStale = performance.now();
+  S.shadowLast = performance.now();
+}
+function refreshShadow(now) {
+  if (!S.shadowStale || S.low) return;
+  if (now - S.shadowAt < 1500) return;
+  if (now - S.shadowLast < 600 && now - S.shadowStale < 3000) return;
+  renderer.shadowMap.needsUpdate = true;
+  S.shadowAt = now;
+  S.shadowStale = 0;
+}
 
 /**
  * Put our own body where we predict it is: reconcile with the server on each new snapshot, then walk this frame's keys with the
@@ -1280,6 +1337,7 @@ function frame() {
   if (dbg.skyT !== undefined) skyT = dbg.skyT;
   world.setTime(skyT, dt);
   world.update(dt, camera, nowMs);
+  refreshShadow(nowMs);
 
   layer.sync(entities, id, { t, dt, camera, ground: groundFn });
   handleLayerChanges();

@@ -59,6 +59,8 @@ export class World {
     this.cover = null;
     this.map = null;
     this.state = { fridgeN: 0, gateOpen: false };
+    this.low = false; // Graphics: Low (see setQuality)
+    this.indoorOn = true;
     this._buildLights();
     this._buildSky();
     this._buildBackdrop();
@@ -101,6 +103,7 @@ export class World {
     this.level = new Level(map, this);
     this.cover = new CoverLayer(this.level, map);
     this.scene.add(this.level.group);
+    this.indoorOn = true;
     this.setTime(this.time01, 1);
     this.shadowDone = false;
   }
@@ -108,6 +111,32 @@ export class World {
   /** Terrain height at (x, z) (0 before a map arrived). */
   groundAt(x, z) {
     return this.map ? this.map.groundHeight(x, z) : 0;
+  }
+
+  /**
+   * Graphics quality. Low: no shadows, and the house's lights (they only matter near the house, but every pixel pays for each
+   * light) go off while the camera is out in the yard. (Switching a light on or off changes the shaders the scene needs, so the
+   * warm-up in main.js compiles both states in Low.)
+   */
+  setQuality(low) {
+    this.low = !!low;
+    this.dirLight.castShadow = !this.low;
+    if (!this.low) this.setIndoor(true);
+  }
+
+  setIndoor(on) {
+    if (on === this.indoorOn) return;
+    this.indoorOn = on;
+    if (this.level) this.level.setIndoorLights(on);
+  }
+
+  /** Is the camera in (or just outside) the house? Margin grows when we already are, so we do not flicker at the edge. */
+  _nearHouse(p) {
+    const c = this.map && this.map.cfg;
+    if (!c) return true;
+    const m = this.indoorOn ? 4 : 2.5;
+    const H = c.house, G = c.garage;
+    return p.x > Math.min(H.minX, G.minX) - m && p.x < Math.max(H.maxX, G.maxX) + m && p.z > Math.min(H.minZ, G.minZ) - m && p.z < Math.max(H.maxZ, G.maxZ) + m;
   }
 
   _buildLights() {
@@ -249,6 +278,7 @@ export class World {
     if (this.level) {
       this.level.update(dt, now / 1000, this.state);
       this.cover.update(dt);
+      if (this.low) this.setIndoor(this._nearHouse(p));
     }
     // slot ring pulse
     if (this.slotRing.visible) {

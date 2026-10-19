@@ -131,6 +131,9 @@ kbd { font: 800 13px var(--font); color: #fff; background: var(--ink); border-ra
   position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff;
   box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25); transition: transform 0.15s cubic-bezier(.2, 1.4, .4, 1);
 }
+.seg { display: flex; flex: none; overflow: hidden; background: #e9e4f5; border: 4px solid #d8cff0; border-radius: 20px; }
+.seg button { padding: 3px 16px 4px; font: 800 18px var(--font); color: var(--ink); background: transparent; border: 0; cursor: pointer; }
+.seg button[aria-checked="true"] { color: #fff; background: var(--green); }
 .switch[aria-checked="true"] { background: var(--green); border-color: var(--green-d); }
 .switch[aria-checked="true"] i { transform: translateX(34px); }
 .setrow input[type=range] {
