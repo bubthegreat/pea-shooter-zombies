@@ -2,7 +2,7 @@
 // server entities into animated models.
 import * as THREE from 'three';
 import {
-  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo, makePartMesh, PART_INFO, disposeModel,
+  toon, basic, G, add, buildModel, modelKey, makeBlob, SHADOW_RADIUS, getGlowTex, mulberry, gradientMap, itemInfo, makePartMesh, PART_INFO, disposeModel, disposeTree,
 } from './models.js';
 import { tagAlpha } from './tags.js';
 import { Level } from './level.js';
@@ -94,7 +94,7 @@ export class World {
   setMap(map) {
     if (this.level) {
       this.scene.remove(this.level.group);
-      this.level.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      disposeTree(this.level.group); // the old level's buffers, materials and textures go with it
     }
     this.windowMats.length = 0;
     this.lanterns.length = 0;
@@ -379,6 +379,16 @@ function easeOutBack(t) {
 }
 
 const _dir = new THREE.Vector3();
+// the glow behind a part a zombie carries: one material per part kind, shared by everyone (not one per carrier)
+const carryGlow = new Map();
+function carryGlowMat(kind, tex) {
+  let m = carryGlow.get(kind);
+  if (!m) {
+    m = new THREE.SpriteMaterial({ map: tex, color: PART_INFO[kind].color, transparent: true, depthWrite: false, opacity: 0.7 });
+    carryGlow.set(kind, m);
+  }
+  return m;
+}
 
 export class EntityLayer {
   constructor(scene) {
@@ -553,7 +563,7 @@ export class EntityLayer {
       g.add(m);
       const tex = getGlowTex();
       if (tex) {
-        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: PART_INFO[kind].color, transparent: true, depthWrite: false, opacity: 0.7 }));
+        const sp = new THREE.Sprite(carryGlowMat(kind, tex));
         sp.scale.setScalar(1.3);
         g.add(sp);
       }

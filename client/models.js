@@ -28,6 +28,7 @@ export function toon(color, opts) {
   let m = toonCache.get(key);
   if (!m) {
     m = new THREE.MeshToonMaterial({ color, gradientMap, ...(opts || {}) });
+    m.userData.shared = true; // lives for the whole session: nobody disposes it
     toonCache.set(key, m);
   }
   return m;
@@ -40,6 +41,7 @@ export function basic(color, opts) {
   let m = basicCache.get(key);
   if (!m) {
     m = new THREE.MeshBasicMaterial({ color, ...(opts || {}) });
+    m.userData.shared = true;
     basicCache.set(key, m);
   }
   return m;
@@ -60,6 +62,7 @@ export const G = {
   circle: new THREE.CircleGeometry(1, 20),
   plane: new THREE.PlaneGeometry(1, 1),
 };
+for (const g of Object.values(G)) g.userData.shared = true; // the shared primitives are never disposed with a model
 
 export function hash(str) {
   str = String(str);
@@ -114,6 +117,7 @@ const _rel = new THREE.Matrix4();
 
 /** One shared cel-shaded material for every plain coloured part once its colour is baked into vertex colours: one draw call instead of one per colour. */
 export const vcMat = new THREE.MeshToonMaterial({ gradientMap, vertexColors: true });
+vcMat.userData.shared = true;
 /** A plain opaque toon material (no texture, glow, transparency or special sides) can have its colour baked into the geometry. */
 export function isPlainToon(m) {
   return Boolean(m && m.isMeshToonMaterial && !m.map && !m.transparent && m.opacity === 1 && m.side === THREE.FrontSide && !m.vertexColors && m.emissive.getHex() === 0 && !m.polygonOffset);
@@ -2319,3 +2323,18 @@ export function makeBlob(radius) {
 }
 
 export const SHADOW_RADIUS = { char: 0.6, garden: 0.55, mower: 0.9, sprout: 0.45, sun: 0.0, proj: 0.0, rack: 0.0, part: 0.0 };
+
+/** Free a whole tree's GPU resources (geometry, instance buffers, materials, their textures), except what is shared for the session. */
+export function disposeTree(root) {
+  root.traverse((o) => {
+    if (o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+    if (o.isInstancedMesh) o.dispose();
+    const m = o.material;
+    if (!m) return;
+    for (const mm of Array.isArray(m) ? m : [m]) {
+      if (mm.userData.shared) continue;
+      if (mm.map) mm.map.dispose();
+      mm.dispose();
+    }
+  });
+}
