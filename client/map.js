@@ -68,11 +68,13 @@ export class MapData {
     this.placed = new Map(); // id -> build
     this.round = -1;
     this.coverMax = {};
+    this.version = 0; // bumps whenever a collider appears or goes (the walking prediction rebuilds its field then)
     this.reset(state);
   }
 
   /** Give every piece full health again, then apply `state` (round start / welcome). */
   reset(state = null, hp = {}) {
+    this.version++;
     this.cover.clear();
     this.doors.clear();
     this.placed.clear();
@@ -102,6 +104,7 @@ export class MapData {
   setAlive(id, alive) {
     const p = this.piece(id);
     if (!p) return null;
+    if (p.alive !== alive) this.version++;
     p.alive = alive;
     if (!alive) p.hp = 0;
     return p;
@@ -114,6 +117,15 @@ export class MapData {
     const w = rot ? def.d : def.w;
     const d = rot ? def.w : def.d;
     const rec = { id: b.id, kind: b.kind, def, x: b.x, z: b.z, rot, w, d, hp: b.hp ?? def.hp, maxHp: b.maxHp ?? def.hp, by: b.by, alive: true };
+    if (typeof b.y0 === 'number' && typeof b.y1 === 'number') {
+      rec.y0 = b.y0; // the collider's vertical range (from the server; walking is predicted against it)
+      rec.y1 = b.y1;
+    } else {
+      const g = this.groundHeight(b.x + w / 2, b.z + d / 2);
+      rec.y0 = g - 0.3;
+      rec.y1 = g + def.h;
+    }
+    this.version++;
     this.placed.set(b.id, rec);
     return rec;
   }
@@ -133,6 +145,7 @@ export class MapData {
     if (ev.type === 'doorUp') {
       const p = this.doors.get(ev.id);
       if (p) {
+        if (!p.alive) this.version++;
         p.alive = true;
         p.hp = ev.hp;
         p.maxHp = ev.maxHp ?? p.maxHp;
@@ -156,6 +169,7 @@ export class MapData {
       const alive = hp > 0;
       const m = max && typeof max[i] === 'number' && max[i] > 0 ? max[i] : p.maxHp;
       if (p.hp !== hp || p.alive !== alive || p.maxHp !== m) {
+        if (p.alive !== alive) this.version++;
         p.hp = hp;
         p.alive = alive;
         p.maxHp = m;

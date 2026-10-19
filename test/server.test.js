@@ -53,6 +53,19 @@ test('serves three.js and addons from node_modules', async () => {
   assert.equal(r.status, 404);
 });
 
+test('serves the shared server/client modules from /shared (the client imports them as ../shared/...)', async () => {
+  let r = await fetch(`${base}/shared/walker.js`);
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /javascript/);
+  assert.match(await r.text(), /walkerStep/);
+  r = await fetch(`${base}/shared/field.js`, { method: 'HEAD' });
+  assert.equal(r.status, 200);
+  r = await fetch(`${base}/shared/nope.js`);
+  assert.equal(r.status, 404);
+  r = await fetch(`${base}/shared/../package.json`);
+  assert.ok(r.status === 404 || r.status === 400);
+});
+
 test('path traversal is refused', async () => {
   for (const p of ['/../package.json', '/%2e%2e/package.json', '/vendor/three/addons/../../../../package.json', '/..%2fpackage.json']) {
     const r = await fetch(`${base}${p}`);

@@ -2,7 +2,8 @@
 import { DEFAULT_CONFIG } from './config.js';
 import { WORLD } from './world.js';
 import { terrainHeight } from './terrain.js';
-import { createField, STEP, MAX_SLOPE } from './collide.js';
+import { createField } from './collide.js';
+import { walkerStep } from '../../shared/walker.js';
 import { Cover } from './cover.js';
 import { createFridge, stepFridge } from './fridge.js';
 import { tryBuild, buildList } from './build.js';
@@ -47,6 +48,7 @@ export class Game {
     this.entities = new Map();
     this.events = [];
     this.time = 0; // monotonically increasing sim clock (seconds)
+    this.tickN = 0; // ticks run so far (lets a snapshot say how many ticks ago a player's latest input arrived)
     this._ids = {};
     this.slots = emptySlots();
     this.sunTimer = config.sunDropInterval;
@@ -416,7 +418,10 @@ export class Game {
       const lim = this.config.pitchLimit;
       e.pitch = clamp(raw.pitch, -lim, lim);
     }
-    if (Number.isInteger(raw.seq)) e.seq = raw.seq;
+    if (Number.isInteger(raw.seq)) {
+      e.seq = raw.seq;
+      e.seqTick = this.tickN;
+    }
   }
 
   // ---- simulation ------------------------------------------------------------
@@ -425,6 +430,7 @@ export class Game {
     if (!(dt > 0)) return;
     dt = Math.min(dt, this.config.maxDt);
     this.time += dt;
+    this.tickN++;
     if (this.phase === 'lobby') return;
     if (this.phase === 'playing') {
       this.roundTime += dt;
@@ -560,85 +566,14 @@ export class Game {
   }
 
   _moveActor(e, dt) {
-    const c = this.config;
-    const ox = e.x;
-    const oz = e.z;
-    const { keys } = e.input;
-    const ix = (keys.r ? 1 : 0) - (keys.l ? 1 : 0);
-    const iz = (keys.f ? 1 : 0) - (keys.b ? 1 : 0);
-    const len = Math.hypot(ix, iz);
-    let nx = e.x;
-    let nz = e.z;
-    if (len > 0) {
-      const speed = this.moveSpeedFor(e);
-      const s = Math.sin(e.yaw);
-      const co = Math.cos(e.yaw);
-      // forward = (-sin, -cos), right = (cos, -sin)
-      nx += ((co * ix - s * iz) / len) * speed * dt;
-      nz += ((-s * ix - co * iz) / len) * speed * dt;
-    }
-    // Walls, cover and doors push the body out; a terrain face taller than a step cannot be walked up (try sliding).
-    const feet = e.y;
-    const h0 = terrainHeight(e.x, e.z);
-    const onTerrain0 = this.field.groundAt(e.x, e.z, feet) <= h0 + 1e-6;
-    const place = (tx, tz) => {
-      const p = { x: tx, z: tz };
-      this.field.resolve(p, e.radius, feet, feet + e.height, e.team);
-      const h1 = terrainHeight(p.x, p.z);
-      if (h1 > feet + STEP + 1e-6) return null; // a terrain wall
-      // a terrain face too steep to walk up or down is a wall too (only between two spots on the terrain, not on a slab or step)
-      const run = Math.hypot(p.x - e.x, p.z - e.z);
-      if (Math.abs(h1 - h0) > MAX_SLOPE * run + 0.01 && onTerrain0 && this.field.groundAt(p.x, p.z, feet) <= h1 + 1e-6) return null;
-      return p;
-    };
-    const p = place(nx, nz) ?? place(nx, e.z) ?? place(e.x, nz) ?? place(e.x, e.z);
-    if (p) {
-      e.x = p.x;
-      e.z = p.z;
-    }
-    if (this.isHeld(e)) {
-      const pen = WORLD.pen;
-      e.x = clamp(e.x, pen.minX + e.radius, pen.maxX - e.radius);
-      e.z = clamp(e.z, pen.minZ + e.radius, pen.maxZ - e.radius);
-    }
-    // Vertical: stand on the ground (terrain or a ledge within a step), otherwise fall; jump from the ground.
-    const ground = this.field.groundAt(e.x, e.z, e.y);
-    if (e.vy <= 0 && e.y <= ground + (e.grounded ? STEP : 1e-3)) {
-      e.y = ground;
-      e.vy = 0;
-      e.grounded = true;
-      if (keys.jump) {
-        e.vy = c.jumpSpeed;
-        e.grounded = false;
-      }
-    } else e.grounded = false; // walked off a ledge: fall
-    if (!e.grounded) {
-      e.vy -= c.gravity * dt;
-      e.y += e.vy * dt;
-      if (e.vy <= 0) {
-        const g2 = this.field.groundAt(e.x, e.z, e.y);
-        if (e.y <= g2) {
-          e.y = g2;
-          e.vy = 0;
-          e.grounded = true;
-        }
-      }
-    }
-    for (const b of this._blockers ?? []) {
-      // solid plants (wall-nuts): slide around them instead of walking through
-      const bx = e.x - b.x;
-      const bz = e.z - b.z;
-      const min = b.radius + e.radius;
-      const d = Math.hypot(bx, bz);
-      if (d >= min) continue;
-      if (d < 1e-6) e.x = b.x + min;
-      else {
-        e.x = b.x + (bx / d) * min;
-        e.z = b.z + (bz / d) * min;
-      }
-    }
-    e.vx = (e.x - ox) / dt; // actual ground velocity (turrets use it to aim)
-    e.vz = (e.z - oz) / dt;
+    walkerStep(e, e.input.keys, dt, {
+      field: this.field,
+      speed: this.moveSpeedFor(e),
+      jumpSpeed: this.config.jumpSpeed,
+      gravity: this.config.gravity,
+      pen: this.isHeld(e) ? WORLD.pen : null,
+      blockers: this._blockers,
+    });
   }
 
   // ---- queries ---------------------------------------------------------------
@@ -672,6 +607,13 @@ export class Game {
     for (const f of OPTIONAL_FIELDS) if (e[f] !== undefined) o[f] = f === 'progress' ? round(e[f], 3) : e[f];
     if (e.state === 'wilted' || e.state === 'sprout' || e.state === 'destroyed') o.respawnIn = round(Math.max(0, e.timer), 1);
     if (e.slowTimer > 0) o.slowed = true;
+    if (e.kind === 'player') {
+      // what the owner's client needs to predict its own walking (client/predict.js): how many ticks ago the echoed input
+      // arrived, the fall speed while airborne, the slow factor while slowed
+      if (e.seqTick !== undefined) o.seqTicks = this.tickN - e.seqTick;
+      if (e.grounded === false) o.vy = round(e.vy, 2);
+      if (e.slowTimer > 0) o.slow = round(e.slowFactor ?? 0.5, 2);
+    }
     if (e.using) o.using = true;
     if (e.kind === 'mower') o.parts = partsMask(e.parts);
     if (e.kind === 'rack_item' && !e.available && e.heldBy === null) o.respawnIn = round(Math.max(0, e.timer), 1);

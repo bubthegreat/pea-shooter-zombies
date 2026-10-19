@@ -14,6 +14,7 @@ WORKDIR /app
 COPY package.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY server ./server
+COPY shared ./shared
 COPY client ./client
 
 # The node user is uid/gid 1000 (matches the pod securityContext).

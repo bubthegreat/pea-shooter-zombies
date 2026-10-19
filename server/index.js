@@ -12,6 +12,7 @@ import { LobbyManager, MAX_LOBBIES, MAX_LOBBIES_PER_IP, MAX_PLAYERS_PER_LOBBY, I
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_CLIENT_DIR = path.join(ROOT, 'client');
+const SHARED_DIR = path.join(ROOT, 'shared'); // pure modules the server and the client both run (collision, walking)
 const THREE_DIR = path.join(ROOT, 'node_modules', 'three');
 
 const DEFAULT_PORT = 8080;
@@ -59,6 +60,7 @@ function safeJoin(base, rel) {
 
 /** Map a URL pathname to a file path, or null. */
 function resolveStatic(pathname, clientDir) {
+  if (pathname.startsWith('/shared/')) return safeJoin(SHARED_DIR, pathname.slice(8));
   const addons = '/vendor/three/addons/';
   if (pathname.startsWith(addons)) {
     return safeJoin(path.join(THREE_DIR, 'examples', 'jsm'), pathname.slice(addons.length));

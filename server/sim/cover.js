@@ -84,7 +84,7 @@ export class Cover {
     collider._piece = piece;
     g.field.add(collider);
     this.pieces.set(id, piece);
-    g.emit('build', { id, kind: def.id, x: gx, z: gz, rot, by: owner.id, hp: hp0, maxHp: hp0 });
+    g.emit('build', { id, kind: def.id, x: gx, z: gz, rot, by: owner.id, hp: hp0, maxHp: hp0, y0: collider.y0, y1: collider.y1 });
     // anybody standing right where it appears is nudged out (placement already refuses fighters, this catches projectiles' owners etc.)
     return piece;
   }
@@ -200,7 +200,7 @@ export class Cover {
     const builds = [];
     for (const p of this.pieces.values()) {
       if (p.state !== 'alive') continue;
-      if (p.build) builds.push({ id: p.id, kind: p.build.kind, x: p.build.x, z: p.build.z, rot: p.build.rot, hp: Math.ceil(p.hp), maxHp: p.maxHp, by: p.build.by });
+      if (p.build) builds.push({ id: p.id, kind: p.build.kind, x: p.build.x, z: p.build.z, rot: p.build.rot, hp: Math.ceil(p.hp), maxHp: p.maxHp, by: p.build.by, y0: p.y0, y1: p.y1 });
       else if (p.hp < p.maxHp) hurt[p.id] = Math.ceil(p.hp);
     }
     return { round: this.round, gone: [...this.gone], hurt, builds };

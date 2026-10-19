@@ -1,6 +1,7 @@
 // Backyard Battle client: wires the network, input, scene and HUD together.
 import * as THREE from 'three';
 import { Net } from './net.js';
+import { Predictor } from './predict.js';
 import { Input } from './input.js';
 import { World, EntityLayer } from './scene.js';
 import { MapData } from './map.js';
@@ -54,6 +55,7 @@ const sound = new Sound();
 const loops = new LoopMixer(sound); // the only thing that drives the alarm / engine / tool loops (see soundstate.js)
 const hud = new HUD();
 const net = new Net();
+const predictor = new Predictor(); // walks our own body ahead of the server (see predict.js)
 const input = new Input(canvas);
 new TouchControls(input, hud); // phones/tablets: on-screen controls (no-op on desktop)
 
@@ -319,6 +321,7 @@ function loadMap(state) {
     renderer.shadowMap.needsUpdate = true;
   }
   S.map.reset(state || null);
+  predictor.setWorld(S.map, S.config);
   S.round = state && typeof state.round === 'number' ? state.round : null;
   world.cover.reset();
   world.cover.sync();
@@ -396,6 +399,9 @@ function enterGame() {
   S.joined = true;
   S.joinAt = performance.now();
   S.needYawSync = true;
+  predictor.reset();
+  S.predSnap = null;
+  S.predAt = 0;
   S.lastPhase = null;
   S.lastWeapon = null;
   S.lastSun = null;
@@ -416,7 +422,12 @@ function enterGame() {
   input.enabled = true;
   input.requestLock();
   // wait for the first snapshot (it carries our spawn facing) before sending look angles
-  input.startSending((m) => (S.joined && !S.needYawSync ? net.send(m) : false));
+  input.startSending((m) => {
+    if (!S.joined || S.needYawSync) return false;
+    const sent = net.send(m);
+    if (sent) predictor.noteSent(m.seq, performance.now());
+    return sent;
+  });
 }
 
 // button presses in the lobby screens (a click is also the browser's permission to play sounds / go fullscreen)
@@ -1082,6 +1093,24 @@ const groundFn = (x, z, y) => (world.map ? world.map.supportY(x, z, y) : 0);
 let lastMs = performance.now();
 const camTarget = new THREE.Vector3();
 
+/**
+ * Put our own body where we predict it is: reconcile with the server on each new snapshot, then walk this frame's keys with the
+ * server's own movement code. Dead or not yet synced, the interpolated server position stays.
+ */
+function predictOwn(own, nowMs, dt) {
+  const rec = net.latest;
+  if (rec && rec !== S.predSnap) {
+    S.predSnap = rec;
+    const raw = rec.map.get(String(own.id));
+    if (raw) predictor.reconcile(raw, rec.snap, nowMs);
+  }
+  // the real time since the last frame (a long frame is walked in full: the server kept walking us meanwhile)
+  const real = S.predAt ? Math.min(0.25, Math.max(0.0001, (nowMs - S.predAt) / 1000)) : dt;
+  S.predAt = nowMs;
+  if (!S.needYawSync) predictor.step(real, nowMs, input.keys, input.yaw);
+  predictor.place(own);
+}
+
 function frame() {
   requestAnimationFrame(frame);
   const nowMs = performance.now();
@@ -1101,6 +1130,7 @@ function frame() {
 
   const id = S.joined ? myId() : null;
   const view = S.joined ? net.view(nowMs, id) : null;
+  if (view && view.self) predictOwn(view.self, nowMs, dt);
   lastView = view;
   const snap = view ? view.snap : null;
   const own = view ? view.self : null;
@@ -1531,7 +1561,7 @@ function entityEffects(dt, nowMs, entities, own, usingSelf) {
 requestAnimationFrame(frame);
 
 // small debug handle (handy in the browser console)
-window.__bb = { net, input, world, layer, fx, sound, hud, state: S, camera, renderer };
+window.__bb = { net, input, world, layer, fx, sound, hud, state: S, camera, renderer, predictor };
 
 window.addEventListener('error', (e) => {
   if (!S.joined) lobby.setStatus('Oops: ' + (e.message || 'something went wrong'), true);
