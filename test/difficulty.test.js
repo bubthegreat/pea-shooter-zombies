@@ -39,7 +39,7 @@ test('Easy and Normal keep their old numbers', () => {
 });
 
 test('every zombie-side knob only ever gets harder from level to level', () => {
-  const rising = ['fireScale', 'waveBase', 'waveStep', 'speedScale', 'shootScale', 'lead', 'smart', 'focus', 'errand', 'mower'];
+  const rising = ['fireScale', 'waveBase', 'waveStep', 'speedScale', 'shootScale', 'lead', 'smart', 'focus', 'errand', 'mower', 'hp'];
   const falling = ['aimError', 'reaction'];
   for (let i = 1; i < IDS.length; i++) {
     const a = D[IDS[i - 1]];
@@ -50,7 +50,22 @@ test('every zombie-side knob only ever gets harder from level to level', () => {
   }
 });
 
-test('every Gardener knob only ever gets harder from Hard up, and two Gardeners from Nightmare', () => {
+test('plant-side toughness (doors, repair, plant HP / damage / fire rate, pots) only ever grows from level to level; Easy and Normal have none', () => {
+  const keys = ['door', 'repair', 'plantHp', 'plantDmg', 'plantRate', 'potHp'];
+  for (const id of ['easy', 'normal']) assert.deepEqual(D[id].tough, {}, id);
+  for (let i = 3; i < IDS.length; i++) {
+    for (const k of keys) {
+      assert.ok(D[IDS[i]].tough[k] >= D[IDS[i - 1]].tough[k], `${IDS[i]}.${k} >= ${IDS[i - 1]}`);
+      assert.ok(D[IDS[i]].tough[k] >= 1, `${IDS[i]}.${k} >= 1`);
+    }
+  }
+  for (const k of keys) assert.ok(D.hard.tough[k] >= 1 && D.hard.tough[k] <= 1.2, `Hard is only a little tougher: ${k} ${D.hard.tough[k]}`);
+  assert.deepEqual(D.insane.tough, { door: 3, repair: 1.5, plantHp: 2, plantDmg: 1.5, plantRate: 1.25, potHp: 3 }, 'Insane: doors x3, plants x2 HP x1.5 damage');
+  assert.ok(D.insane.hp > D.expert.hp && D.expert.hp > D.hard.hp - 1e-9 && D.hard.hp === 1 && D.easy.hp === 1 && D.normal.hp === 1, 'zombie bot HP scale');
+  assert.ok(D.insane.gardener.hp > D.hard.gardener.hp, 'Gardener HP grows');
+});
+
+test('every Gardener knob only ever gets harder from Hard up, and two Gardeners at Insane', () => {
   const g = (id) => ({ ...DEFAULT_CONFIG.gardener, ...D[id].gardener });
   assert.equal(g('easy').brain, 'basic');
   assert.equal(g('normal').brain, 'basic');
@@ -58,13 +73,14 @@ test('every Gardener knob only ever gets harder from Hard up, and two Gardeners 
     const a = g(IDS[i - 1]);
     const b = g(IDS[i]);
     assert.equal(b.brain, 'smart');
-    for (const k of ['speed', 'maxSunshine', 'fireScale', 'head', 'lead', 'strafe', 'tier', 'forts', 'pots', 'count', 'collect', 'repair']) assert.ok(b[k] >= a[k], `${IDS[i]}.${k} ${b[k]} >= ${a[k]}`);
+    for (const k of ['hp', 'speed', 'maxSunshine', 'fireScale', 'head', 'lead', 'strafe', 'tier', 'forts', 'pots', 'count', 'collect', 'repair']) assert.ok(b[k] >= a[k], `${IDS[i]}.${k} ${b[k]} >= ${a[k]}`);
     for (const k of ['aimError', 'reaction', 'upgradeInterval', 'think', 'respawn']) assert.ok(b[k] <= a[k], `${IDS[i]}.${k} ${b[k]} <= ${a[k]}`);
   }
   assert.equal(g('veryhard').count, 1);
   assert.equal(g('expert').count, 1);
-  assert.equal(g('nightmare').count, 2);
+  assert.equal(g('nightmare').count, 1);
   assert.equal(g('insane').count, 2);
+  assert.ok(g('insane').income <= g('hard').income, 'the passive sunshine trickle shrinks as the Gardeners learn to earn it (kills, pickups)');
   assert.equal(g('hard').collect, 0, 'Hard does not collect sunshine');
   assert.ok(g('insane').collect > g('expert').collect);
   assert.ok(g('hard').forts === 0 && g('veryhard').forts > 0 && g('expert').pots > 0 && g('hard').pots === 0);
@@ -119,7 +135,7 @@ test('waves grow with the level: the same wave brings more zombies on Insane tha
   assert.equal(sizes.easy, 3, 'Easy: 2 + 1');
   assert.equal(sizes.normal, 5, 'Normal: 4 + 1');
   for (let i = 1; i < IDS.length; i++) assert.ok(sizes[IDS[i]] >= sizes[IDS[i - 1]], `${IDS[i]} ${sizes[IDS[i]]} >= ${sizes[IDS[i - 1]]}`);
-  assert.ok(sizes.insane >= sizes.easy + 4 && sizes.insane > sizes.normal, JSON.stringify(sizes));
+  assert.ok(sizes.insane >= sizes.easy + 3 && sizes.insane >= sizes.normal, JSON.stringify(sizes));
 });
 
 function member(id, name = id) {

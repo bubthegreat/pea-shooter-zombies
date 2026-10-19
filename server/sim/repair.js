@@ -72,7 +72,7 @@ export function stepRepair(game, dt) {
     const t = work.get(pile) ?? 0;
     if (piece.state === 'alive') {
       piece.rebuildT = 0;
-      if (t > 0) game.cover.heal(piece, c.rate * t);
+      if (t > 0) game.cover.heal(piece, c.rate * (game.scaling?.plant.repair ?? 1) * t);
     } else if (t > 0) {
       piece.rebuildT = (piece.rebuildT ?? 0) + t;
       if (piece.rebuildT >= c.rebuildTime) {

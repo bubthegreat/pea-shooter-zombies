@@ -143,6 +143,8 @@ test('door HP from snapshots and the doorUp event keep the client doors in step'
   assert.equal(m.doors.get('door:back').alive, true);
   assert.equal(m.doors.get('door:back').hp, 55);
   assert.equal(m.setDoorHps([150, 220, 55, 360]), false);
+  assert.equal(m.setDoorHps([150, 220, 55, 360], [660, 660, 660, 1080]), true, 'a tougher level: the maximum changed');
+  assert.equal(m.doors.get('door:garage').maxHp, 1080);
   assert.equal(m.nearestDoorId(5, 3, 9), 'door:front');
   assert.equal(m.nearestDoorId(30, -40, 9), null);
 });

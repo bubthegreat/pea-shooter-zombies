@@ -494,7 +494,7 @@ function onSnap(snap) {
     world.cover.sync();
     buildCancel();
   } else if (typeof snap.round === 'number' && S.round === null) S.round = snap.round;
-  if (S.map && snap.doors && S.map.setDoorHps(snap.doors) && world.level) world.level.updateDoorBars(S.map.doors);
+  if (S.map && snap.doors && S.map.setDoorHps(snap.doors, snap.doorMax) && world.level) world.level.updateDoorBars(S.map.doors);
   for (const ev of evs) {
     if (!ev || typeof ev.type !== 'string') continue;
     // static-map changes are applied to the data right away (the ghost needs them); their visuals follow with the delay below
@@ -813,8 +813,8 @@ function repairPrompt(own) {
     if (key !== repairKey) {
       repairKey = key;
       const nm = doorName(p.door);
-      if (!d.alive) repairText = working ? `Rebuilding the ${nm}… ${Math.round(num(own.rebuild, 0) * 100)}% (stay still!)` : `Hold E to rebuild the ${nm}`;
-      else repairText = working ? `Repairing the ${nm}… ${Math.ceil(d.hp)} / ${d.maxHp} (stay still!)` : `Hold E to repair the ${nm} — ${Math.ceil(d.hp)} / ${d.maxHp}`;
+      if (!d.alive) repairText = working ? `Rebuilding ${nm}… ${Math.round(num(own.rebuild, 0) * 100)}% (stay still!)` : `Hold E to rebuild ${nm}`;
+      else repairText = working ? `Repairing ${nm}… ${Math.ceil(d.hp)} / ${d.maxHp} (stay still!)` : `Hold E to repair ${nm}`;
     }
     return repairText;
   }

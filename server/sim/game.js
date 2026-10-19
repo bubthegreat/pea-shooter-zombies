@@ -64,6 +64,7 @@ export class Game {
     this.mode = null;
     this.difficulty = null;
     this.winner = null;
+    this.scaling = null;
     this.roundTime = 0;
     this.wave = 0;
     this.slots = emptySlots();
@@ -77,11 +78,45 @@ export class Game {
     this.gardenerBank = [];
     this.headStart = 0;
     this.fridge = createFridge();
+    this.recomputeScaling();
   }
 
   difficultyConfig() {
     const d = this.config.difficulties;
     return d[this.difficulty] ?? d[this.config.defaultDifficulty];
+  }
+
+  /**
+   * Which side the level toughens, from who the humans are (recomputed at the start of a round and whenever a human joins or
+   * leaves; things that already exist keep what they were made with, so a change mid-round shows in what is created from then on):
+   *  - kids only on the plants  -> mode 'zombie': the zombie bots get the level's numbers, the plant side stays as it is;
+   *  - kids only on the zombies -> mode 'plant': doors, plants, pots and the Gardeners get the level's toughness, the zombie bots
+   *    (the kid's allies) stay at Normal;
+   *  - kids on both sides (versus) -> mode 'both': the zombie bots get the level's numbers and the plant side's toughness counts half;
+   *  - nobody yet -> as 'zombie'.
+   * this.scaling = { mode, zombie (the difficulty row for zombie-bot numbers), share (of the plant side's toughness), plant (multipliers) }.
+   */
+  recomputeScaling() {
+    let plant = 0;
+    let zombie = 0;
+    for (const e of this.entities.values()) {
+      if (e.kind !== 'player') continue;
+      if (e.team === 'zombie') zombie++;
+      else plant++;
+    }
+    const mode = zombie > 0 && plant === 0 ? 'plant' : zombie > 0 && plant > 0 ? 'both' : 'zombie';
+    const row = this.difficultyConfig();
+    const normal = this.config.difficulties.normal ?? row;
+    const share = mode === 'plant' ? 1 : mode === 'both' ? this.config.versusToughShare ?? 0.5 : 0;
+    const t = row.tough ?? {};
+    const m = (k) => 1 + ((t[k] ?? 1) - 1) * share;
+    this.scaling = { mode, zombie: mode === 'plant' ? normal : row, share, plant: { door: m('door'), repair: m('repair'), plantHp: m('plantHp'), plantDmg: m('plantDmg'), plantRate: m('plantRate'), potHp: m('potHp') } };
+    return this.scaling;
+  }
+
+  /** The difficulty row whose zombie-bot numbers apply (the lobby's level, or Normal when the kids are all zombies). */
+  zombieLevel() {
+    return this.scaling.zombie;
   }
 
   /** The Gardener tunables for this round's level: config.gardener with the level's overrides on top. */
@@ -129,6 +164,7 @@ export class Game {
     this.gardenerBank = [];
     this.headStart = this.config.features.headStart ? this.config.headStart : 0;
     this.fridge = createFridge();
+    this.recomputeScaling(); // who the humans are decides which side the level toughens
     this.cover.reset();
     createMower(this);
     createRack(this);
@@ -169,6 +205,7 @@ export class Game {
     const name = sanitizeName(o.name, this.config.defaultName, this.config.nameMaxLength);
     const p = this._makePlayer(id, name, team);
     this.entities.set(id, p);
+    this.recomputeScaling();
     if (first) this.startRound();
     else this._resetPlayer(p);
     return p;
@@ -188,6 +225,7 @@ export class Game {
     dropCarried(this, e, 'left');
     this.entities.delete(id);
     if (this.humans().length === 0) this._resetToLobby();
+    else this.recomputeScaling();
   }
 
   // ---- players ---------------------------------------------------------------
@@ -514,7 +552,7 @@ export class Game {
     const c = this.config;
     let speed;
     if (this.isDriving(e)) speed = c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
-    else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed * (this.difficultyConfig().speedScale ?? 1) : this.gardenerConfig().speed;
+    else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed * (this.zombieLevel().speedScale ?? 1) : this.gardenerConfig().speed;
     else speed = c.moveSpeed;
     if (e.slowTimer > 0) speed *= e.slowFactor ?? 0.5;
     if (e.item) speed *= c.equipment[e.item]?.speedScale ?? 1;
@@ -651,6 +689,7 @@ export class Game {
       headStart: round(this.headStart, 1),
       fridge: { m: round(this.fridge.meter, 3), n: this.fridge.n },
       doors: this.cover.doorHps(), // HP of front, side, back, garage (0 = broken)
+      doorMax: this.cover.doorMaxes(), // their full HP (the level can toughen them)
       winner: this.winner,
       roundTime: round(this.roundTime, 2),
       roundLength: this.config.roundLength,

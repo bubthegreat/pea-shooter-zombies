@@ -106,6 +106,6 @@ test('Input in touch mode: no pointer lock, "locked" follows requestLock/exitLoc
 
 test('mobilize: pot and repair hints', () => {
   assert.equal(mobilize('Press P to put a pot down'), 'Tap POT to put a pot down');
-  assert.equal(mobilize('Hold E to repair the Back Door — 120 / 220'), 'Hold USE to repair the Back Door — 120 / 220');
+  assert.equal(mobilize('Hold E to repair Back Door'), 'Hold USE to repair Back Door');
   assert.equal(mobilize('Press 1-3 to plant in this pot!'), 'Tap a seed card to plant in this pot!');
 });

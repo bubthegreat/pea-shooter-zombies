@@ -17,9 +17,9 @@ export function levelScale(c, level = 1) {
 }
 
 /** Max HP of a plant kind at a level. */
-export function plantMaxHp(c, kind, level = 1) {
+export function plantMaxHp(c, kind, level = 1, mult = 1) {
   const base = c.plantTypes[kind]?.hp ?? c.gardenPlantHp;
-  return Math.round(base * levelScale(c, level).hp);
+  return Math.round(base * levelScale(c, level).hp * mult);
 }
 
 /** Sunshine to raise a plant of `kind` from `level` to level + 1, or null at the top level. */
@@ -41,7 +41,7 @@ export function plantAt(game, idx, kind) {
   kind = kind ?? slot.kind;
   const type = c.plantTypes[kind];
   if (!type) return null;
-  const hp = plantMaxHp(c, kind, 1);
+  const hp = plantMaxHp(c, kind, 1, game.scaling?.plant.plantHp ?? 1);
   const e = {
     id: game.newId('g'),
     kind: 'garden',
@@ -175,7 +175,7 @@ export function tryUpgrade(game, player, target = null) {
   if (cost === null || !(player.sunshine >= cost)) return null;
   player.sunshine -= cost;
   plant.level = (plant.level ?? 1) + 1;
-  plant.maxHp = plantMaxHp(c, plant.plantKind, plant.level);
+  plant.maxHp = plantMaxHp(c, plant.plantKind, plant.level, game.scaling?.plant.plantHp ?? 1);
   plant.hp = plant.maxHp;
   game.emit('plantUp', { id: plant.id, plantKind: plant.plantKind, level: plant.level, x: plant.x, z: plant.z, by: player.id });
   return plant;
@@ -202,7 +202,8 @@ export function stepGarden(game, dt) {
     const type = c.plantTypes[g.plantKind];
     if (!type || type.noAttack) continue;
     const scale = levelScale(c, g.level ?? 1);
-    const rate = type.rate * scale.rate;
+    const mult = game.scaling?.plant ?? { plantDmg: 1, plantRate: 1 }; // the level's toughness for the plant side
+    const rate = type.rate * scale.rate * mult.plantRate;
     g.cooldown -= dt;
     // the nearest zombie it can see (walls, doors, hills and cover block the view)
     const muzzleY = g.y + (type.muzzle ?? c.turretMuzzleHeight);
@@ -250,7 +251,7 @@ export function stepGarden(game, dt) {
         team: 'plant',
         owner: g.id,
         projKind: type.projKind,
-        damage: type.damage * scale.damage,
+        damage: type.damage * scale.damage * mult.plantDmg,
         speed: type.speed,
         x: ox,
         y: oy,

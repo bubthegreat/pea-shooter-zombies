@@ -39,9 +39,9 @@ export function ensureAI(game, bot) {
     moving: false,
   };
   if (bot.team === 'zombie') {
-    bot.fireScale = bot.kind === 'player' ? bot.autopilotFireScale ?? 1 : game.difficultyConfig().fireScale; // an autopilot kid shoots at its own rate
+    bot.fireScale = bot.kind === 'player' ? bot.autopilotFireScale ?? 1 : game.zombieLevel().fireScale; // an autopilot kid shoots at its own rate
     const kid = bot.kind === 'player';
-    const diff = game.difficultyConfig();
+    const diff = game.zombieLevel();
     const itin = pickItinerary(game, bot, kid ? 0 : diff.smart ?? 0, kid ? 0 : diff.focus ?? 0);
     const errand = game.rng() < c.parts.botChance * (kid ? 1 : diff.errand ?? 1) ? {} : null; // fetch a part, install it, use what it powers
     bot.ai = { ...base, role: 'zombie', itin, mode: 'route', errand, coin: game.rng(), goal: null, goalKey: null };
@@ -83,6 +83,7 @@ export function spawnGardener(game, idx = 0) {
   bot.isGardener = true;
   bot.gardenerIdx = idx;
   bot.name = idx === 0 ? gc.name : `${gc.name} ${idx + 1}`;
+  if (gc.hp && gc.hp !== bot.maxHp) bot.hp = bot.maxHp = gc.hp;
   bot.sunshine = gc.brain === 'smart' && game.gardenerBank?.[idx] !== undefined ? game.gardenerBank[idx] : gc.startSunshine;
   ensureAI(game, bot);
   return bot;
@@ -264,7 +265,7 @@ function zombieGoal(game, b, ai, ctx) {
     if (g) return g;
   }
   if (m && m.parts && m.parts.battery && m.parts.gas && m.parts.plug) {
-    if (ai.seeksMower === undefined) ai.seeksMower = game.rng() < c.mowerBotChance * (b.kind === 'player' ? 1 : game.difficultyConfig().mower ?? 1);
+    if (ai.seeksMower === undefined) ai.seeksMower = game.rng() < c.mowerBotChance * (b.kind === 'player' ? 1 : game.zombieLevel().mower ?? 1);
     if (ai.seeksMower && m.state === 'idle') {
       if (dist2D(b.x, b.z, m.x, m.z) <= c.mowerUseRange - 0.3) b.input.use = true; // hold E: starts the engine
       return { x: m.x, z: m.z, stop: c.mowerBotStopDistance };
@@ -443,7 +444,7 @@ export function stepBots(game, dt) {
   if (c.features.gardener) stepGardenerSpawn(game, dt);
   if (!c.features.botAI) return;
 
-  const ctx = { diff: game.difficultyConfig(), smart: game.gardenerConfig().brain === 'smart', plantSide: [], zombieSide: [], gardenPlants: [] };
+  const ctx = { diff: game.zombieLevel(), smart: game.gardenerConfig().brain === 'smart', plantSide: [], zombieSide: [], gardenPlants: [] };
   const bots = [];
   for (const e of game.entities.values()) {
     if (e.kind === 'garden') {

@@ -143,10 +143,10 @@ export class MapData {
   }
 
   /**
-   * Door HP from a snapshot (`snap.doors`, in config.map.doors order, 0 = broken). Returns true when any door's HP or state
-   * changed (the bars above the doors redraw only then).
+   * Door HP from a snapshot (`snap.doors`, in config.map.doors order, 0 = broken) and their full HP (`snap.doorMax`: the level can
+   * toughen the doors). Returns true when any door's HP, maximum or state changed (the bars above the doors redraw only then).
    */
-  setDoorHps(arr) {
+  setDoorHps(arr, max = null) {
     if (!Array.isArray(arr)) return false;
     let changed = false;
     for (let i = 0; i < this.doorOrder.length; i++) {
@@ -154,9 +154,11 @@ export class MapData {
       const hp = arr[i];
       if (!p || typeof hp !== 'number') continue;
       const alive = hp > 0;
-      if (p.hp !== hp || p.alive !== alive) {
+      const m = max && typeof max[i] === 'number' && max[i] > 0 ? max[i] : p.maxHp;
+      if (p.hp !== hp || p.alive !== alive || p.maxHp !== m) {
         p.hp = hp;
         p.alive = alive;
+        p.maxHp = m;
         changed = true;
       }
     }

@@ -26,7 +26,8 @@ export class Cover {
     this.gone.clear();
     this.buildSeq = 0;
     this.round++;
-    for (const d of MAP.doors) this._make(d, g.config.doorHp[d.door] ?? g.config.doorHp.default, 'plant');
+    const doorMult = g.scaling?.plant.door ?? 1; // the level's door toughness (when the kids are on the zombie side)
+    for (const d of MAP.doors) this._make(d, Math.round((g.config.doorHp[d.door] ?? g.config.doorHp.default) * doorMult), 'plant');
     if (g.config.features.cover) for (const c of MAP.cover) this._make(c, g.config.cover[c.kind]?.hp ?? 50, null);
   }
 
@@ -73,16 +74,17 @@ export class Cover {
     const g = this.game;
     const f = footprint(def, rot);
     const id = `b${++this.buildSeq}`;
+    const hp0 = def.pot ? Math.round(def.hp * (g.scaling?.plant.potHp ?? 1)) : def.hp; // pots get the level's toughness too
     const collider = { id, kind: def.id, s: 'box', minX: gx, maxX: gx + f.w, minZ: gz, maxZ: gz + f.d, y0: Math.round((chk.lo - 0.3) * 100) / 100, y1: Math.round((chk.hi + def.h) * 100) / 100, style: def.id, _piece: null };
     const piece = {
-      id, kind: def.id, def: collider, team: owner.team, hp: def.hp, maxHp: def.hp, state: 'alive', collider,
+      id, kind: def.id, def: collider, team: owner.team, hp: hp0, maxHp: hp0, state: 'alive', collider,
       x: gx + f.w / 2, z: gz + f.d / 2, y0: collider.y0, y1: collider.y1, step: 0,
       build: { kind: def.id, x: gx, z: gz, rot, by: owner.id },
     };
     collider._piece = piece;
     g.field.add(collider);
     this.pieces.set(id, piece);
-    g.emit('build', { id, kind: def.id, x: gx, z: gz, rot, by: owner.id, hp: def.hp, maxHp: def.hp });
+    g.emit('build', { id, kind: def.id, x: gx, z: gz, rot, by: owner.id, hp: hp0, maxHp: hp0 });
     // anybody standing right where it appears is nudged out (placement already refuses fighters, this catches projectiles' owners etc.)
     return piece;
   }
@@ -155,6 +157,14 @@ export class Cover {
     this.gone.delete(piece.id);
     g.emit('doorUp', { id: piece.id, hp: Math.ceil(piece.hp), maxHp: piece.maxHp, x: round2(piece.x), z: round2(piece.z) });
     return true;
+  }
+
+  /** Maximum HP of the four doors (they depend on the level), in WORLD.doors order. */
+  doorMaxes() {
+    return WORLD.doors.map((d) => {
+      const p = this.pieces.get(`door:${d.id}`);
+      return p ? p.maxHp : this.game.config.doorHp[d.id] ?? this.game.config.doorHp.default;
+    });
   }
 
   /** Door HP for the snapshot, in WORLD.doors order: 0 = broken. */

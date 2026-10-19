@@ -35,12 +35,13 @@ function anyZombieAlive(game) {
 function spawnWave(game, number, final) {
   const c = game.config;
   const gate = WORLD.gate;
-  const diff = game.difficultyConfig();
+  const diff = game.zombieLevel();
   const wanted = Math.round(diff.waveBase + number * (diff.waveStep ?? 1));
   const size = Math.max(0, Math.min(wanted, Math.min(c.maxZombieBots, diff.maxBots ?? c.maxZombieBots) - zombieBotCount(game)));
   const focus = (diff.focus ?? 0) > 0 && size > 0 ? weakestDoor(game)?.id ?? null : null; // the wave's weakest door: a share of it goes there together
   for (let i = 0; i < size; i++) {
     const bot = game.spawnBot('zombie', gate.minX + game.rng() * (gate.maxX - gate.minX), gate.z);
+    if ((diff.hp ?? 1) !== 1) bot.hp = bot.maxHp = c.zombieHp * diff.hp; // tougher bots on the harder levels
     if (focus) bot.focusDoor = focus;
   }
   game.wave = number;

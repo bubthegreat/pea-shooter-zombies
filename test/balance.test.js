@@ -49,7 +49,7 @@ test('Easy and Normal keep their old feel: a decent plant kid wins Easy most rou
   assert.ok(t.decent.easy.zombieWins <= t.decent.normal.zombieWins + 1, 'Easy is no harder than Normal');
 });
 
-test('the ladder for plant kids rises with the level: the zombies win more and sooner, level after level (a good kid and a decent kid)', async () => {
+test('the ladder for plant kids rises with the level: the zombie bots get tougher and the kid loses more and sooner, level after level (a good kid and a decent kid)', async () => {
   const t = await table(['decent', 'good']);
   for (const kind of ['decent', 'good']) {
     for (let i = 1; i < LEVEL_IDS.length; i++) {
@@ -67,22 +67,23 @@ test('the ladder for plant kids rises with the level: the zombies win more and s
   assert.ok(t.good.easy.zombieWins <= 2 && t.good.hard.zombieWins >= 1 && t.good.hard.zombieWins <= 8 && t.good.insane.zombieWins >= 10, line(t, 'good'));
 });
 
-test('the ladder for zombie kids falls with the level: a decent zombie kid beats the Gardener less and less (Normal up; the Gardener is the same on Easy and Normal)', async () => {
+test('the ladder for zombie kids falls with the level: the level toughens the Gardener(s) and the plant side, the kid\'s zombie allies stay at Normal', async () => {
   const t = await table(['zraid', 'zsolo']);
-  const levels = LEVEL_IDS.slice(1); // normal .. insane
-  for (let i = 1; i < levels.length; i++) {
-    const a = t.zraid[levels[i - 1]];
-    const b = t.zraid[levels[i]];
-    assert.ok(b.zombieWins <= a.zombieWins + 3, `zraid: ${levels[i]} (${pct(b)}) is not much easier for the zombies than ${levels[i - 1]} (${pct(a)})\n${line(t, 'zraid')}`);
-  }
+  assert.equal(t.zraid.easy.zombieWins, t.zraid.normal.zombieWins, 'Easy and Normal: same plant side, same Normal allies -> the very same rounds');
+  assert.equal(t.zsolo.easy.zombieWins, t.zsolo.normal.zombieWins);
   for (let i = 1; i < LEVEL_IDS.length; i++) {
-    const a = t.zsolo[LEVEL_IDS[i - 1]];
-    const b = t.zsolo[LEVEL_IDS[i]];
-    assert.ok(b.zombieWins <= a.zombieWins + 3, `zsolo: ${LEVEL_IDS[i]} (${pct(b)}) vs ${LEVEL_IDS[i - 1]} (${pct(a)})\n${line(t, 'zsolo')}`);
+    for (const kind of ['zraid', 'zsolo']) {
+      const a = t[kind][LEVEL_IDS[i - 1]];
+      const b = t[kind][LEVEL_IDS[i]];
+      assert.ok(b.zombieWins <= a.zombieWins + 3, `${kind}: ${LEVEL_IDS[i]} (${pct(b)}) is not much easier for the zombie kid than ${LEVEL_IDS[i - 1]} (${pct(a)})\n${line(t, kind)}`);
+    }
+    const a = t.zraid[LEVEL_IDS[i - 1]];
+    const b = t.zraid[LEVEL_IDS[i]];
+    assert.ok(b.meanT >= a.meanT - 40, `zraid: rounds do not get shorter at ${LEVEL_IDS[i]} (${pct(b)}) than at ${LEVEL_IDS[i - 1]} (${pct(a)})`);
   }
-  assert.ok(t.zraid.normal.zombieWins >= 7, `Normal Gardener is beaten most rounds: ${pct(t.zraid.normal)}`);
+  assert.ok(t.zraid.normal.zombieWins >= 7, `the Normal (basic) Gardener is beaten most rounds: ${pct(t.zraid.normal)}`);
   assert.ok(t.zraid.insane.zombieWins <= 2 && t.zsolo.insane.zombieWins <= 1, `Insane Gardeners hold: ${pct(t.zraid.insane)} / ${pct(t.zsolo.insane)}`);
-  assert.ok(t.zraid.hard.zombieWins < t.zraid.normal.zombieWins + 1 && t.zraid.veryhard.zombieWins < t.zraid.normal.zombieWins, line(t, 'zraid'));
+  assert.ok(t.zraid.hard.zombieWins >= t.zraid.nightmare.zombieWins + 3, `a real spread: ${line(t, 'zraid')}`);
 });
 
 test('zombies come by all three routes and reach the doors; a lazy plant kid (front lawn only) loses to the back routes', async () => {

@@ -308,9 +308,10 @@ export function runRound(seed, sc, overrides = {}) {
   const cfg = { ...base, ...overrides, features: { ...base.features, ...(overrides.features ?? {}), ...(sc.features ?? {}) } };
   if (sc.autopilot) cfg.autopilot = { ...cfg.autopilot, ...sc.autopilot }; // a different kid
   const g = new Game(cfg, rngFor(seed * 7919 + 13));
+  // like a lobby: everybody is seated first, so the level knows which side the kids are on when the round's doors and bots are made
+  g.startMatch({ mode: sc.mode, difficulty: sc.difficulty, players: sc.humans.map((spec, i) => ({ id: i === 0 ? 'h' : 'k', name: i === 0 ? 'Kid' : 'Kid2', team: spec.team })) });
   const humans = sc.humans.map((spec, i) => {
     const id = i === 0 ? 'h' : 'k';
-    g.addPlayer(id, { team: spec.team, mode: sc.mode, difficulty: sc.difficulty });
     const me = g.entities.get(id);
     if (spec.autoPlant) {
       // a plant kid played by the Gardener's planner (bots.js autopilotPlant), with a human's gun and its own profile

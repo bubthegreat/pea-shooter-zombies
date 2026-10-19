@@ -40,8 +40,8 @@ test('Easy and Normal keep the basic Gardener (one, walks the slots); Hard and u
   }
 });
 
-test('one Gardener up to Expert, two from Nightmare: named, indexed, back after respawn, each with its own sunshine', () => {
-  for (const [level, n] of [['hard', 1], ['veryhard', 1], ['expert', 1], ['nightmare', 2], ['insane', 2]]) {
+test('one Gardener up to Nightmare, two at Insane: named, indexed, back after respawn, each with its own sunshine', () => {
+  for (const [level, n] of [['hard', 1], ['veryhard', 1], ['expert', 1], ['nightmare', 1], ['insane', 2]]) {
     const { game, z } = gameAt(level);
     run(game, 0.5);
     const gs = gardeners(game);

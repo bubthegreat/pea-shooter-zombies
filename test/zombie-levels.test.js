@@ -28,8 +28,8 @@ test('zombie bots walk faster on harder levels (speedScale)', () => {
     dist[level] = Math.hypot(b.x, b.z - WORLD.gate.z);
   }
   assert.ok(Math.abs(dist.easy - dist.normal) < 0.3, 'Easy and Normal walk at the same speed');
-  assert.ok(dist.insane > dist.normal * 1.1, `insane ${dist.insane.toFixed(1)} vs normal ${dist.normal.toFixed(1)}`);
-  assert.ok(Math.abs(dist.insane / dist.normal - D.insane.speedScale) < 0.08, 'by about the table factor');
+  assert.ok(dist.insane > dist.normal * 1.03, `insane ${dist.insane.toFixed(1)} vs normal ${dist.normal.toFixed(1)}`);
+  assert.ok(Math.abs(dist.insane / dist.normal - D.insane.speedScale) < 0.05, 'by about the table factor');
 });
 
 test('smart bots pick the weakest way in: with the front door unguarded and the rest stocked, Insane sends most of a wave to the front', () => {

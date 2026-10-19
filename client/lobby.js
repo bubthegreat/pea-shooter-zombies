@@ -238,7 +238,7 @@ export class Lobby {
     const isHost = room.host === this.you;
     setText($('roomname'), room.name);
     setText($('roommode'), modeLabel(room.mode));
-    setText($('roomdiff'), `${diffLabel(room.difficulty)} bots`);
+    setText($('roomdiff'), `${diffLabel(room.difficulty)} level`);
     setText($('roomcount'), `(${room.players.length})`);
     const box = $('roomplayers');
     box.textContent = '';
