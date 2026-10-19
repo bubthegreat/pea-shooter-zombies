@@ -8,7 +8,7 @@ import { potRules } from './pots.js';
 
 export const DEFAULT_CONFIG = {
   tickRate: 30,
-  snapRate: 20,
+  snapRate: 30, // snapshots per second: tickRate divided by a whole number, so they leave on every Nth tick, evenly spaced
   maxDt: 0.1, // clamp for one tick() call
   roundLength: 480, // seconds from night to sunrise
 

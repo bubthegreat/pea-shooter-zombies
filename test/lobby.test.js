@@ -412,3 +412,28 @@ test('list and lobbyState are plain JSON with no internals', () => {
   const json = JSON.stringify([mgr.list(), a.last('lobbyState')]);
   assert.ok(!/cid|tok|sent|raws/.test(json), json);
 });
+
+test('snapshots leave evenly spaced in sim time (every Nth tick), whatever the wall-clock jitter', () => {
+  for (const snapRate of [30, 15, 20]) {
+    const clock = { t: 1000 };
+    const mgr = new LobbyManager({
+      config: { ...DEFAULT_CONFIG, snapRate, features: { ...NO_FEATURES } },
+      rng: mulberry32(7),
+      now: () => clock.t,
+    });
+    const a = member('p1');
+    mgr.create(a, {});
+    mgr.start(a);
+    const rnd = mulberry32(snapRate);
+    for (let i = 0; i < 90; i++) {
+      clock.t += STEP * 1000 * (0.6 + rnd() * 0.8); // an uneven timer: some steps run 0, some 2 ticks
+      mgr.step(clock.t);
+    }
+    const times = a.snaps().map((s) => s.time);
+    assert.ok(times.length > 10, `rate ${snapRate}: ${times.length} snapshots`);
+    const gaps = new Set(times.slice(1).map((t, i) => t - times[i]));
+    const ticks = Math.max(1, Math.round(DEFAULT_CONFIG.tickRate / snapRate));
+    const want = (1000 / DEFAULT_CONFIG.tickRate) * ticks;
+    for (const g of gaps) assert.ok(Math.abs(g - want) <= 1.5, `rate ${snapRate}: gap ${g} ms, want ${want}`);
+  }
+});

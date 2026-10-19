@@ -480,7 +480,6 @@ net.connect();
 /* events from the server                                              */
 /* ------------------------------------------------------------------ */
 
-const EVENT_DELAY = 100; // match the interpolation delay so effects line up with visuals
 
 function onSnap(snap) {
   const evs = Array.isArray(snap.events) ? snap.events : [];
@@ -534,7 +533,7 @@ function onSnap(snap) {
     } else if (ev.type === 'plantUp' && me !== null && ev.by !== undefined && ev.by !== null && String(ev.by) === me) {
       hud.toast(`${plantName(ev.plantKind)} grew to level ${num(ev.level, 2)}! ${stars(num(ev.level, 2))}`, 2200);
     }
-    S.pending.push({ ev, due: now + EVENT_DELAY });
+    S.pending.push({ ev, due: net.dueAt(snap.time, now) }); // when the render clock reaches the snapshot, so effects line up with visuals
   }
   if (S.pending.length > 300) S.pending.splice(0, S.pending.length - 300);
 }
@@ -1101,7 +1100,7 @@ function frame() {
   }
 
   const id = S.joined ? myId() : null;
-  const view = S.joined ? net.view(nowMs, id, 100, 45) : null;
+  const view = S.joined ? net.view(nowMs, id) : null;
   lastView = view;
   const snap = view ? view.snap : null;
   const own = view ? view.self : null;

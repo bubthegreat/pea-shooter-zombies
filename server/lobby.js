@@ -96,7 +96,8 @@ export class LobbyManager {
     this.recent = new Map(); // client token -> { lobbyId, name, team, until }
     this.nextId = 1;
     this.tickStep = 1 / this.config.tickRate;
-    this.snapStep = 1 / this.config.snapRate;
+    // a snapshot leaves on every Nth tick (N whole), so their sim times are evenly spaced; a fractional ratio would alternate gaps
+    this.snapStep = Math.max(1, Math.round(this.config.tickRate / this.config.snapRate)) * this.tickStep;
   }
 
   // ---- queries ---------------------------------------------------------------
