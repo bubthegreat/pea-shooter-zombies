@@ -282,7 +282,11 @@ function wiltPlantFighter(game, target, attacker, head = false) {
   } else {
     target.state = 'dead';
     game.entities.delete(target.id);
-    if (target.isGardener) game.gardenerTimer = c.gardener.respawn;
+    if (target.isGardener) {
+      const gc = game.gardenerConfig();
+      game.gardenerTimers[target.gardenerIdx ?? 0] = gc.respawn;
+      if (gc.brain === 'smart') (game.gardenerBank ??= [])[target.gardenerIdx ?? 0] = target.sunshine; // its sunshine waits for it: dying costs time, not a refill
+    }
   }
   creditKill(game, attacker);
 }

@@ -7,11 +7,14 @@
 // same graph.
 import { WORLD } from './world.js';
 import { tryPlant, tryUpgrade, upgradeCost } from './garden.js';
-import { planRoute, chooseItinerary } from './nav.js';
-import { dist2D, rightVec, forwardVec, yawTo } from './vec.js';
+import { planRoute, chooseItinerary, itineraryToDoor } from './nav.js';
+import { doorStrength } from './intel.js';
+import { getWeapon } from './weapons.js';
+import { smartGardenerBrain } from './gardener.js';
+import { dist2D, yawTo } from './vec.js';
+import { EYE_LOS, nearestVisible, setMoveKeys, nextPoint, setPath, checkStuck, pieceTarget, blockerPiece } from './botkit.js';
 
 const isFighter = (e) => e.kind === 'player' || e.kind === 'bot';
-const EYE_LOS = 1.4;
 
 /** Create the brain for a bot that has none (new spawns). Plant-team bots other than the Gardener are inert. */
 export function ensureAI(game, bot) {
@@ -37,83 +40,80 @@ export function ensureAI(game, bot) {
   };
   if (bot.team === 'zombie') {
     bot.fireScale = bot.kind === 'player' ? bot.autopilotFireScale ?? 1 : game.difficultyConfig().fireScale; // an autopilot kid shoots at its own rate
-    const itin = chooseItinerary(game.rng);
-    const errand = game.rng() < c.parts.botChance ? {} : null; // fetch a part, install it, use what it powers
+    const kid = bot.kind === 'player';
+    const diff = game.difficultyConfig();
+    const itin = pickItinerary(game, bot, kid ? 0 : diff.smart ?? 0, kid ? 0 : diff.focus ?? 0);
+    const errand = game.rng() < c.parts.botChance * (kid ? 1 : diff.errand ?? 1) ? {} : null; // fetch a part, install it, use what it powers
     bot.ai = { ...base, role: 'zombie', itin, mode: 'route', errand, coin: game.rng(), goal: null, goalKey: null };
     bot.ai.path = itin.nodes.slice();
   } else {
-    bot.fireScale = c.gardener.fireScale;
-    bot.ai = { ...base, role: bot.isGardener ? 'gardener' : 'inert', slotIdx: -1, upId: null, upTimer: c.gardener.upgradeInterval, dest: null };
+    bot.fireScale = bot.autopilotPlant ? bot.gardenerCfg?.fireScale ?? 1 : game.gardenerConfig().fireScale;
+    bot.ai = { ...base, role: bot.isGardener || bot.autopilotPlant ? 'gardener' : 'inert', slotIdx: -1, upId: null, upTimer: c.gardener.upgradeInterval, dest: null };
   }
   return bot.ai;
 }
 
-function findGardener(game) {
-  for (const e of game.entities.values()) if (e.kind === 'bot' && e.isGardener) return e;
-  return null;
+/**
+ * The way in for a new zombie bot. Easy / Normal (smart 0): the fixed route odds. Higher levels weigh every door by how weak its
+ * defence is (`smart`), and `focus` of a wave goes for the wave's weakest door together (grouping on one door).
+ */
+function pickItinerary(game, bot, smart, focus) {
+  if (focus > 0 && bot.focusDoor && game.rng() < focus) return itineraryToDoor(game.rng, bot.focusDoor);
+  if (smart > 0) {
+    const ds = doorStrength(game);
+    const avg = ds.reduce((a, d) => a + d.weak, 0) / ds.length;
+    return chooseItinerary(game.rng, (door) => {
+      const d = ds.find((x) => x.id === door);
+      return d ? Math.pow(d.weak / avg, 2 * smart) : 1;
+    });
+  }
+  return chooseItinerary(game.rng);
 }
 
-export function spawnGardener(game) {
-  const c = game.config;
+function findGardeners(game) {
+  const out = [];
+  for (const e of game.entities.values()) if (e.kind === 'bot' && e.isGardener) out.push(e);
+  return out;
+}
+
+export function spawnGardener(game, idx = 0) {
+  const gc = game.gardenerConfig();
   const spawn = WORLD.plantSpawn;
   const bot = game.spawnBot('plant', spawn.x + (game.rng() * 2 - 1) * 1.5, spawn.z);
   bot.isGardener = true;
-  bot.name = c.gardener.name;
-  bot.sunshine = c.gardener.startSunshine;
+  bot.gardenerIdx = idx;
+  bot.name = idx === 0 ? gc.name : `${gc.name} ${idx + 1}`;
+  bot.sunshine = gc.brain === 'smart' && game.gardenerBank?.[idx] !== undefined ? game.gardenerBank[idx] : gc.startSunshine;
   ensureAI(game, bot);
   return bot;
 }
 
-/** Exactly one Gardener while no human plays plants; none otherwise. It comes back a while after it wilts. */
+/**
+ * The Gardeners: while no human plays plants there are `gardener.count` of them (one on Easy..Very Hard, two from Expert).
+ * Each comes back a while after it wilts.
+ */
 function stepGardenerSpawn(game, dt) {
-  const gardener = findGardener(game);
+  const gardeners = findGardeners(game);
   const plantHumans = game.humans().some((h) => h.team === 'plant');
   if (plantHumans) {
-    if (gardener) game.removeEntity(gardener);
-    game.gardenerTimer = 0;
+    for (const g of gardeners) game.removeEntity(g);
+    game.gardenerTimers.length = 0;
     return;
   }
-  if (gardener) return;
-  if (game.gardenerTimer > 0) {
-    game.gardenerTimer -= dt;
-    if (game.gardenerTimer > 0) return;
+  const gc = game.gardenerConfig();
+  const want = gc.brain === 'smart' ? Math.max(1, gc.count | 0) : 1;
+  for (let i = 0; i < want; i++) {
+    if (gardeners.some((g) => (g.gardenerIdx ?? 0) === i)) continue;
+    if ((game.gardenerTimers[i] ?? 0) > 0) {
+      game.gardenerTimers[i] -= dt;
+      if (game.gardenerTimers[i] > 0) continue;
+    }
+    spawnGardener(game, i);
   }
-  spawnGardener(game);
-}
-
-/** Nearest living entity of `list` within maxDist that the bot can see (up to the 4 closest are line-of-sight checked). */
-function nearestVisible(game, b, list, maxDist) {
-  const near = [];
-  for (const e of list) {
-    if (e.state !== 'alive') continue;
-    const d = dist2D(b.x, b.z, e.x, e.z);
-    if (d <= maxDist) near.push([d, e]);
-  }
-  near.sort((p, q) => p[0] - q[0]);
-  for (let i = 0; i < Math.min(4, near.length); i++) {
-    const t = near[i][1];
-    if (game.field.clearLine(b.x, b.y + EYE_LOS, b.z, t.x, t.y + t.height * game.config.turretAimHeight, t.z, b.team)) return t;
-  }
-  return null;
-}
-
-/** Convert a world-space walking direction into f/b/l/r keys relative to the bot's yaw. */
-function setMoveKeys(b, dx, dz) {
-  const k = b.input.keys;
-  k.f = k.b = k.l = k.r = false;
-  if (dx === 0 && dz === 0) return;
-  const fwd = forwardVec(b.yaw);
-  const right = rightVec(b.yaw);
-  const f = dx * fwd.x + dz * fwd.z;
-  const r = dx * right.x + dz * right.z;
-  if (f > 0.35) k.f = true;
-  else if (f < -0.35) k.b = true;
-  if (r > 0.35) k.r = true;
-  else if (r < -0.35) k.l = true;
 }
 
 /** Aim at a target (anything with x, y, z, height) with the bot's current (periodically re-rolled) error. */
-function aimAt(game, b, ai, t, aimError, dt) {
+function aimAt(game, b, ai, t, aimError, dt, lead = 0) {
   const c = game.config;
   ai.errTimer -= dt;
   if (ai.errTimer <= 0) {
@@ -121,87 +121,23 @@ function aimAt(game, b, ai, t, aimError, dt) {
     ai.errYaw = (game.rng() * 2 - 1) * aimError;
     ai.errPitch = (game.rng() * 2 - 1) * aimError;
   }
-  const dx = t.x - b.x;
-  const dz = t.z - b.z;
+  let tx = t.x;
+  let tz = t.z;
+  if (lead > 0 && (t.vx || t.vz)) {
+    // aim where a moving target will be when the shot arrives
+    const flight = Math.hypot(t.x - b.x, t.z - b.z) / (getWeapon(b.weapon)?.speed ?? 20);
+    tx += (t.vx ?? 0) * flight * lead;
+    tz += (t.vz ?? 0) * flight * lead;
+  }
+  const dx = tx - b.x;
+  const dz = tz - b.z;
   const dy = t.y + t.height * c.turretAimHeight - (b.y + c.eyeHeight);
   b.yaw = yawTo(dx, dz) + ai.errYaw;
   b.pitch = Math.atan2(dy, Math.hypot(dx, dz)) + ai.errPitch;
 }
 
-/** The next point of the bot's path it still has to reach, or null when the path is done. */
-function nextPoint(b, ai, stop) {
-  while (ai.pi < ai.path.length) {
-    const wp = ai.path[ai.pi];
-    const last = ai.pi === ai.path.length - 1;
-    if (Math.hypot(wp.x - b.x, wp.z - b.z) < (last ? stop : 0.8)) {
-      ai.pi++;
-      continue;
-    }
-    return wp;
-  }
-  return null;
-}
-
-function setPath(ai, pts) {
-  ai.path = pts;
-  ai.pi = 0;
-}
-
-/** A pseudo-target for aiming at a destructible piece (a door, a gravestone). */
-function pieceTarget(piece) {
-  const mid = Math.min(piece.y1, piece.y0 + 1.4);
-  return { x: piece.x, z: piece.z, y: piece.y0, height: Math.max(0.5, (mid - piece.y0) / 0.6) };
-}
-
-/**
- * Stuck detection (every think tick): a bot that wants to move but isn't making progress shoots the destructible thing in
- * front of it, or else sidesteps and jumps.
- */
-function checkStuck(game, b, ai, dir, speed) {
-  const c = game.config;
-  const dt = c.botThinkInterval;
-  const moved = Math.hypot(b.x - ai.lx, b.z - ai.lz);
-  ai.lx = b.x;
-  ai.lz = b.z;
-  if (!ai.moving || ai.blocker) {
-    ai.stuck = 0;
-    return;
-  }
-  if (moved < speed * dt * 0.3) ai.stuck += dt;
-  else {
-    ai.stuck = 0;
-    return;
-  }
-  if (ai.stuck < c.botStuckTime) return;
-  const hit = dir ? game.field.segment(b.x, b.y + 1.0, b.z, b.x + dir.x * 2.6, b.y + 1.0, b.z + dir.z * 2.6, 0.1, b.team) : null;
-  const piece = hit ? game.cover.pieceOf(hit.c) : null;
-  if (piece && game.cover.canHurt(piece, b.team)) {
-    ai.blocker = piece.id;
-    ai.stuck = 0;
-    return;
-  }
-  ai.side = ai.side === 0 ? (game.rng() < 0.5 ? -1 : 1) : -ai.side;
-  ai.sideT = 0.9;
-  ai.jump = true;
-  if (ai.stuck > 2.5) {
-    ai.replan = 0; // find another way
-    ai.stuck = 0;
-  }
-}
-
-/** The piece a bot is shooting its way through, if it is still standing. */
-function blockerPiece(game, ai) {
-  if (!ai.blocker) return null;
-  const p = game.cover.get(ai.blocker);
-  if (!p || p.state !== 'alive') {
-    ai.blocker = null;
-    return null;
-  }
-  return p;
-}
-
 /** Walk-and-shoot step shared by every roaming bot. `target` is the thing to shoot (entity or piece pseudo-target) or null. */
-function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true, noFire = false }) {
+function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true, noFire = false, lead = 0 }) {
   const inp = b.input;
   const wp = canMove ? nextPoint(b, ai, stop) : null;
   let dir = { x: 0, z: 0 };
@@ -226,7 +162,7 @@ function moveAndShoot(game, b, ai, dt, { target, aimError, stop, canMove = true,
     }
   }
   if (target) {
-    aimAt(game, b, ai, target, aimError, dt);
+    aimAt(game, b, ai, target, aimError, dt, lead);
     ai.react -= dt;
     inp.fire = ai.react <= 0;
   } else if (ai.moving) {
@@ -328,7 +264,7 @@ function zombieGoal(game, b, ai, ctx) {
     if (g) return g;
   }
   if (m && m.parts && m.parts.battery && m.parts.gas && m.parts.plug) {
-    if (ai.seeksMower === undefined) ai.seeksMower = game.rng() < c.mowerBotChance;
+    if (ai.seeksMower === undefined) ai.seeksMower = game.rng() < c.mowerBotChance * (b.kind === 'player' ? 1 : game.difficultyConfig().mower ?? 1);
     if (ai.seeksMower && m.state === 'idle') {
       if (dist2D(b.x, b.z, m.x, m.z) <= c.mowerUseRange - 0.3) b.input.use = true; // hold E: starts the engine
       return { x: m.x, z: m.z, stop: c.mowerBotStopDistance };
@@ -341,7 +277,7 @@ function zombieGoal(game, b, ai, ctx) {
 
 function zombieBrain(game, b, ai, ctx, dt) {
   const c = game.config;
-  const diff = ctx.diff;
+  const diff = b.kind === 'player' ? c.autopilot : ctx.diff; // a kid on autopilot keeps its own skill at every level
   const inp = b.input;
   inp.fire = false;
   inp.use = false;
@@ -356,7 +292,7 @@ function zombieBrain(game, b, ai, ctx, dt) {
   if (ai.think <= 0) {
     ai.think += c.botThinkInterval;
     // who to shoot: the closest plant-side thing in sight (a tool in hand just swings at what it walks up to)
-    const t = b.item ? null : nearestVisible(game, b, ctx.plantSide, c.zombieBotShootRange);
+    const t = b.item ? null : nearestVisible(game, b, ctx.plantSide, c.zombieBotShootRange * (diff.shootScale ?? 1));
     const id = t ? t.id : null;
     if (id !== ai.targetId) {
       ai.targetId = id;
@@ -417,7 +353,7 @@ function zombieBrain(game, b, ai, ctx, dt) {
   const atFridge = ai.mode === 'inside' && !goal && dist2D(b.x, b.z, f.x, f.z) < 1.0;
   const stop = goal ? goal.stop : ai.mode === 'route' ? 1.2 : 0.8;
   const standBy = Boolean(goal && goal.stop >= 99);
-  moveAndShoot(game, b, ai, dt, { target, aimError: b.item ? 0 : diff.aimError, stop, canMove: !atFridge && !blocker && !standBy, noFire: fire === false });
+  moveAndShoot(game, b, ai, dt, { target, aimError: b.item ? 0 : diff.aimError, stop, canMove: !atFridge && !blocker && !standBy, noFire: fire === false, lead: b.item ? 0 : diff.lead ?? 0 });
   if (b.item && target && !blocker) {
     b.pitch = 0;
     inp.fire = fire === true;
@@ -507,7 +443,7 @@ export function stepBots(game, dt) {
   if (c.features.gardener) stepGardenerSpawn(game, dt);
   if (!c.features.botAI) return;
 
-  const ctx = { diff: game.difficultyConfig(), plantSide: [], zombieSide: [], gardenPlants: [] };
+  const ctx = { diff: game.difficultyConfig(), smart: game.gardenerConfig().brain === 'smart', plantSide: [], zombieSide: [], gardenPlants: [] };
   const bots = [];
   for (const e of game.entities.values()) {
     if (e.kind === 'garden') {
@@ -516,13 +452,13 @@ export function stepBots(game, dt) {
     } else if (isFighter(e)) {
       (e.team === 'plant' ? ctx.plantSide : ctx.zombieSide).push(e);
       // bots, and zombie kids flagged `autopilot` (the balance harness's scripted kids use the bot brain)
-      if ((e.kind === 'bot' || (e.autopilot && e.team === 'zombie')) && e.state === 'alive') bots.push(e);
+      if ((e.kind === 'bot' || (e.autopilot && (e.team === 'zombie' || e.autopilotPlant))) && e.state === 'alive') bots.push(e);
     }
   }
   for (const b of bots) {
     const ai = ensureAI(game, b);
     if (ai.role === 'zombie') zombieBrain(game, b, ai, ctx, dt);
-    else if (ai.role === 'gardener') gardenerBrain(game, b, ai, ctx, dt);
+    else if (ai.role === 'gardener') (ctx.smart || b.autopilotPlant ? smartGardenerBrain : gardenerBrain)(game, b, ai, ctx, dt);
   }
 }
 

@@ -73,7 +73,8 @@ export class Game {
     this.waveIndex = 0;
     this.finalWaveSpawned = false;
     this.endTimer = 0;
-    this.gardenerTimer = 0;
+    this.gardenerTimers = [];
+    this.gardenerBank = [];
     this.headStart = 0;
     this.fridge = createFridge();
   }
@@ -124,7 +125,8 @@ export class Game {
     this.waveIndex = 0;
     this.finalWaveSpawned = false;
     this.endTimer = 0;
-    this.gardenerTimer = 0;
+    this.gardenerTimers = [];
+    this.gardenerBank = [];
     this.headStart = this.config.features.headStart ? this.config.headStart : 0;
     this.fridge = createFridge();
     this.cover.reset();
@@ -512,7 +514,7 @@ export class Game {
     const c = this.config;
     let speed;
     if (this.isDriving(e)) speed = c.mowerSpeed * (e.kind === 'bot' ? c.botMowerSpeedScale : 1);
-    else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed : c.gardener.speed;
+    else if (e.kind === 'bot') speed = e.team === 'zombie' ? c.zombieBotSpeed * (this.difficultyConfig().speedScale ?? 1) : this.gardenerConfig().speed;
     else speed = c.moveSpeed;
     if (e.slowTimer > 0) speed *= e.slowFactor ?? 0.5;
     if (e.item) speed *= c.equipment[e.item]?.speedScale ?? 1;

@@ -110,7 +110,7 @@ export function tryPlant(game, player, kind, only = -1) {
   if (!type || !player || player.team !== 'plant') return null;
   if (player.kind !== 'player' && !player.isGardener) return null;
   if (player.state !== 'alive' || game.phase !== 'playing') return null;
-  if ((type.tier ?? 0) > (player.kind === 'player' ? player.tier ?? 0 : 0)) return null;
+  if ((type.tier ?? 0) > (player.kind === 'player' || player.isGardener ? player.tier ?? 0 : 0)) return null; // (the basic Gardener never sets a tier)
   if (!(player.sunshine >= type.cost)) return null;
   let best = -1;
   let bestDist = Infinity;
@@ -312,11 +312,15 @@ export function stepSun(game, dt) {
   const c = game.config;
   const collectors = [];
   const suns = [];
+  let humans = 0;
   for (const e of game.entities.values()) {
     if (e.kind === 'sun') suns.push(e);
-    else if (e.kind === 'player' && e.team === 'plant' && e.state === 'alive') collectors.push(e);
+    else if (e.kind === 'player' && e.team === 'plant' && e.state === 'alive') {
+      collectors.push(e);
+      humans++;
+    } else if (e.kind === 'bot' && e.isGardener && e.collect && e.state === 'alive') collectors.push(e); // the smart Gardener picks up what lands
   }
-  if (c.features.sunDrops && collectors.length > 0) {
+  if (c.features.sunDrops && humans > 0) { // (the sky only drops sunshine for kids)
     game.sunTimer -= dt;
     if (game.sunTimer <= 0) {
       game.sunTimer += c.sunDropInterval;

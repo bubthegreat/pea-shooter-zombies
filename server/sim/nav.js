@@ -123,9 +123,30 @@ export function planRoute(field, fx, fz, tx, tz, team = null) {
   return pts;
 }
 
-/** Pick a route family and door itinerary by weight with a uniform random draw r in [0, 1). */
-export function chooseItinerary(rng) {
+/**
+ * Pick a route family and door itinerary by weight with a uniform random draw r in [0, 1). `mult(doorId)` (optional) scales the
+ * odds of every itinerary that ends at that door (smart bots favour the weakest door); without it the two-stage draw
+ * (family, then variant) is exactly the original one.
+ */
+export function chooseItinerary(rng, mult = null) {
   const fams = Object.entries(MAP.routes);
+  if (mult) {
+    const all = [];
+    for (const [name, family] of fams) {
+      const sum = family.variants.reduce((a, x) => a + x.weight, 0);
+      for (const v of family.variants) all.push({ name, v, w: family.weight * (v.weight / sum) * Math.max(1e-6, mult(v.door)) });
+    }
+    let r = rng() * all.reduce((a, x) => a + x.w, 0);
+    let pick = all[all.length - 1];
+    for (const x of all) {
+      r -= x.w;
+      if (r < 0) {
+        pick = x;
+        break;
+      }
+    }
+    return { route: pick.name, door: pick.v.door, nodes: pick.v.nodes.map((n) => nodePos(n)) };
+  }
   let r = rng() * fams.reduce((a, [, f]) => a + f.weight, 0);
   let fam = fams[fams.length - 1];
   for (const f of fams) {
@@ -146,6 +167,11 @@ export function chooseItinerary(rng) {
     }
   }
   return { route: name, door: variant.door, nodes: variant.nodes.map((n) => nodePos(n)) };
+}
+
+/** An itinerary that ends at a given door (all that lead there, by their usual odds), or null for an unknown door. */
+export function itineraryToDoor(rng, door) {
+  return chooseItinerary(rng, (d) => (d === door ? 1 : 0));
 }
 
 /** The itinerary of one specific route + door (tests, scripted kids), or null. */

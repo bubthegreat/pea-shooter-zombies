@@ -1,5 +1,6 @@
 // Round rules: zombie waves, win conditions, and the automatic restart after a round ends.
 import { WORLD } from './world.js';
+import { weakestDoor } from './intel.js';
 
 /** Wave times (seconds into the round). The last wave arrives lastWaveLead seconds before sunrise. */
 export function planWaves(config) {
@@ -37,8 +38,10 @@ function spawnWave(game, number, final) {
   const diff = game.difficultyConfig();
   const wanted = Math.round(diff.waveBase + number * (diff.waveStep ?? 1));
   const size = Math.max(0, Math.min(wanted, Math.min(c.maxZombieBots, diff.maxBots ?? c.maxZombieBots) - zombieBotCount(game)));
+  const focus = (diff.focus ?? 0) > 0 && size > 0 ? weakestDoor(game)?.id ?? null : null; // the wave's weakest door: a share of it goes there together
   for (let i = 0; i < size; i++) {
-    game.spawnBot('zombie', gate.minX + game.rng() * (gate.maxX - gate.minX), gate.z);
+    const bot = game.spawnBot('zombie', gate.minX + game.rng() * (gate.maxX - gate.minX), gate.z);
+    if (focus) bot.focusDoor = focus;
   }
   game.wave = number;
   if (final) game.finalWaveSpawned = true;

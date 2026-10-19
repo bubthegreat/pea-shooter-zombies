@@ -50,7 +50,7 @@ test('every zombie-side knob only ever gets harder from level to level', () => {
   }
 });
 
-test('every Gardener knob only ever gets harder from Hard up, and Expert fields two', () => {
+test('every Gardener knob only ever gets harder from Hard up, and two Gardeners from Nightmare', () => {
   const g = (id) => ({ ...DEFAULT_CONFIG.gardener, ...D[id].gardener });
   assert.equal(g('easy').brain, 'basic');
   assert.equal(g('normal').brain, 'basic');
@@ -58,15 +58,20 @@ test('every Gardener knob only ever gets harder from Hard up, and Expert fields 
     const a = g(IDS[i - 1]);
     const b = g(IDS[i]);
     assert.equal(b.brain, 'smart');
-    for (const k of ['speed', 'maxSunshine', 'fireScale', 'head', 'lead', 'strafe', 'tier', 'forts', 'pots', 'count']) assert.ok(b[k] >= a[k], `${IDS[i]}.${k} ${b[k]} >= ${a[k]}`);
-    for (const k of ['aimError', 'reaction', 'upgradeInterval', 'think']) assert.ok(b[k] <= a[k], `${IDS[i]}.${k} ${b[k]} <= ${a[k]}`);
+    for (const k of ['speed', 'maxSunshine', 'fireScale', 'head', 'lead', 'strafe', 'tier', 'forts', 'pots', 'count', 'collect', 'repair']) assert.ok(b[k] >= a[k], `${IDS[i]}.${k} ${b[k]} >= ${a[k]}`);
+    for (const k of ['aimError', 'reaction', 'upgradeInterval', 'think', 'respawn']) assert.ok(b[k] <= a[k], `${IDS[i]}.${k} ${b[k]} <= ${a[k]}`);
   }
   assert.equal(g('veryhard').count, 1);
-  assert.equal(g('expert').count, 2);
+  assert.equal(g('expert').count, 1);
+  assert.equal(g('nightmare').count, 2);
   assert.equal(g('insane').count, 2);
+  assert.equal(g('hard').collect, 0, 'Hard does not collect sunshine');
+  assert.ok(g('insane').collect > g('expert').collect);
+  assert.ok(g('hard').forts === 0 && g('veryhard').forts > 0 && g('expert').pots > 0 && g('hard').pots === 0);
   assert.equal(g('insane').tier, Math.max(...Object.values(DEFAULT_CONFIG.plantTypes).map((t) => t.tier)), 'Insane may plant everything');
   assert.equal(g('insane').retreat, true);
-  assert.equal(g('hard').retreat, false);
+  assert.equal(g('veryhard').retreat, false);
+  assert.equal(g('expert').retreat, true);
 });
 
 test('normalizeDifficulty accepts the ids and friendly spellings, nothing else', () => {
@@ -114,7 +119,7 @@ test('waves grow with the level: the same wave brings more zombies on Insane tha
   assert.equal(sizes.easy, 3, 'Easy: 2 + 1');
   assert.equal(sizes.normal, 5, 'Normal: 4 + 1');
   for (let i = 1; i < IDS.length; i++) assert.ok(sizes[IDS[i]] >= sizes[IDS[i - 1]], `${IDS[i]} ${sizes[IDS[i]]} >= ${sizes[IDS[i - 1]]}`);
-  assert.ok(sizes.insane >= sizes.easy + 8, JSON.stringify(sizes));
+  assert.ok(sizes.insane >= sizes.easy + 4 && sizes.insane > sizes.normal, JSON.stringify(sizes));
 });
 
 function member(id, name = id) {

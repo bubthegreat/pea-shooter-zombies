@@ -167,26 +167,29 @@ export const DEFAULT_CONFIG = {
     easy: { name: 'Easy', aimError: 0.15, fireScale: 0.3, reaction: 0.8, waveBase: 2, waveStep: 1, speedScale: 1, shootScale: 1, lead: 0, smart: 0, focus: 0, errand: 1, mower: 1, maxBots: 40, gardener: {} },
     normal: { name: 'Normal', aimError: 0.14, fireScale: 0.3, reaction: 0.4, waveBase: 4, waveStep: 1, speedScale: 1, shootScale: 1, lead: 0, smart: 0, focus: 0, errand: 1, mower: 1, maxBots: 40, gardener: {} },
     hard: {
-      name: 'Hard', aimError: 0.11, fireScale: 0.36, reaction: 0.32, waveBase: 5, waveStep: 1.15, speedScale: 1.05, shootScale: 1.05, lead: 0.2, smart: 0.25, focus: 0.15, errand: 1.25, mower: 1.2, maxBots: 40,
-      gardener: { brain: 'smart', speed: 4.5, income: 11, maxSunshine: 400, aimError: 0.12, fireScale: 0.4, reaction: 0.4, lead: 0.3, tier: 2, upgradeInterval: 25, think: 0.25 },
+      name: 'Hard', aimError: 0.134, fireScale: 0.327, reaction: 0.382, waveBase: 4.42, waveStep: 1.06, speedScale: 1.02, shootScale: 1.05, lead: 0.2, smart: 0.25, focus: 0.048, errand: 1.2, mower: 1.2, maxBots: 40,
+      gardener: { brain: 'smart', speed: 4.5, income: 5.5, maxSunshine: 400, aimError: 0.12, fireScale: 0.4, reaction: 0.4, lead: 0.3, tier: 2, upgradeInterval: 25, think: 0.25, respawn: 8, repair: 0.4 },
     },
     veryhard: {
-      name: 'Very Hard', aimError: 0.09, fireScale: 0.42, reaction: 0.26, waveBase: 6, waveStep: 1.3, speedScale: 1.1, shootScale: 1.1, lead: 0.4, smart: 0.45, focus: 0.3, errand: 1.5, mower: 1.5, maxBots: 40,
-      gardener: { brain: 'smart', speed: 5, income: 12, maxSunshine: 500, aimError: 0.08, fireScale: 0.55, reaction: 0.3, head: 0.2, lead: 0.5, strafe: 0.3, tier: 3, upgradeInterval: 16, forts: 4, think: 0.2 },
+      name: 'Very Hard', aimError: 0.13, fireScale: 0.345, reaction: 0.37, waveBase: 4.7, waveStep: 1.1, speedScale: 1.04, shootScale: 1.1, lead: 0.4, smart: 0.45, focus: 0.08, errand: 1.4, mower: 1.4, maxBots: 40,
+      gardener: { brain: 'smart', speed: 5, income: 6.5, maxSunshine: 500, aimError: 0.08, fireScale: 0.55, reaction: 0.3, head: 0.2, lead: 0.5, strafe: 0.3, tier: 3, upgradeInterval: 16, forts: 4, think: 0.2, respawn: 7, repair: 0.55, rebuild: true, collect: 0 },
     },
     expert: {
-      name: 'Expert', aimError: 0.07, fireScale: 0.5, reaction: 0.2, waveBase: 7, waveStep: 1.5, speedScale: 1.18, shootScale: 1.15, lead: 0.6, smart: 0.65, focus: 0.45, errand: 1.8, mower: 1.8, maxBots: 40,
-      gardener: { brain: 'smart', count: 2, speed: 5.5, income: 9, maxSunshine: 500, aimError: 0.05, fireScale: 0.7, reaction: 0.2, head: 0.4, lead: 0.7, strafe: 0.5, tier: 5, upgradeInterval: 11, forts: 6, pots: 4, retreat: true, collect: true, think: 0.15 },
+      name: 'Expert', aimError: 0.125, fireScale: 0.363, reaction: 0.358, waveBase: 4.98, waveStep: 1.14, speedScale: 1.06, shootScale: 1.15, lead: 0.6, smart: 0.65, focus: 0.112, errand: 1.7, mower: 1.7, maxBots: 40,
+      gardener: { brain: 'smart', speed: 5.5, income: 6.5, maxSunshine: 500, aimError: 0.05, fireScale: 0.7, reaction: 0.2, head: 0.4, lead: 0.7, strafe: 0.5, tier: 5, upgradeInterval: 11, forts: 6, pots: 4, retreat: true,  think: 0.15, respawn: 6, repair: 0.7, rebuild: true, collect: 6 },
     },
     nightmare: {
-      name: 'Nightmare', aimError: 0.05, fireScale: 0.6, reaction: 0.15, waveBase: 9, waveStep: 1.75, speedScale: 1.28, shootScale: 1.2, lead: 0.8, smart: 0.85, focus: 0.6, errand: 2.2, mower: 2.2, maxBots: 40,
-      gardener: { brain: 'smart', count: 2, speed: 6, income: 11, maxSunshine: 600, aimError: 0.03, fireScale: 0.85, reaction: 0.15, head: 0.65, lead: 0.85, strafe: 0.7, tier: 6, upgradeInterval: 7, forts: 8, pots: 6, retreat: true, collect: true, think: 0.12 },
+      name: 'Nightmare', aimError: 0.119, fireScale: 0.39, reaction: 0.34, waveBase: 5.4, waveStep: 1.2, speedScale: 1.08, shootScale: 1.2, lead: 0.8, smart: 0.85, focus: 0.16, errand: 2.0, mower: 2.0, maxBots: 40,
+      gardener: { brain: 'smart', count: 2, speed: 6, income: 3.5, maxSunshine: 600, aimError: 0.03, fireScale: 0.85, reaction: 0.15, head: 0.65, lead: 0.85, strafe: 0.7, tier: 6, upgradeInterval: 7, forts: 8, pots: 6, retreat: true,  think: 0.12, respawn: 5, repair: 0.8, rebuild: true, collect: 14 },
     },
     insane: {
-      name: 'Insane', aimError: 0.035, fireScale: 0.75, reaction: 0.1, waveBase: 11, waveStep: 2, speedScale: 1.4, shootScale: 1.3, lead: 1, smart: 1, focus: 0.8, errand: 2.6, mower: 2.6, maxBots: 40,
-      gardener: { brain: 'smart', count: 2, speed: 6.5, income: 13, maxSunshine: 800, aimError: 0.018, fireScale: 1, reaction: 0.1, head: 0.85, lead: 1, strafe: 0.9, tier: 7, upgradeInterval: 4, forts: 10, pots: 8, retreat: true, collect: true, think: 0.1 },
+      name: 'Insane', aimError: 0.109, fireScale: 0.435, reaction: 0.31, waveBase: 6.1, waveStep: 1.3, speedScale: 1.12, shootScale: 1.3, lead: 1, smart: 1, focus: 0.24, errand: 2.4, mower: 2.4, maxBots: 40,
+      gardener: { brain: 'smart', count: 2, speed: 6.5, income: 5, maxSunshine: 800, aimError: 0.018, fireScale: 1, reaction: 0.1, head: 0.85, lead: 1, strafe: 0.9, tier: 7, upgradeInterval: 4, forts: 10, pots: 8, retreat: true,  think: 0.1, respawn: 4, repair: 0.9, rebuild: true, collect: 24 },
     },
   },
+  // A zombie kid driven by the bot brain (`autopilot`: the balance harness's scripted kid) always uses these skill numbers, whatever
+  // the level, so a level changes the computer players and not the "player".
+  autopilot: { aimError: 0.14, reaction: 0.4, shootScale: 1, lead: 0, fireScale: 0.5 },
   zombieBotSpeed: 3,
   botThinkInterval: 0.25,
   botAimRerollInterval: 0.3,
@@ -265,8 +268,10 @@ export const DEFAULT_CONFIG = {
     tierEvery: 25,
     forts: 0, // forts (fences / hedges on the approaches) it keeps standing, at most
     pots: 0, // pots it keeps in the house (last line around the kitchen), at most
+    repair: 0, // mends a door when its HP share is below this (0 = never) and nobody is shooting at it
+    rebuild: false, // also raises broken doors again
     retreat: false, // falls back to the kitchen to guard the fridge when a door has fallen
-    collect: false, // walks to sunshine pickups (sky drops and what converted zombies leave behind)
+    collect: 0, // how far (m) it walks for sunshine that has landed (what converted zombies leave behind); 0 = never
   },
 };
 
