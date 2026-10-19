@@ -125,6 +125,7 @@ export function decentPlant(opts = {}) {
   const wall = opts.wall ?? true;
   const shootRange = opts.range ?? 30; // a kid does not snipe at the edge of the map
   const sunRange = opts.sunRange ?? 16;
+  const repair = opts.repair ?? true; // mends doors at the repair piles
   const lapse = opts.lapse ?? 4; // seconds in every 25 the kid is not paying attention (looks around, talks, drinks juice)
   return (g, me, st) => {
     const inp = { keys: NO_KEYS(), fire: false, use: false, drop: false, upgrade: false };
@@ -196,7 +197,29 @@ export function decentPlant(opts = {}) {
         }
       }
     }
-    if (doing === 'guard') {
+    // a door that is GONE with nobody anywhere near: rebuild it at its pile (stand still, hold E) and carry on to half health (mending partly hurt doors costs more defence than it saves)
+    let mend = null;
+    if (doing === 'guard' && repair && !target) {
+      for (const p of WORLD.repair) {
+        const piece = g.cover.get(`door:${p.door}`);
+        if (!piece) continue;
+        const frac = piece.state === 'alive' ? piece.hp / piece.maxHp : 0;
+        const going = st.mending === p.door;
+        if (going ? frac >= (opts.mendTo ?? 0.5) : frac >= (opts.mendBelow ?? 0.01)) continue;
+        if (nearestOf(g, (e) => isZombieFighter(e) && (dist2D(e.x, e.z, p.x, p.z) < 22 || dist2D(e.x, e.z, me.x, me.z) < 22), p.x, p.z)) continue;
+        if (!mend || frac < mend.frac) mend = { p, frac };
+      }
+    }
+    st.mending = mend ? mend.p.door : null;
+    if (mend) {
+      doing = 'repair';
+      dest = mend.p;
+      stop = 0.5;
+      if (dist2D(me.x, me.z, mend.p.x, mend.p.z) < 1.2) {
+        inp.use = true;
+        dest = null; // stand still
+      }
+    } else if (doing === 'guard') {
       // spare sunshine: a hedge wall now and then in front of the house, else level plants up, else grab suns, else wait in the kitchen
       const ups = [...g.entities.values()].filter((e) => e.kind === 'garden' && (e.level ?? 1) < c.plantLevels.max && !c.plantTypes[e.plantKind].noAttack && me.sunshine >= upgradeCostOf(c, e) + 60);
       if (ups.length && !target) {
@@ -236,7 +259,7 @@ export function decentPlant(opts = {}) {
     }
 
     // shoot and move
-    if (target) {
+    if (target && !inp.use) {
       const dx = target.x - me.x;
       const dz = target.z - me.z;
       me.yaw = yawTo(dx, dz) + (g.rng() - 0.5) * aim * 2;
@@ -253,27 +276,51 @@ export function decentPlant(opts = {}) {
 
 // ---- scenarios ---------------------------------------------------------------------------------------------------------
 
+/** A good zombie kid: full fire rate, sharp aim, quick reactions. */
+const STRONG_KID = { kidFire: 1, autopilot: { aimError: 0.07, reaction: 0.2, lead: 0.5 } };
+
+/** A good plant kid: the Gardener's planner with a human's gun (full fire rate, decent aim), forts and repairs, no flower pots. */
+const GOOD_KID = { brain: 'smart', maxSunshine: 9999, aimError: 0.08, fireScale: 1, reaction: 0.3, head: 0.2, lead: 0.4, strafe: 0.3, forts: 4, pots: 0, retreat: false, collect: 45, repair: 0.5, rebuild: true, upgradeInterval: 15, think: 0.25, shootRange: 25 };
+
+export const LEVEL_IDS = Object.keys(DEFAULT_CONFIG.difficulties);
+
+/** The scenario shapes, for any level: afk (a plant kid who never plants), decent (the scripted kid), versus, zraid (zombie autopilot kid vs the Gardener(s)). */
+export function scenarioFor(kind, level) {
+  switch (kind) {
+    case 'afk': return { difficulty: level, mode: 'coop', humans: [{ team: 'plant' }] };
+    case 'decent': return { difficulty: level, mode: 'coop', humans: [{ team: 'plant', script: decentPlant() }] };
+    case 'good': return { difficulty: level, mode: 'coop', humans: [{ team: 'plant', autoPlant: {} }] }; // the planner as a kid, against the level's bots
+    case 'zraid': return { difficulty: level, mode: 'coop', humans: [{ team: 'zombie', auto: true }] };
+    case 'zsolo': return { difficulty: level, mode: 'coop', features: { waves: false }, ...STRONG_KID, humans: [{ team: 'zombie', auto: true }] }; // the kid alone against the Gardener(s): no zombie bots
+    case 'versus': return { difficulty: level, mode: 'versus', humans: [{ team: 'plant', script: decentPlant() }, { team: 'zombie', auto: true }] };
+    default: throw new Error(`unknown scenario kind ${kind}`);
+  }
+}
+
 export const SCENARIOS = {
-  'afk-easy': { difficulty: 'easy', mode: 'coop', humans: [{ team: 'plant' }] },
-  'afk-normal': { difficulty: 'normal', mode: 'coop', humans: [{ team: 'plant' }] },
   'clumsy-normal': { difficulty: 'normal', mode: 'coop', humans: [{ team: 'plant', script: decentPlant({ plots: [0], aim: 0.1, wall: false }) }] },
-  'decent-easy': { difficulty: 'easy', mode: 'coop', humans: [{ team: 'plant', script: decentPlant() }] },
-  'decent-normal': { difficulty: 'normal', mode: 'coop', humans: [{ team: 'plant', script: decentPlant() }] },
-  'zraid-normal': { difficulty: 'normal', mode: 'coop', humans: [{ team: 'zombie', auto: true }] },
-  'versus-easy': { difficulty: 'easy', mode: 'versus', humans: [{ team: 'plant', script: decentPlant() }, { team: 'zombie', auto: true }] },
-  'versus-normal': { difficulty: 'normal', mode: 'versus', humans: [{ team: 'plant', script: decentPlant() }, { team: 'zombie', auto: true }] },
 };
+// afk-easy, decent-hard, zraid-insane, versus-normal ... one per kind and level
+for (const kind of ['afk', 'decent', 'good', 'zraid', 'zsolo', 'versus']) for (const level of LEVEL_IDS) SCENARIOS[`${kind}-${level}`] = scenarioFor(kind, level);
 
 export function runRound(seed, sc, overrides = {}) {
-  const cfg = { ...makeConfig(), ...overrides };
+  const base = makeConfig();
+  const cfg = { ...base, ...overrides, features: { ...base.features, ...(overrides.features ?? {}), ...(sc.features ?? {}) } };
+  if (sc.autopilot) cfg.autopilot = { ...cfg.autopilot, ...sc.autopilot }; // a different kid
   const g = new Game(cfg, rngFor(seed * 7919 + 13));
   const humans = sc.humans.map((spec, i) => {
     const id = i === 0 ? 'h' : 'k';
     g.addPlayer(id, { team: spec.team, mode: sc.mode, difficulty: sc.difficulty });
     const me = g.entities.get(id);
-    if (spec.auto) {
+    if (spec.autoPlant) {
+      // a plant kid played by the Gardener's planner (bots.js autopilotPlant), with a human's gun and its own profile
       me.autopilot = true;
-      me.autopilotFireScale = Number(process.env.BAL_KIDFIRE ?? 0.5);
+      me.autopilotPlant = true;
+      me.gardenerCfg = { ...GOOD_KID, ...spec.autoPlant };
+      ensureAI(g, me);
+    } else if (spec.auto) {
+      me.autopilot = true;
+      me.autopilotFireScale = sc.kidFire ?? Number(process.env.BAL_KIDFIRE ?? 0.5);
       ensureAI(g, me);
     }
     return { id, me, script: spec.script ?? null, st: {} };
