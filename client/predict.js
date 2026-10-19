@@ -19,8 +19,8 @@
 import { Field } from '../shared/field.js';
 import { walkerStep } from '../shared/walker.js';
 
-const CORRECT = 0.35; // share of the error taken per snapshot
-const OFFSET_TAU = 0.09; // s: how fast the render offset fades
+const CORRECT = 0.3; // share of the error taken per snapshot
+const OFFSET_TAU = 0.12; // s: how fast the render offset fades
 const SNAP_DIST = 2.0; // m: further than this is not a correction but a teleport
 const LOG_MS = 2500; // how much walked history is kept for replay
 const MAX_STEP = 1 / 30; // a long frame is walked in steps no longer than a server tick
