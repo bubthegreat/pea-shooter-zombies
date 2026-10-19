@@ -1,5 +1,6 @@
 // WebSocket test helpers (no tests in here).
 import { WebSocket } from 'ws';
+import { SnapDecoder } from '../shared/snapcodec.js';
 
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -9,8 +10,11 @@ export function connect(srv, opts = {}) {
     ws.messages = [];
     ws.waiters = [];
     ws.closed = false;
+    const dec = new SnapDecoder(); // snapshots arrive as deltas: tests see them whole
     ws.on('message', (d) => {
       const m = JSON.parse(d.toString());
+      if (m.t === 'snap' && !dec.apply(m)) return;
+      if (m.t === 'welcome') dec.reset();
       ws.messages.push(m);
       ws.waiters = ws.waiters.filter((w) => !w(m));
     });

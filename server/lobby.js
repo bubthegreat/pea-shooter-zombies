@@ -16,6 +16,7 @@
 import { DEFAULT_CONFIG, publicConfig } from './sim/config.js';
 import { Game, TEAMS, MODES, normalizeDifficulty, neutralInput } from './sim/game.js';
 import { sanitizeName, sanitizeLobbyName } from './sim/names.js';
+import { SnapEncoder } from '../shared/snapcodec.js';
 
 export const MAX_PLAYERS_PER_LOBBY = 50; // hidden safety caps, not shown to kids
 export const MAX_LOBBIES = 20;
@@ -52,6 +53,8 @@ class Lobby {
     this.hostId = null;
     this.acc = 0;
     this.snapAcc = 0;
+    this.enc = new SnapEncoder(); // snapshots go out as deltas (shared/snapcodec.js) ...
+    this.needFull = true; // ... except the first after the round starts or somebody joins, which is whole
     this.last = null; // wall time of the previous step; null = first step after Start
     this.errors = 0;
     this.activeAt = now; // last time a member did something in the waiting room
@@ -204,6 +207,7 @@ export class LobbyManager {
       // dropping into a game already under way
       l.game.addPlayer(member.id, { name: member.name, team: member.team });
       member.send({ t: 'welcome', id: member.id, config: l.publicConfig, state: l.game.mapState() });
+      l.needFull = true; // the newcomer has no picture to apply deltas to
     }
     if (!this._broadcastState(l)) this._sendStateTo(l, member); // the newcomer does not wait for the coalesced flush
   }
@@ -368,6 +372,8 @@ export class LobbyManager {
     l.last = null;
     l.acc = 0;
     l.snapAcc = 0;
+    l.enc.reset();
+    l.needFull = true;
     l.game.startMatch({
       mode: l.mode,
       difficulty: l.difficulty,
@@ -452,7 +458,8 @@ export class LobbyManager {
   _fanout(l) {
     const snap = l.game.snapshot();
     l.game.drainEvents();
-    const payload = JSON.stringify(snap);
+    const payload = l.enc.encode(snap, l.needFull);
+    l.needFull = false;
     for (const m of l.members.values()) m.raw(payload);
   }
 

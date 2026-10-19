@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_CONFIG } from '../server/sim/config.js';
 import { LobbyManager, MAX_LOBBIES, MAX_PLAYERS_PER_LOBBY } from '../server/lobby.js';
 import { mulberry32, NO_FEATURES } from './helpers.js';
+import { SnapDecoder } from '../shared/snapcodec.js';
 
 const STEP = 1 / DEFAULT_CONFIG.tickRate;
 
@@ -14,7 +15,10 @@ function member(id, name = id, cid = `cid-${id}`) {
     send(o) { this.sent.push(o); },
     raw(s) { this.raws.push(s); },
     last(type) { return [...this.sent].reverse().find((m) => m.t === type); },
-    snaps() { return this.raws.map((r) => JSON.parse(r)).filter((m) => m.t === 'snap'); },
+    snaps() {
+      const dec = new SnapDecoder(); // snapshots are deltas: replay the lot, in order, to see them whole
+      return this.raws.map((r) => JSON.parse(r)).filter((m) => m.t === 'snap' && dec.apply(m));
+    },
   };
 }
 

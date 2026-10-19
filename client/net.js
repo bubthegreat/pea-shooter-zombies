@@ -13,8 +13,11 @@
 // Entities are placed by bracketing the render clock between two snapshots (so unevenly spaced snapshots cost nothing: the
 // positions are interpolated against the sim clock, not against arrival times). If the render clock runs past the newest
 // snapshot (a late packet) entities keep going on their last velocity for up to EXTRAP_MS, then hold.
+// Snapshots arrive as deltas (shared/snapcodec.js) and are rebuilt into whole ones first.
 // Our own entity is normally placed by the client-side prediction (predict.js); `view().self` carries the newest server state
 // and, without a predictor, an interpolated position a short way behind.
+
+import { SnapDecoder } from '../shared/snapcodec.js';
 
 const MAX_BUF = 60;
 export const MIN_LAG = 100; // ms behind the newest data, at least
@@ -49,6 +52,7 @@ export class Net {
     this.reconnectTimer = null;
     this.wantOpen = true;
     this.latest = null;
+    this.decoder = new SnapDecoder();
     this._scratch = { a: null, b: null, k: 0 };
     this._pool = new Map(); // id -> { o (the object handed out), src (the snapshot entity it was filled from), seen }
     this._viewFrame = 0;
@@ -143,6 +147,7 @@ export class Net {
   reset() {
     this.buf.length = 0;
     this.latest = null;
+    this.decoder?.reset();
     this.interval = 1000 / 30; // sim ms between snapshots (EMA)
     this.offset = null; // client ms minus sim ms
     this.jitter = 0; // ms
@@ -170,6 +175,7 @@ export class Net {
   }
 
   _onSnap(snap, now = performance.now()) {
+    if (!this.decoder.apply(snap)) return; // a delta with no picture to land on: wait for the next full one
     const entities = Array.isArray(snap.entities) ? snap.entities : [];
     const map = new Map();
     for (const e of entities) {
